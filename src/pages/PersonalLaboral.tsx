@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { CalendarDays, ChevronsUpDown, FileSpreadsheet, Settings2, Users } from "lucide-react";
+import { CalendarDays, ChevronsUpDown, FileSpreadsheet, Wallet, Users } from "lucide-react";
 import { toast } from "sonner";
 import { useBranch } from "@/contexts/BranchContext";
 import { canManage } from "@/lib/permissions";
-import { usePersonalLaboral } from "@/hooks/usePersonalLaboral";
+import { usePersonalLaboral, useSueldosPersonal } from "@/hooks/usePersonalLaboral";
 import { resumirPersonal } from "@/lib/personalLaboral";
 import { downloadXlsx } from "@/lib/exportXlsx";
 import { Badge } from "@/components/ui/badge";
@@ -151,23 +151,26 @@ export default function PersonalLaboral() {
   const [draftFilters, setDraftFilters] = useState(initialFilters);
   const [appliedFilters, setAppliedFilters] = useState(initialFilters);
   const personal = usePersonalLaboral(appliedFilters);
+  const sueldos = useSueldosPersonal();
   const [configBranchId, setConfigBranchId] = useState(activeBranchId ?? (isGlobalAdmin ? ALL_BRANCHES : ""));
-  const [weekly, setWeekly] = useState({ lunesViernes: "", sabado: "", domingo: "" });
   const [special, setSpecial] = useState({ fecha: today(), nombre: "", valor: "" });
+  const [sueldoDrafts, setSueldoDrafts] = useState<Record<string, { lunesViernes: string; sabado: string; domingo: string }>>({});
+  const [savingSueldoUserId, setSavingSueldoUserId] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => {
-    const configured = configBranchId === ALL_BRANCHES
-      ? personal.data.precioGlobal
-      : personal.data.precios.find((item) => item.branch_id === configBranchId);
-    setWeekly({
-      lunesViernes: configured ? String(configured.lunes_viernes) : "",
-      sabado: configured ? String(configured.sabado) : "",
-      domingo: configured ? String(configured.domingo) : "",
-    });
-  }, [configBranchId, personal.data.precios]);
+    const next: Record<string, { lunesViernes: string; sabado: string; domingo: string }> = {};
+    for (const row of sueldos.data) {
+      next[row.userId] = {
+        lunesViernes: String(row.lunesViernes),
+        sabado: String(row.sabado),
+        domingo: String(row.domingo),
+      };
+    }
+    setSueldoDrafts(next);
+  }, [sueldos.data]);
 
   const people = personal.data.peopleOptions;
   const summaries = useMemo(() => resumirPersonal(personal.data.rows), [personal.data.rows]);
@@ -221,17 +224,26 @@ export default function PersonalLaboral() {
     }
   };
 
-  const saveWeekly = async () => {
-    if (!configBranchId || weekly.lunesViernes === "" || weekly.sabado === "" || weekly.domingo === "") {
-      toast.error("Selecciona la sucursal y completa los tres precios");
+  const saveSueldoRow = async (userId: string) => {
+    const draft = sueldoDrafts[userId];
+    if (!draft || draft.lunesViernes === "" || draft.sabado === "" || draft.domingo === "") {
+      toast.error("Completa los tres sueldos de la persona");
       return;
     }
-    await run(() => personal.runRpc("guardar_precios_dia_personal", {
-      p_branch_id: configBranchId === ALL_BRANCHES ? null : configBranchId,
-      p_lunes_viernes: Number(weekly.lunesViernes),
-      p_sabado: Number(weekly.sabado),
-      p_domingo: Number(weekly.domingo),
-    }), "Precios guardados");
+    setSavingSueldoUserId(userId);
+    try {
+      await sueldos.saveSueldo({
+        userId,
+        lunesViernes: Number(draft.lunesViernes),
+        sabado: Number(draft.sabado),
+        domingo: Number(draft.domingo),
+      });
+      toast.success("Sueldo guardado");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "No se pudo guardar el sueldo");
+    } finally {
+      setSavingSueldoUserId(null);
+    }
   };
 
   const saveSpecial = async () => {
@@ -359,7 +371,7 @@ export default function PersonalLaboral() {
     <Tabs defaultValue="reporte">
       <TabsList className="grid h-auto grid-cols-2">
         <TabsTrigger value="reporte"><Users className="mr-2 h-4 w-4" />Reporte</TabsTrigger>
-        <TabsTrigger value="precios"><Settings2 className="mr-2 h-4 w-4" />Configurar precios</TabsTrigger>
+        <TabsTrigger value="sueldos"><Wallet className="mr-2 h-4 w-4" />Sueldo de Personal</TabsTrigger>
       </TabsList>
 
       <TabsContent value="reporte" className="space-y-4">
@@ -425,43 +437,210 @@ export default function PersonalLaboral() {
         </CardContent></Card>
       </TabsContent>
 
-      <TabsContent value="precios" className="space-y-4">
-        {!canConfigure ? <Card><CardContent className="pt-6">No tienes permiso para modificar los precios.</CardContent></Card> : <>
-          <Card><CardHeader><CardTitle>Precio normal por sucursal</CardTitle></CardHeader>
+      <TabsContent value="sueldos" className="space-y-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>Sueldo de Personal</CardTitle>
+            <p className="text-sm font-normal text-muted-foreground">
+              Listado de todo el personal activo con sueldo de lunes a viernes, sábado y domingo.
+            </p>
+          </CardHeader>
+          <CardContent>
+            {sueldos.isLoading ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">Cargando personal…</p>
+            ) : sueldos.error ? (
+              <div className="space-y-3 py-4 text-center">
+                <p className="text-sm text-destructive">{sueldos.error.message}</p>
+                <Button onClick={() => void sueldos.refetch()}>Reintentar</Button>
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Usuario</TableHead>
+                    <TableHead>Lunes a Viernes</TableHead>
+                    <TableHead>Sábado</TableHead>
+                    <TableHead>Domingo</TableHead>
+                    {canConfigure && <TableHead className="w-[120px]">Acción</TableHead>}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {sueldos.data.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={canConfigure ? 5 : 4} className="py-10 text-center text-muted-foreground">
+                        No hay personal activo para configurar.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    sueldos.data.map((row) => {
+                      const draft = sueldoDrafts[row.userId] ?? {
+                        lunesViernes: String(row.lunesViernes),
+                        sabado: String(row.sabado),
+                        domingo: String(row.domingo),
+                      };
+                      const dirty =
+                        Number(draft.lunesViernes) !== row.lunesViernes
+                        || Number(draft.sabado) !== row.sabado
+                        || Number(draft.domingo) !== row.domingo;
+                      return (
+                        <TableRow key={row.userId}>
+                          <TableCell>
+                            <div className="font-medium">{row.fullName}</div>
+                            {row.username ? (
+                              <div className="text-xs text-muted-foreground">{row.username}</div>
+                            ) : null}
+                          </TableCell>
+                          <TableCell>
+                            {canConfigure ? (
+                              <Input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                className="h-9 w-28"
+                                value={draft.lunesViernes}
+                                onChange={(e) =>
+                                  setSueldoDrafts((current) => ({
+                                    ...current,
+                                    [row.userId]: { ...draft, lunesViernes: e.target.value },
+                                  }))
+                                }
+                              />
+                            ) : (
+                              money(row.lunesViernes)
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {canConfigure ? (
+                              <Input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                className="h-9 w-28"
+                                value={draft.sabado}
+                                onChange={(e) =>
+                                  setSueldoDrafts((current) => ({
+                                    ...current,
+                                    [row.userId]: { ...draft, sabado: e.target.value },
+                                  }))
+                                }
+                              />
+                            ) : (
+                              money(row.sabado)
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {canConfigure ? (
+                              <Input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                className="h-9 w-28"
+                                value={draft.domingo}
+                                onChange={(e) =>
+                                  setSueldoDrafts((current) => ({
+                                    ...current,
+                                    [row.userId]: { ...draft, domingo: e.target.value },
+                                  }))
+                                }
+                              />
+                            ) : (
+                              money(row.domingo)
+                            )}
+                          </TableCell>
+                          {canConfigure && (
+                            <TableCell>
+                              <Button
+                                size="sm"
+                                disabled={!dirty || savingSueldoUserId === row.userId || sueldos.isSaving}
+                                onClick={() => void saveSueldoRow(row.userId)}
+                              >
+                                {savingSueldoUserId === row.userId ? "Guardando…" : "Guardar"}
+                              </Button>
+                            </TableCell>
+                          )}
+                        </TableRow>
+                      );
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+
+        {!canConfigure ? null : (
+          <Card>
+            <CardHeader>
+              <CardTitle>
+                <CalendarDays className="mr-2 inline h-5 w-5" />
+                Precio para un día especial
+              </CardTitle>
+            </CardHeader>
             <CardContent className="grid gap-4 md:grid-cols-4">
-              <Field label="Sucursal"><select className={selectClass} value={configBranchId} onChange={(e) => setConfigBranchId(e.target.value)}>
-                <option value="">Seleccionar…</option>
-                {isGlobalAdmin && <option value={ALL_BRANCHES}>Todas las sucursales</option>}
-                {branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
-              </select></Field>
-              <Field label="Lunes a viernes"><Input type="number" min="0" step="0.01" placeholder="$12.00" value={weekly.lunesViernes} onChange={(e) => setWeekly({ ...weekly, lunesViernes: e.target.value })} /></Field>
-              <Field label="Sábado"><Input type="number" min="0" step="0.01" placeholder="$14.00" value={weekly.sabado} onChange={(e) => setWeekly({ ...weekly, sabado: e.target.value })} /></Field>
-              <Field label="Domingo"><Input type="number" min="0" step="0.01" placeholder="$15.00" value={weekly.domingo} onChange={(e) => setWeekly({ ...weekly, domingo: e.target.value })} /></Field>
-              <div className="md:col-span-4 text-right"><Button disabled={personal.isMutating} onClick={() => void saveWeekly()}>Guardar precios</Button></div>
+              <Field label="Sucursal">
+                <select className={selectClass} value={configBranchId} onChange={(e) => setConfigBranchId(e.target.value)}>
+                  <option value="">Seleccionar…</option>
+                  {isGlobalAdmin && <option value={ALL_BRANCHES}>Todas las sucursales</option>}
+                  {branches.map((branch) => (
+                    <option key={branch.id} value={branch.id}>{branch.name}</option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Fecha">
+                <Input type="date" value={special.fecha} onChange={(e) => setSpecial({ ...special, fecha: e.target.value })} />
+              </Field>
+              <Field label="Nombre">
+                <Input placeholder="Ej. Feriado local" value={special.nombre} onChange={(e) => setSpecial({ ...special, nombre: e.target.value })} />
+              </Field>
+              <Field label="Precio">
+                <Input type="number" min="0" step="0.01" value={special.valor} onChange={(e) => setSpecial({ ...special, valor: e.target.value })} />
+              </Field>
+              <div className="md:col-span-4 text-right">
+                <Button disabled={personal.isMutating} onClick={() => void saveSpecial()}>
+                  Guardar día especial
+                </Button>
+              </div>
             </CardContent>
           </Card>
+        )}
 
-          <Card><CardHeader><CardTitle><CalendarDays className="mr-2 inline h-5 w-5" />Precio para un día especial</CardTitle></CardHeader>
-            <CardContent className="grid gap-4 md:grid-cols-4">
-              <Field label="Fecha"><Input type="date" value={special.fecha} onChange={(e) => setSpecial({ ...special, fecha: e.target.value })} /></Field>
-              <Field label="Nombre"><Input placeholder="Ej. Feriado local" value={special.nombre} onChange={(e) => setSpecial({ ...special, nombre: e.target.value })} /></Field>
-              <Field label="Precio"><Input type="number" min="0" step="0.01" value={special.valor} onChange={(e) => setSpecial({ ...special, valor: e.target.value })} /></Field>
-              <div className="flex items-end"><Button className="w-full" disabled={personal.isMutating} onClick={() => void saveSpecial()}>Guardar día especial</Button></div>
-            </CardContent>
-          </Card>
-        </>}
-
-        <Card><CardHeader><CardTitle>Días especiales configurados</CardTitle></CardHeader><CardContent>
-          <Table><TableHeader><TableRow><TableHead>Fecha</TableHead><TableHead>Sucursal</TableHead>
-            <TableHead>Nombre</TableHead><TableHead>Precio</TableHead>{canConfigure && <TableHead>Acción</TableHead>}
-          </TableRow></TableHeader><TableBody>
-            {branchSpecials.map((item) => <TableRow key={item.id}><TableCell>{item.fecha}</TableCell>
-              <TableCell>{item.branch_id === null ? "Todas las sucursales" : branches.find((branch) => branch.id === item.branch_id)?.name ?? "Sucursal"}</TableCell>
-              <TableCell>{item.nombre}</TableCell><TableCell>{money(Number(item.valor))}</TableCell>
-              {canConfigure && <TableCell><Button size="sm" variant="destructive" onClick={() => void removeSpecial(item.id)}>Eliminar</Button></TableCell>}
-            </TableRow>)}
-          </TableBody></Table>
-        </CardContent></Card>
+        <Card>
+          <CardHeader><CardTitle>Días especiales configurados</CardTitle></CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Fecha</TableHead>
+                  <TableHead>Sucursal</TableHead>
+                  <TableHead>Nombre</TableHead>
+                  <TableHead>Precio</TableHead>
+                  {canConfigure && <TableHead>Acción</TableHead>}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {branchSpecials.map((item) => (
+                  <TableRow key={item.id}>
+                    <TableCell>{item.fecha}</TableCell>
+                    <TableCell>
+                      {item.branch_id === null
+                        ? "Todas las sucursales"
+                        : branches.find((branch) => branch.id === item.branch_id)?.name ?? "Sucursal"}
+                    </TableCell>
+                    <TableCell>{item.nombre}</TableCell>
+                    <TableCell>{money(Number(item.valor))}</TableCell>
+                    {canConfigure && (
+                      <TableCell>
+                        <Button size="sm" variant="destructive" onClick={() => void removeSpecial(item.id)}>
+                          Eliminar
+                        </Button>
+                      </TableCell>
+                    )}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
       </TabsContent>
     </Tabs>
   </div>;

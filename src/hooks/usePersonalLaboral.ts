@@ -1,6 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { fechaOperativaTurno, funcionesRealizadas, resolverPrecioDia, type PrecioEspecial, type PrecioSemanal } from "@/lib/personalLaboral";
+import {
+  fechaOperativaTurno,
+  funcionesRealizadas,
+  resolverSueldoPersonalDia,
+  type PrecioEspecial,
+  type PrecioSemanal,
+} from "@/lib/personalLaboral";
 
 export type PersonalReportFilters = {
   desde: string;
@@ -17,6 +23,17 @@ export type PrecioDiaPersonalGlobal = Omit<PrecioSemanal, "branch_id"> & { singl
 export type PrecioFechaEspecialPersonal = PrecioEspecial & {
   id: string;
   nombre: string;
+};
+
+export type SueldoPersonalRow = {
+  userId: string;
+  fullName: string;
+  username: string;
+  alias: string | null;
+  isActive: boolean;
+  lunesViernes: number;
+  sabado: number;
+  domingo: number;
 };
 
 export type PersonalReportRow = {
@@ -44,6 +61,7 @@ type PersonalReportData = {
 };
 
 const QUERY_KEY = ["reporte-personal-turnos"] as const;
+const SUELDOS_QUERY_KEY = ["sueldos-personal"] as const;
 
 function personName(profile: any) {
   const names = `${profile?.first_name ?? ""} ${profile?.last_name ?? ""}`.trim();
@@ -86,20 +104,33 @@ export function usePersonalLaboral(filters: PersonalReportFilters) {
         { data: precios, error: pricesError },
         { data: globalRows, error: globalError },
         { data: especiales, error: specialError },
+        { data: sueldos, error: sueldosError },
       ] =
         await Promise.all([
           shiftsQuery,
           (supabase as any).from("precios_dia_personal").select("*"),
           (supabase as any).from("precios_dia_personal_global").select("*").limit(1),
           (supabase as any).from("precios_fecha_especial_personal").select("*").gte("fecha", filters.desde).lte("fecha", filters.hasta),
+          (supabase as any).from("sueldos_personal").select("user_id,lunes_viernes,sabado,domingo"),
         ]);
       if (shiftsError) throw shiftsError;
       if (pricesError) throw pricesError;
       if (globalError) throw globalError;
       if (specialError) throw specialError;
+      if (sueldosError) throw sueldosError;
 
       const shiftRows = shifts ?? [];
       const precioGlobal = globalRows?.[0] ?? null;
+      const sueldoByUser = new Map<string, Omit<PrecioSemanal, "branch_id">>(
+        (sueldos ?? []).map((row: any) => [
+          row.user_id,
+          {
+            lunes_viernes: Number(row.lunes_viernes),
+            sabado: Number(row.sabado),
+            domingo: Number(row.domingo),
+          },
+        ]),
+      );
       if (shiftRows.length === 0) {
         return {
           rows: [],
@@ -127,7 +158,13 @@ export function usePersonalLaboral(filters: PersonalReportFilters) {
           const weekly =
             weeklyByBranch.get(shift.branch_id)
             ?? (precioGlobal ? { ...precioGlobal, branch_id: shift.branch_id } : undefined);
-          const resolved = resolverPrecioDia(fecha, shift.branch_id, weekly, especiales ?? []);
+          const resolved = resolverSueldoPersonalDia(
+            fecha,
+            shift.branch_id,
+            sueldoByUser.get(user.user_id) ?? null,
+            weekly,
+            especiales ?? [],
+          );
           const branch = Array.isArray(shift.branches) ? shift.branches[0] : shift.branches;
           return {
             rowId: user.id,
@@ -194,7 +231,10 @@ export function usePersonalLaboral(filters: PersonalReportFilters) {
       if (error) throw error;
       return data;
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: QUERY_KEY }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: SUELDOS_QUERY_KEY });
+    },
   });
 
   return {
@@ -202,5 +242,64 @@ export function usePersonalLaboral(filters: PersonalReportFilters) {
     data: query.data ?? { rows: [], peopleOptions: [], precios: [], precioGlobal: null, especiales: [] },
     runRpc: (name: string, args: Record<string, unknown>) => mutation.mutateAsync({ name, args }),
     isMutating: mutation.isPending,
+  };
+}
+
+export function useSueldosPersonal() {
+  const queryClient = useQueryClient();
+  const query = useQuery({
+    queryKey: SUELDOS_QUERY_KEY,
+    queryFn: async (): Promise<SueldoPersonalRow[]> => {
+      const { data, error } = await supabase.rpc("list_sueldos_personal" as any);
+      if (error) throw error;
+      return ((data ?? []) as Array<{
+        user_id: string;
+        full_name: string | null;
+        username: string | null;
+        alias: string | null;
+        is_active: boolean;
+        lunes_viernes: number | null;
+        sabado: number | null;
+        domingo: number | null;
+      }>).map((row) => ({
+        userId: row.user_id,
+        fullName: row.full_name || row.alias || row.username || "Usuario",
+        username: row.username || "",
+        alias: row.alias,
+        isActive: Boolean(row.is_active),
+        lunesViernes: Number(row.lunes_viernes ?? 0),
+        sabado: Number(row.sabado ?? 0),
+        domingo: Number(row.domingo ?? 0),
+      }));
+    },
+    staleTime: 15_000,
+  });
+
+  const mutation = useMutation({
+    mutationFn: async (args: {
+      userId: string;
+      lunesViernes: number;
+      sabado: number;
+      domingo: number;
+    }) => {
+      const { error } = await supabase.rpc("guardar_sueldo_personal" as any, {
+        p_user_id: args.userId,
+        p_lunes_viernes: args.lunesViernes,
+        p_sabado: args.sabado,
+        p_domingo: args.domingo,
+      } as any);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: SUELDOS_QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+    },
+  });
+
+  return {
+    ...query,
+    data: query.data ?? [],
+    saveSueldo: mutation.mutateAsync,
+    isSaving: mutation.isPending,
   };
 }

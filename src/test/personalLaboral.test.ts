@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { fechaOperativaTurno, funcionesRealizadas, resolverPrecioDia, resumirPersonal } from "@/lib/personalLaboral";
+import {
+  fechaOperativaTurno,
+  funcionesRealizadas,
+  resolverPrecioDia,
+  resolverSueldoPersonalDia,
+  resumirPersonal,
+} from "@/lib/personalLaboral";
 
 const weekly = {
   branch_id: "pulpo-1",
@@ -72,5 +78,15 @@ describe("reporte de personal por turnos", () => {
     expect(funcionesRealizadas({
       is_operativo: true,
     })).toEqual(["Operativo"]);
+  });
+
+  it("prioriza el sueldo de la persona sobre el precio de sucursal", () => {
+    expect(resolverSueldoPersonalDia(
+      "2026-09-07",
+      "pulpo-1",
+      { lunes_viernes: 20, sabado: 22, domingo: 25 },
+      weekly,
+      [],
+    ).valor).toBe(20);
   });
 });

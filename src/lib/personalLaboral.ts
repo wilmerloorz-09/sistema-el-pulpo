@@ -40,6 +40,22 @@ export function resolverPrecioDia(
   return { valor: Number(semanal.lunes_viernes), tipo: "LUNES_VIERNES" as const };
 }
 
+/** Preferencia: sueldo por persona; si no hay, precio semanal de sucursal/global. */
+export function resolverSueldoPersonalDia(
+  fecha: string,
+  branchId: string,
+  sueldoPersona: Omit<PrecioSemanal, "branch_id"> | null | undefined,
+  semanalSucursal: PrecioSemanal | undefined,
+  especiales: PrecioEspecial[],
+) {
+  return resolverPrecioDia(
+    fecha,
+    branchId,
+    sueldoPersona ? { branch_id: branchId, ...sueldoPersona } : semanalSucursal,
+    especiales,
+  );
+}
+
 export function resumirPersonal<T extends { userId: string; personName: string; valor: number | null }>(rows: T[]) {
   const totals = new Map<string, { userId: string; personName: string; jornadas: number; total: number }>();
   for (const row of rows) {
