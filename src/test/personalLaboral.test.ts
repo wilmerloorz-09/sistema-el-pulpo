@@ -67,4 +67,10 @@ describe("reporte de personal por turnos", () => {
       can_use_caja: true,
     })).toEqual(["Venta / Mesas", "Despacho", "Caja"]);
   });
+
+  it("incluye Operativo en el resumen de funciones del turno", () => {
+    expect(funcionesRealizadas({
+      is_operativo: true,
+    })).toEqual(["Operativo"]);
+  });
 });

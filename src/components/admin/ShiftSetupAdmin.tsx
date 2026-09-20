@@ -115,6 +115,7 @@ interface ShiftUserRow {
   secondary_caja_express_enabled?: boolean;
   secondary_caja_template_id?: string | null;
   can_serve_plates?: boolean;
+  is_operativo?: boolean;
 }
 
 interface ZeroValueSpecialOrder {
@@ -172,10 +173,17 @@ type ShiftUserRoleKey = keyof Pick<
   | "is_supervisor"
   | "can_pack_orders"
   | "can_serve_plates"
+  | "is_operativo"
 >;
 
+/** Roles que habilitan acceso real al sistema (no incluye Operativo ni Sesión doble). */
 function hasOperationalCapability(user: ShiftUserRow) {
   return OPERATIVE_ROLE_KEYS.some((key) => user[key]);
+}
+
+/** Presencia válida en el turno: rol de sistema o solo control de personal (Operativo). */
+function hasShiftPresenceRole(user: ShiftUserRow) {
+  return hasOperationalCapability(user) || Boolean(user.is_operativo);
 }
 
 function normalizeShiftUser(
@@ -201,11 +209,20 @@ function normalizeShiftUser(
     secondary_caja_express_enabled:
       user.secondary_caja_express_enabled ?? false,
     can_serve_plates: user.can_serve_plates ?? false,
+    is_operativo: user.is_operativo ?? false,
   };
 
-  if (useFallbackServeRole && !hasOperationalCapability(normalized)) {
+  if (
+    useFallbackServeRole
+    && !hasOperationalCapability(normalized)
+    && !normalized.is_operativo
+  ) {
     normalized.can_serve_tables = true;
     normalized.can_access_orders = true;
+  }
+
+  if (normalized.is_operativo && !hasOperationalCapability(normalized)) {
+    normalized.can_double_session = false;
   }
 
   if (normalized.can_serve_tables) {
@@ -236,10 +253,12 @@ function sanitizeShiftUserCapability<
     canPackOrders: boolean;
     canServePlates?: boolean;
     canExchangeCash?: boolean;
+    isOperativo?: boolean;
   },
 >(user: T): T {
   const normalizedUser = {
     ...user,
+    isOperativo: Boolean(user.isOperativo),
   };
   const hasOperationalRole =
     normalizedUser.canServeTables ||
@@ -253,8 +272,13 @@ function sanitizeShiftUserCapability<
     normalizedUser.canPackOrders ||
     normalizedUser.canServePlates ||
     normalizedUser.canExchangeCash;
+  const hasPresenceRole = hasOperationalRole || normalizedUser.isOperativo;
 
-  if (!normalizedUser.isEnabled || hasOperationalRole) {
+  if (normalizedUser.isOperativo && !hasOperationalRole) {
+    normalizedUser.canDoubleSession = false as T["canDoubleSession"];
+  }
+
+  if (!normalizedUser.isEnabled || hasPresenceRole) {
     return normalizedUser;
   }
 
@@ -272,6 +296,7 @@ function sanitizeShiftUserCapability<
     isSupervisor: false,
     canPackOrders: false,
     canServePlates: false,
+    isOperativo: false,
   };
 }
 
@@ -297,6 +322,7 @@ function shiftUserRolesSignature(rows: ShiftUserRow[]) {
         is_supervisor: user.is_supervisor,
         can_pack_orders: user.can_pack_orders,
         can_serve_plates: user.can_serve_plates ?? false,
+        is_operativo: user.is_operativo ?? false,
       }))
       .sort((a, b) => a.user_id.localeCompare(b.user_id)),
   );
@@ -681,7 +707,7 @@ const ShiftSetupAdmin = () => {
       }
 
       const shiftUserSelectBase =
-        "user_id, is_enabled, can_serve_tables, can_access_orders, can_edit_orders, can_dispatch_orders, can_manage_products, can_use_caja, can_authorize_order_cancel, can_double_session, is_supervisor, can_pack_orders, secondary_caja_takeout_enabled, secondary_caja_express_enabled, secondary_caja_template_id, can_serve_plates";
+        "user_id, is_enabled, can_serve_tables, can_access_orders, can_edit_orders, can_dispatch_orders, can_manage_products, can_use_caja, can_authorize_order_cancel, can_double_session, is_supervisor, can_pack_orders, secondary_caja_takeout_enabled, secondary_caja_express_enabled, secondary_caja_template_id, can_serve_plates, is_operativo";
       const shiftUserSelectExtended = shiftUserSelectBase;
 
       let shiftUsersData: unknown[] | null = null;
@@ -724,6 +750,7 @@ const ShiftSetupAdmin = () => {
           secondary_caja_express_enabled: boolean;
           secondary_caja_template_id: string | null;
           can_serve_plates: boolean;
+          is_operativo: boolean;
         }
       >();
 
@@ -744,6 +771,7 @@ const ShiftSetupAdmin = () => {
         secondary_caja_express_enabled: boolean | null;
         secondary_caja_template_id: string | null;
         can_serve_plates: boolean | null;
+        is_operativo: boolean | null;
       }>) {
         shiftUsersMap.set(row.user_id, {
           is_enabled: Boolean(row.is_enabled),
@@ -769,6 +797,7 @@ const ShiftSetupAdmin = () => {
           ),
           secondary_caja_template_id: row.secondary_caja_template_id ?? null,
           can_serve_plates: Boolean(row.can_serve_plates),
+          is_operativo: Boolean(row.is_operativo),
         });
       }
 
@@ -1347,19 +1376,19 @@ const ShiftSetupAdmin = () => {
       );
     }
 
-    const usersWithoutOperationalRole = shiftUsersState
+    const usersWithoutPresenceRole = shiftUsersState
       .filter(
         (userState) =>
-          !hasOperationalCapability(userState)
+          !hasShiftPresenceRole(userState)
           && userState.user_id !== shiftCajaSetup.auxiliary?.user_id,
       )
       .map(
         (userState) => userState.full_name || getUserAlias(userState) || "Usuario",
       );
 
-    if (usersWithoutOperationalRole.length > 0) {
+    if (usersWithoutPresenceRole.length > 0) {
       issues.push(
-        `Cada usuario habilitado debe tener al menos un rol operativo. Revisa: ${usersWithoutOperationalRole.join(", ")}.`,
+        `Cada usuario del turno debe tener al menos un rol (Venta, Despacho, Servir, Empacador u Operativo). Revisa: ${usersWithoutPresenceRole.join(", ")}.`,
       );
     }
 
@@ -1587,6 +1616,7 @@ const ShiftSetupAdmin = () => {
           isSupervisor: incomingRow.is_supervisor,
           canPackOrders: incomingRow.can_pack_orders,
           canServePlates: incomingRow.can_serve_plates ?? false,
+          isOperativo: incomingRow.is_operativo ?? false,
         });
         if (!sanitized.isEnabled) {
           throw new Error(
@@ -1608,6 +1638,7 @@ const ShiftSetupAdmin = () => {
           isSupervisor: sanitized.isSupervisor,
           canPackOrders: sanitized.canPackOrders,
           canServePlates: sanitized.canServePlates,
+          isOperativo: sanitized.isOperativo,
         });
       }
 
@@ -2050,6 +2081,7 @@ const ShiftSetupAdmin = () => {
     isSupervisor: boolean;
     canPackOrders: boolean;
     canServePlates?: boolean;
+    isOperativo?: boolean;
   }) => {
     const sanitizedParams = sanitizeShiftUserCapability(params);
 
@@ -2082,6 +2114,7 @@ const ShiftSetupAdmin = () => {
           is_supervisor: sanitizedParams.isSupervisor,
           can_pack_orders: sanitizedParams.canPackOrders,
           can_serve_plates: sanitizedParams.canServePlates ?? false,
+          is_operativo: sanitizedParams.isOperativo ?? false,
         } as any,
         {
           onConflict: "shift_id,user_id",
@@ -2108,6 +2141,7 @@ const ShiftSetupAdmin = () => {
       isSupervisor: boolean;
       canPackOrders: boolean;
       canServePlates?: boolean;
+      isOperativo?: boolean;
     }>,
   ) => {
     for (const entry of sanitizedEnabledUsers) {
@@ -2126,6 +2160,7 @@ const ShiftSetupAdmin = () => {
         isSupervisor: entry.isSupervisor,
         canPackOrders: entry.canPackOrders,
         canServePlates: entry.canServePlates ?? false,
+        isOperativo: entry.isOperativo ?? false,
       });
     }
   };
@@ -2239,6 +2274,7 @@ const ShiftSetupAdmin = () => {
           isSupervisor: u.is_supervisor,
           canPackOrders: u.can_pack_orders,
           canServePlates: u.can_serve_plates ?? false,
+          isOperativo: u.is_operativo ?? false,
           canExchangeCash: u.user_id === shiftCajaSetup.auxiliary?.user_id,
         }),
       )
@@ -2297,6 +2333,7 @@ const ShiftSetupAdmin = () => {
       is_supervisor: entry.isSupervisor,
       can_pack_orders: entry.canPackOrders ?? false,
       can_serve_plates: entry.canServePlates ?? false,
+      is_operativo: entry.isOperativo ?? false,
     }));
 
     const { data, error } = await supabase.rpc(
@@ -2330,6 +2367,7 @@ const ShiftSetupAdmin = () => {
           isSupervisor: entry.isSupervisor,
           canPackOrders: entry.canPackOrders ?? false,
           canServePlates: entry.canServePlates ?? false,
+          isOperativo: entry.isOperativo ?? false,
         })),
       );
       // persistShiftUsersForShift fuerza can_use_caja=false; reaplicar cajero principal/secundarios.
@@ -2385,6 +2423,7 @@ const ShiftSetupAdmin = () => {
             isSupervisor: entry.is_supervisor,
             canPackOrders: entry.can_pack_orders,
             canServePlates: entry.can_serve_plates,
+            isOperativo: entry.is_operativo ?? false,
             canExchangeCash:
               entry.user_id === shiftCajaSetup.auxiliary?.user_id,
           }),
@@ -2459,6 +2498,7 @@ const ShiftSetupAdmin = () => {
             isSupervisor: entry.is_supervisor,
             canPackOrders: entry.can_pack_orders,
             canServePlates: entry.can_serve_plates ?? false,
+            isOperativo: entry.is_operativo ?? false,
             canExchangeCash:
               entry.user_id === shiftCajaSetup.auxiliary?.user_id,
           }),
@@ -3159,13 +3199,41 @@ const ShiftSetupAdmin = () => {
                         </label>
 
                         <label
-                          className="col-span-2 flex min-w-0 items-center gap-1.5 text-xs leading-snug"
+                          className="flex min-w-0 items-center gap-1.5 text-xs leading-snug"
+                          title="Solo control de personal: no puede ingresar al sistema si no tiene otro rol"
+                        >
+                          <Checkbox
+                            className="h-4 w-4"
+                            checked={userState?.is_operativo ?? false}
+                            disabled={isStale}
+                            onCheckedChange={(c) =>
+                              updateUserRole(
+                                branchUser.user_id,
+                                "is_operativo",
+                                c === true,
+                              )
+                            }
+                          />
+                          <span className="min-w-0 truncate text-muted-foreground">
+                            Operativo
+                          </span>
+                        </label>
+
+                        <label
+                          className="flex min-w-0 items-center gap-1.5 text-xs leading-snug"
                           title="Permite acceder al sistema en dos dispositivos a la vez"
                         >
                           <Checkbox
                             className="h-4 w-4"
                             checked={userState?.can_double_session ?? false}
-                            disabled={isStale}
+                            disabled={
+                              isStale
+                              || (
+                                Boolean(userState?.is_operativo)
+                                && Boolean(userState)
+                                && !hasOperationalCapability(userState)
+                              )
+                            }
                             onCheckedChange={(c) =>
                               updateUserRole(
                                 branchUser.user_id,

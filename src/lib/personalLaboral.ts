@@ -63,6 +63,7 @@ export function funcionesRealizadas(row: {
   can_pack_orders?: boolean | null;
   can_use_caja?: boolean | null;
   is_supervisor?: boolean | null;
+  is_operativo?: boolean | null;
 }) {
   const funciones: string[] = [];
   if (row.can_serve_tables) funciones.push("Venta / Mesas");
@@ -71,5 +72,6 @@ export function funcionesRealizadas(row: {
   if (row.can_pack_orders) funciones.push("Empaque");
   if (row.can_use_caja) funciones.push("Caja");
   if (row.is_supervisor) funciones.push("Supervisor");
+  if (row.is_operativo) funciones.push("Operativo");
   return funciones;
 }

@@ -113,7 +113,7 @@ export function usePersonalLaboral(filters: PersonalReportFilters) {
       const shiftIds = shiftRows.map((shift: any) => shift.id);
       const { data: users, error: usersError } = await (supabase as any)
         .from("cash_shift_users")
-        .select("id,shift_id,user_id,is_enabled,can_serve_tables,can_dispatch_orders,can_serve_plates,can_pack_orders,can_use_caja,is_supervisor,profiles(id,first_name,last_name,full_name,alias,username)")
+        .select("id,shift_id,user_id,is_enabled,can_serve_tables,can_dispatch_orders,can_serve_plates,can_pack_orders,can_use_caja,is_supervisor,is_operativo,profiles(id,first_name,last_name,full_name,alias,username)")
         .in("shift_id", shiftIds);
       if (usersError) throw usersError;
 

@@ -63,6 +63,8 @@ const getLoginErrorMessage = (rawMessage?: string) => {
     normalized.includes("sucursal habilitada")
     || normalized.includes("no tienes acceso")
     || normalized.includes("no disponible")
+    || normalized.includes("solo como operativo")
+    || normalized.includes("control de personal")
   ) {
     return message;
   }

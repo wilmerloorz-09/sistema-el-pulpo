@@ -179,6 +179,25 @@ const ProtectedRoute = ({
     location.pathname.startsWith("/campanas") ||
     location.pathname.startsWith("/clientes");
 
+  const hasAnySystemShiftRole =
+    Boolean(shiftGateQuery.data?.canServeTables)
+    || Boolean(shiftGateQuery.data?.canAccessOrders)
+    || Boolean(shiftGateQuery.data?.canEditOrders)
+    || Boolean(shiftGateQuery.data?.canDispatchOrders)
+    || Boolean(shiftGateQuery.data?.canManageProducts)
+    || Boolean(shiftGateQuery.data?.canUseCaja)
+    || Boolean(shiftGateQuery.data?.canPackOrders)
+    || Boolean(shiftGateQuery.data?.canServePlates)
+    || Boolean(shiftGateQuery.data?.canAuthorizeOrderCancel)
+    || Boolean(shiftGateQuery.data?.isSupervisor);
+  const isAuxiliaryAssigned = Boolean(auxiliaryAssignmentQuery.data?.isAssigned);
+  const isPersonnelOnlyOnShift =
+    !isBranchAdmin
+    && !isAuxiliaryAssigned
+    && shiftOpen
+    && userEnabled
+    && !hasAnySystemShiftRole;
+
   const fallback = (() => {
     if (isStaleShift && canAccessTurno) return "/turno";
     if (preferredPath) return preferredPath;
@@ -192,6 +211,31 @@ const ProtectedRoute = ({
     if (canAccessTurno) return "/turno";
     return "/";
   })();
+
+  if (isPersonnelOnlyOnShift) {
+    return (
+      <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center p-4">
+        <div className="w-full max-w-lg rounded-[28px] border border-orange-200 bg-white/90 p-6 text-center shadow-[0_22px_55px_-42px_rgba(249,115,22,0.55)]">
+          <h2 className="font-display text-xl font-black text-foreground">
+            Acceso no disponible
+          </h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Tu usuario esta registrado solo como Operativo en este turno (control de personal). No tienes acceso al sistema.
+          </p>
+          <div className="mt-6">
+            <Button
+              type="button"
+              variant="outline"
+              className="rounded-2xl"
+              onClick={() => void signOut()}
+            >
+              Cerrar sesion
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (isStaleShift && !isAllowedModulePath) {
     if (canAccessTurno) {

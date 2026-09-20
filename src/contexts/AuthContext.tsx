@@ -654,6 +654,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           localStorage.removeItem("loginBranchId");
         }
 
+        const { data: personnelOnlyData, error: personnelOnlyError } = await supabase.rpc(
+          "user_is_shift_personnel_only" as any,
+          { p_branch_id: resolvedBranchId } as any,
+        );
+        if (personnelOnlyError) {
+          logBackgroundTaskError("AuthContext.signIn.personnelOnlyCheck", personnelOnlyError);
+        } else if (personnelOnlyData === true) {
+          try {
+            await supabase.auth.signOut({ scope: "local" });
+          } catch (error) {
+            logBackgroundTaskError("AuthContext.signIn.rollbackSession", error);
+          }
+          throw new Error(
+            "Tu usuario esta registrado solo como Operativo en el turno (control de personal). No tienes acceso al sistema.",
+          );
+        }
+
         touchSessionActivity(userId);
         try {
           const ownedSession = readOwnedSingleSession();
