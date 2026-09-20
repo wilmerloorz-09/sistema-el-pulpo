@@ -369,9 +369,10 @@ export default function PersonalLaboral() {
     </div>
 
     <Tabs defaultValue="reporte">
-      <TabsList className="grid h-auto grid-cols-2">
+      <TabsList className="grid h-auto grid-cols-3">
         <TabsTrigger value="reporte"><Users className="mr-2 h-4 w-4" />Reporte</TabsTrigger>
         <TabsTrigger value="sueldos"><Wallet className="mr-2 h-4 w-4" />Sueldo de Personal</TabsTrigger>
+        <TabsTrigger value="especiales"><CalendarDays className="mr-2 h-4 w-4" />Días especiales</TabsTrigger>
       </TabsList>
 
       <TabsContent value="reporte" className="space-y-4">
@@ -567,8 +568,16 @@ export default function PersonalLaboral() {
             )}
           </CardContent>
         </Card>
+      </TabsContent>
 
-        {!canConfigure ? null : (
+      <TabsContent value="especiales" className="space-y-4">
+        {!canConfigure ? (
+          <Card>
+            <CardContent className="pt-6">
+              No tienes permiso para modificar los días especiales.
+            </CardContent>
+          </Card>
+        ) : (
           <Card>
             <CardHeader>
               <CardTitle>
@@ -618,25 +627,33 @@ export default function PersonalLaboral() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {branchSpecials.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell>{item.fecha}</TableCell>
-                    <TableCell>
-                      {item.branch_id === null
-                        ? "Todas las sucursales"
-                        : branches.find((branch) => branch.id === item.branch_id)?.name ?? "Sucursal"}
+                {branchSpecials.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={canConfigure ? 5 : 4} className="py-10 text-center text-muted-foreground">
+                      No hay días especiales configurados.
                     </TableCell>
-                    <TableCell>{item.nombre}</TableCell>
-                    <TableCell>{money(Number(item.valor))}</TableCell>
-                    {canConfigure && (
-                      <TableCell>
-                        <Button size="sm" variant="destructive" onClick={() => void removeSpecial(item.id)}>
-                          Eliminar
-                        </Button>
-                      </TableCell>
-                    )}
                   </TableRow>
-                ))}
+                ) : (
+                  branchSpecials.map((item) => (
+                    <TableRow key={item.id}>
+                      <TableCell>{item.fecha}</TableCell>
+                      <TableCell>
+                        {item.branch_id === null
+                          ? "Todas las sucursales"
+                          : branches.find((branch) => branch.id === item.branch_id)?.name ?? "Sucursal"}
+                      </TableCell>
+                      <TableCell>{item.nombre}</TableCell>
+                      <TableCell>{money(Number(item.valor))}</TableCell>
+                      {canConfigure && (
+                        <TableCell>
+                          <Button size="sm" variant="destructive" onClick={() => void removeSpecial(item.id)}>
+                            Eliminar
+                          </Button>
+                        </TableCell>
+                      )}
+                    </TableRow>
+                  ))
+                )}
               </TableBody>
             </Table>
           </CardContent>
