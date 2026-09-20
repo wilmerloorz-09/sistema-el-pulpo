@@ -65,6 +65,32 @@ function findDiaEspecial(
   );
 }
 
+/**
+ * Solo sueldo por persona. Los precios por sucursal ya no aplican.
+ * Si la fecha está marcada como día especial, usa dia_especial del empleado.
+ */
+export function resolverSueldoPersonalDia(
+  fecha: string,
+  branchId: string,
+  sueldoPersona: SueldoPersona | null | undefined,
+  especiales: PrecioEspecial[],
+) {
+  if (!sueldoPersona) {
+    return { valor: null, tipo: "SIN_CONFIGURAR" as const };
+  }
+
+  const especial = findDiaEspecial(fecha, branchId, especiales);
+  if (especial) {
+    return { valor: Number(sueldoPersona.dia_especial), tipo: "ESPECIAL" as const };
+  }
+
+  const day = new Date(`${normalizeFechaLaboral(fecha)}T12:00:00-05:00`).getUTCDay();
+  if (day === 6) return { valor: Number(sueldoPersona.sabado), tipo: "SABADO" as const };
+  if (day === 0) return { valor: Number(sueldoPersona.domingo), tipo: "DOMINGO" as const };
+  return { valor: Number(sueldoPersona.lunes_viernes), tipo: "LUNES_VIERNES" as const };
+}
+
+/** @deprecated Solo para compatibilidad de tests; el reporte ya no usa precios por sucursal. */
 export function resolverPrecioDia(
   fecha: string,
   branchId: string,
@@ -79,36 +105,6 @@ export function resolverPrecioDia(
   if (day === 6) return { valor: Number(semanal.sabado), tipo: "SABADO" as const };
   if (day === 0) return { valor: Number(semanal.domingo), tipo: "DOMINGO" as const };
   return { valor: Number(semanal.lunes_viernes), tipo: "LUNES_VIERNES" as const };
-}
-
-/**
- * El reporte prioriza el sueldo configurado por persona.
- * Si la fecha está marcada como día especial, usa dia_especial del empleado.
- */
-export function resolverSueldoPersonalDia(
-  fecha: string,
-  branchId: string,
-  sueldoPersona: SueldoPersona | null | undefined,
-  semanalSucursal: PrecioSemanal | undefined,
-  especiales: PrecioEspecial[],
-) {
-  const especial = findDiaEspecial(fecha, branchId, especiales);
-
-  if (especial) {
-    if (sueldoPersona) {
-      return { valor: Number(sueldoPersona.dia_especial), tipo: "ESPECIAL" as const };
-    }
-    return { valor: Number(especial.valor), tipo: "ESPECIAL" as const };
-  }
-
-  if (sueldoPersona) {
-    const day = new Date(`${normalizeFechaLaboral(fecha)}T12:00:00-05:00`).getUTCDay();
-    if (day === 6) return { valor: Number(sueldoPersona.sabado), tipo: "SABADO" as const };
-    if (day === 0) return { valor: Number(sueldoPersona.domingo), tipo: "DOMINGO" as const };
-    return { valor: Number(sueldoPersona.lunes_viernes), tipo: "LUNES_VIERNES" as const };
-  }
-
-  return resolverPrecioDia(fecha, branchId, semanalSucursal, especiales);
 }
 
 export function resumirPersonal<T extends { userId: string; personName: string; valor: number | null }>(rows: T[]) {

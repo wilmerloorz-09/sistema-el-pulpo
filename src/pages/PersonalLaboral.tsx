@@ -259,8 +259,8 @@ export default function PersonalLaboral() {
   };
 
   const saveSpecial = async () => {
-    if (!configBranchId || !special.fecha || !special.nombre.trim() || special.valor === "") {
-      toast.error("Completa la sucursal, fecha, nombre y precio especial");
+    if (!configBranchId || !special.fecha || !special.nombre.trim()) {
+      toast.error("Completa la sucursal, fecha y nombre del día especial");
       return;
     }
     await run(() => personal.runRpc("guardar_precio_fecha_especial_personal", {
@@ -268,7 +268,7 @@ export default function PersonalLaboral() {
       p_branch_id: configBranchId === ALL_BRANCHES ? null : configBranchId,
       p_fecha: special.fecha,
       p_nombre: special.nombre,
-      p_valor: Number(special.valor),
+      p_valor: Number(special.valor || 0),
     }), "Día especial guardado");
     await diasEspeciales.refetch();
     setSpecial((current) => ({ ...current, nombre: "", valor: "" }));
@@ -643,12 +643,9 @@ export default function PersonalLaboral() {
               <Field label="Nombre">
                 <Input placeholder="Ej. Feriado local" value={special.nombre} onChange={(e) => setSpecial({ ...special, nombre: e.target.value })} />
               </Field>
-              <Field label="Precio de respaldo">
-                <Input type="number" min="0" step="0.01" value={special.valor} onChange={(e) => setSpecial({ ...special, valor: e.target.value })} />
-              </Field>
               <div className="md:col-span-4 space-y-2 text-right">
                 <p className="text-left text-xs text-muted-foreground">
-                  El reporte usa el sueldo “Día especial” de cada empleado. El precio de respaldo solo aplica si la persona aún no tiene sueldo configurado.
+                  Solo marca la fecha como día especial. El monto lo toma del sueldo “Día especial” de cada empleado.
                 </p>
                 <Button disabled={personal.isMutating} onClick={() => void saveSpecial()}>
                   Guardar día especial
@@ -667,14 +664,13 @@ export default function PersonalLaboral() {
                   <TableHead>Fecha</TableHead>
                   <TableHead>Sucursal</TableHead>
                   <TableHead>Nombre</TableHead>
-                  <TableHead>Precio</TableHead>
                   {canConfigure && <TableHead>Acción</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {branchSpecials.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={canConfigure ? 5 : 4} className="py-10 text-center text-muted-foreground">
+                    <TableCell colSpan={canConfigure ? 4 : 3} className="py-10 text-center text-muted-foreground">
                       No hay días especiales configurados.
                     </TableCell>
                   </TableRow>
@@ -688,7 +684,6 @@ export default function PersonalLaboral() {
                           : branches.find((branch) => branch.id === item.branch_id)?.name ?? "Sucursal"}
                       </TableCell>
                       <TableCell>{item.nombre}</TableCell>
-                      <TableCell>{money(Number(item.valor))}</TableCell>
                       {canConfigure && (
                         <TableCell>
                           <Button size="sm" variant="destructive" onClick={() => void removeSpecial(item.id)}>

@@ -2,16 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   fechaOperativaTurno,
   funcionesRealizadas,
-  resolverPrecioDia,
   resolverSueldoPersonalDia,
   resumirPersonal,
 } from "@/lib/personalLaboral";
 
-const weekly = {
-  branch_id: "pulpo-1",
-  lunes_viernes: 12,
-  sabado: 14,
-  domingo: 15,
+const sueldo = {
+  lunes_viernes: 20,
+  sabado: 22,
+  domingo: 25,
+  dia_especial: 40,
 };
 
 describe("reporte de personal por turnos", () => {
@@ -19,39 +18,44 @@ describe("reporte de personal por turnos", () => {
     expect(fechaOperativaTurno("2026-09-08T03:30:00.000Z")).toBe("2026-09-07");
   });
 
-  it("aplica precios de lunes a viernes, sábado y domingo", () => {
-    expect(resolverPrecioDia("2026-09-07", "pulpo-1", weekly, []).valor).toBe(12);
-    expect(resolverPrecioDia("2026-09-12", "pulpo-1", weekly, []).valor).toBe(14);
-    expect(resolverPrecioDia("2026-09-13", "pulpo-1", weekly, []).valor).toBe(15);
+  it("usa solo el sueldo de la persona (sin precios por sucursal)", () => {
+    expect(resolverSueldoPersonalDia("2026-09-07", "pulpo-1", sueldo, []).valor).toBe(20);
+    expect(resolverSueldoPersonalDia("2026-09-12", "pulpo-1", sueldo, []).valor).toBe(22);
+    expect(resolverSueldoPersonalDia("2026-09-13", "pulpo-1", sueldo, []).valor).toBe(25);
   });
 
-  it("el precio de una fecha especial reemplaza al precio semanal", () => {
-    const result = resolverPrecioDia("2026-09-12", "pulpo-1", weekly, [
-      { branch_id: "pulpo-1", fecha: "2026-09-12", valor: 25 },
-    ]);
-    expect(result).toEqual({ valor: 25, tipo: "ESPECIAL" });
-  });
-
-  it("usa una fecha especial global cuando la sucursal no tiene una propia", () => {
-    const result = resolverPrecioDia("2026-09-12", "pulpo-2", weekly, [
-      { branch_id: null, fecha: "2026-09-12", valor: 22 },
-    ]);
-    expect(result).toEqual({ valor: 22, tipo: "ESPECIAL" });
-  });
-
-  it("una fecha especial de sucursal tiene prioridad sobre la global", () => {
-    const result = resolverPrecioDia("2026-09-12", "pulpo-1", weekly, [
-      { branch_id: null, fecha: "2026-09-12", valor: 22 },
-      { branch_id: "pulpo-1", fecha: "2026-09-12", valor: 30 },
-    ]);
-    expect(result).toEqual({ valor: 30, tipo: "ESPECIAL" });
-  });
-
-  it("mantiene los precios separados por sucursal", () => {
-    expect(resolverPrecioDia("2026-09-07", "pulpo-2", undefined, [])).toEqual({
+  it("sin sueldo de persona queda sin configurar", () => {
+    expect(resolverSueldoPersonalDia("2026-09-07", "pulpo-1", null, [])).toEqual({
       valor: null,
       tipo: "SIN_CONFIGURAR",
     });
+  });
+
+  it("usa el sueldo de día especial de la persona cuando la fecha es especial", () => {
+    expect(resolverSueldoPersonalDia(
+      "2026-09-12",
+      "pulpo-1",
+      sueldo,
+      [{ branch_id: "pulpo-1", fecha: "2026-09-12", valor: 99 }],
+    )).toEqual({ valor: 40, tipo: "ESPECIAL" });
+  });
+
+  it("dia especial sin sueldo de persona queda sin configurar", () => {
+    expect(resolverSueldoPersonalDia(
+      "2026-09-12",
+      "pulpo-1",
+      null,
+      [{ branch_id: "pulpo-1", fecha: "2026-09-12", valor: 99 }],
+    )).toEqual({ valor: null, tipo: "SIN_CONFIGURAR" });
+  });
+
+  it("reconoce dia especial aunque la fecha venga con hora", () => {
+    expect(resolverSueldoPersonalDia(
+      "2026-09-12",
+      "pulpo-1",
+      sueldo,
+      [{ branch_id: null, fecha: "2026-09-12T00:00:00+00:00", valor: 99 }],
+    )).toEqual({ valor: 40, tipo: "ESPECIAL" });
   });
 
   it("resume turnos y total por persona", () => {
@@ -78,35 +82,5 @@ describe("reporte de personal por turnos", () => {
     expect(funcionesRealizadas({
       is_operativo: true,
     })).toEqual(["Operativo"]);
-  });
-
-  it("prioriza el sueldo de la persona sobre el precio de sucursal", () => {
-    expect(resolverSueldoPersonalDia(
-      "2026-09-07",
-      "pulpo-1",
-      { lunes_viernes: 20, sabado: 22, domingo: 25, dia_especial: 30 },
-      weekly,
-      [],
-    ).valor).toBe(20);
-  });
-
-  it("usa el sueldo de día especial de la persona cuando la fecha es especial", () => {
-    expect(resolverSueldoPersonalDia(
-      "2026-09-12",
-      "pulpo-1",
-      { lunes_viernes: 20, sabado: 22, domingo: 25, dia_especial: 40 },
-      weekly,
-      [{ branch_id: "pulpo-1", fecha: "2026-09-12", valor: 99 }],
-    )).toEqual({ valor: 40, tipo: "ESPECIAL" });
-  });
-
-  it("reconoce dia especial aunque la fecha venga con hora", () => {
-    expect(resolverSueldoPersonalDia(
-      "2026-09-12",
-      "pulpo-1",
-      { lunes_viernes: 20, sabado: 22, domingo: 25, dia_especial: 40 },
-      weekly,
-      [{ branch_id: null, fecha: "2026-09-12T00:00:00+00:00", valor: 99 }],
-    )).toEqual({ valor: 40, tipo: "ESPECIAL" });
   });
 });

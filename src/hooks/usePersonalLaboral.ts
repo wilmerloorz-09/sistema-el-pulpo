@@ -7,7 +7,6 @@ import {
   normalizeFechaLaboral,
   resolverSueldoPersonalDia,
   type PrecioEspecial,
-  type PrecioSemanal,
   type SueldoPersona,
   type TipoSueldoDia,
 } from "@/lib/personalLaboral";
@@ -20,9 +19,6 @@ export type PersonalReportFilters = {
   /** Vacío = todas las personas. */
   personaIds: string[];
 };
-
-export type PrecioDiaPersonal = PrecioSemanal;
-export type PrecioDiaPersonalGlobal = Omit<PrecioSemanal, "branch_id"> & { singleton: boolean };
 
 export type PrecioFechaEspecialPersonal = PrecioEspecial & {
   id: string;
@@ -61,8 +57,6 @@ type PersonalReportData = {
   rows: PersonalReportRow[];
   /** Personas disponibles según fechas/sucursales (sin filtro de persona). */
   peopleOptions: { id: string; name: string }[];
-  precios: PrecioDiaPersonal[];
-  precioGlobal: PrecioDiaPersonalGlobal | null;
   especiales: PrecioFechaEspecialPersonal[];
 };
 
@@ -105,8 +99,6 @@ export function usePersonalLaboral(filters: PersonalReportFilters) {
         return {
           rows: [],
           peopleOptions: [],
-          precios: [],
-          precioGlobal: null,
           especiales: [],
         };
       }
@@ -118,15 +110,11 @@ export function usePersonalLaboral(filters: PersonalReportFilters) {
 
       const [
         { data: shifts, error: shiftsError },
-        { data: precios, error: pricesError },
-        { data: globalRows, error: globalError },
         { data: especiales, error: specialError },
         { data: sueldos, error: sueldosError },
       ] =
         await Promise.all([
           shiftsQuery,
-          (supabase as any).from("precios_dia_personal").select("*"),
-          (supabase as any).from("precios_dia_personal_global").select("*").limit(1),
           (supabase as any)
             .from("precios_fecha_especial_personal")
             .select("*")
@@ -137,13 +125,10 @@ export function usePersonalLaboral(filters: PersonalReportFilters) {
             .select("user_id,lunes_viernes,sabado,domingo,dia_especial"),
         ]);
       if (shiftsError) throw shiftsError;
-      if (pricesError) throw pricesError;
-      if (globalError) throw globalError;
       if (specialError) throw specialError;
       if (sueldosError) throw sueldosError;
 
       const shiftRows = shifts ?? [];
-      const precioGlobal = globalRows?.[0] ?? null;
       const especialesNorm = (especiales ?? []).map(mapEspecialRow);
       const sueldoByUser = new Map<string, SueldoPersona>(
         (sueldos ?? []).map((row: any) => [
@@ -160,8 +145,6 @@ export function usePersonalLaboral(filters: PersonalReportFilters) {
         return {
           rows: [],
           peopleOptions: [],
-          precios: precios ?? [],
-          precioGlobal,
           especiales: especialesNorm,
         };
       }
@@ -175,20 +158,15 @@ export function usePersonalLaboral(filters: PersonalReportFilters) {
       if (usersError) throw usersError;
 
       const shiftById = new Map(shiftRows.map((shift: any) => [shift.id, shift]));
-      const weeklyByBranch = new Map((precios ?? []).map((price: PrecioDiaPersonal) => [price.branch_id, price]));
       const allRows = (users ?? [])
         .map((user: any): PersonalReportRow | null => {
           const shift: any = shiftById.get(user.shift_id);
           if (!shift) return null;
           const fecha = fechaOperativaTurno(shift.opened_at);
-          const weekly =
-            weeklyByBranch.get(shift.branch_id)
-            ?? (precioGlobal ? { ...precioGlobal, branch_id: shift.branch_id } : undefined);
           const resolved = resolverSueldoPersonalDia(
             fecha,
             shift.branch_id,
             sueldoByUser.get(user.user_id) ?? null,
-            weekly,
             especialesNorm,
           );
           const branch = Array.isArray(shift.branches) ? shift.branches[0] : shift.branches;
@@ -243,8 +221,6 @@ export function usePersonalLaboral(filters: PersonalReportFilters) {
       return {
         rows,
         peopleOptions,
-        precios: precios ?? [],
-        precioGlobal,
         especiales: especialesNorm,
       };
     },
@@ -268,7 +244,7 @@ export function usePersonalLaboral(filters: PersonalReportFilters) {
 
   return {
     ...query,
-    data: query.data ?? { rows: [], peopleOptions: [], precios: [], precioGlobal: null, especiales: [] },
+    data: query.data ?? { rows: [], peopleOptions: [], especiales: [] },
     runRpc: (name: string, args: Record<string, unknown>) => mutation.mutateAsync({ name, args }),
     isMutating: mutation.isPending,
   };
