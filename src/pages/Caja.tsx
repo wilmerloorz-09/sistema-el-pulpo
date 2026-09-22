@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { fetchCashRegisterMovementsForShift, useCaja, type CompletedPaymentsFilters, type PayableOrder } from "@/hooks/useCaja";
+import {
+  fetchCashRegisterMovementsForShift,
+  fetchCompletedPaymentsForShift,
+  useCaja,
+  type CashRegisterOpeningHistoryEntry,
+  type CompletedPaymentsFilters,
+  type PayableOrder,
+} from "@/hooks/useCaja";
 import { useBranch } from "@/contexts/BranchContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
@@ -39,21 +46,21 @@ import {
   buildCashClosureReportHtml, 
   openCashClosureReportWindow,
   shouldAutoPrintCashReport,
-  scopeReportToOpening,
   formatMoney,
   formatDateTime,
   translateCashStatus,
   translatePaymentStatus,
-  type CashShiftSnapshot,
-  type CashOpeningSnapshot,
-  type CompletedPayment,
-  type CashMovement
+  type MethodSummaryEntry,
 } from "@/lib/cashReportUtils";
+import {
+  buildOpeningCashReportSnapshot,
+  openClosedOpeningCashReport,
+} from "@/lib/openingCashReport";
 import { hideCashReport, showCashReport } from "@/lib/cashReportViewerStore";
 import { OPERATIONAL_STALE_MS } from "@/lib/queryEgress";
 import { dbSelect } from "@/services/DatabaseService";
 import type { CompletedPaymentsMethodSummary } from "@/hooks/useCaja";
-import { buildMethodSummaryFromPayments } from "@/lib/paymentSummary";
+import { buildMethodSummaryFromPayments, isPaymentExcludedFromCashSummary } from "@/lib/paymentSummary";
 import { sumNonCashPaymentChangeOut } from "@/lib/transferCashChange";
 import { fetchPaymentsForRegisterSummary } from "@/lib/cajaRegisterPayments";
 import { fetchRegisterOpeningCollectedPayments } from "@/lib/cajaRegisterOpeningSummary";
@@ -868,15 +875,39 @@ const Caja = () => {
   }
 
   const handleRegenerateShiftReport = async () => {
-    const freshMovements = shift?.id
-      ? await fetchCashRegisterMovementsForShift(shift.id)
-      : cashRegisterMovements;
+    if (!shift?.id) return;
+
+    const [freshMovements, freshPayments] = await Promise.all([
+      fetchCashRegisterMovementsForShift(shift.id),
+      fetchCompletedPaymentsForShift(shift.id),
+    ]);
+
+    const methodSummaryMap = new Map<string, { methodName: string; amount: number; paymentCount: number }>();
+    for (const payment of freshPayments) {
+      if (isPaymentExcludedFromCashSummary(payment)) continue;
+      const current = methodSummaryMap.get(payment.method_name) ?? {
+        methodName: payment.method_name,
+        amount: 0,
+        paymentCount: 0,
+      };
+      current.amount += Number(payment.amount ?? 0);
+      current.paymentCount += 1;
+      methodSummaryMap.set(payment.method_name, current);
+    }
+    const methodSummary: MethodSummaryEntry[] = Array.from(methodSummaryMap.values())
+      .map((entry, index) => ({
+        methodId: `shift-method-${index}-${entry.methodName}`,
+        methodName: entry.methodName,
+        amount: entry.amount,
+        paymentCount: entry.paymentCount,
+      }))
+      .sort((left, right) => right.amount - left.amount || left.methodName.localeCompare(right.methodName));
 
     openCashClosureReportWindow({
       branchName: activeBranch?.name ?? "Sucursal",
       shift,
-      completedPayments,
-      methodSummary: completedPaymentsMethodSummary,
+      completedPayments: freshPayments,
+      methodSummary,
       movements: freshMovements,
       closureNotes: shift.notes ?? undefined,
       reportMode: "shift",
@@ -884,23 +915,25 @@ const Caja = () => {
     });
   };
 
-  const handleReprintOpeningReport = async (opening: CashOpeningSnapshot) => {
-    const freshMovements = shift?.id
-      ? await fetchCashRegisterMovementsForShift(shift.id)
-      : cashRegisterMovements;
+  const handleReprintOpeningReport = async (opening: CashRegisterOpeningHistoryEntry) => {
+    if (!activeBranch?.id) {
+      toast.error("No hay sucursal activa para reimprimir el reporte.");
+      return;
+    }
+    if (opening.status !== "cerrada" || !opening.closed_at) {
+      toast.error("Solo se pueden reimprimir aperturas ya cerradas.");
+      return;
+    }
 
-    openCashClosureReportWindow({
-      ...scopeReportToOpening({
-        branchName: activeBranch?.name ?? "Sucursal",
-        shift,
-        opening,
-        completedPayments,
-        movements: freshMovements,
-        closureNotes: opening.notes ?? undefined,
-        transferCashChangeTotal: shiftSummaryTransferCashChange,
-      }),
-      reportMode: "opening",
-    });
+    try {
+      await openClosedOpeningCashReport({
+        openingId: opening.id,
+        branchName: activeBranch.name ?? "Sucursal",
+        branchId: activeBranch.id,
+      });
+    } catch (error: any) {
+      toast.error(error?.message ?? "No se pudo reimprimir el reporte de caja.");
+    }
   };
 
   if (!userCajaIsOpen && activeTab !== "completed") {
@@ -1184,60 +1217,103 @@ const Caja = () => {
 </html>`);
 
     const closedAtIso = new Date().toISOString();
-    const closedOpening: CashOpeningSnapshot | null =
-      shift.openingHistory.find((entry) => entry.status === "abierta" && entry.is_current)
-        ? {
-            ...(shift.openingHistory.find((entry) => entry.status === "abierta" && entry.is_current) as CashOpeningSnapshot),
-            status: "cerrada" as const,
-            closed_at: closedAtIso,
-            notes: notes ?? (shift.openingHistory.find((entry) => entry.status === "abierta" && entry.is_current) as CashOpeningSnapshot).notes,
-            is_current: false,
-          }
-        : null;
-    const reportSnapshot = {
-      branchName: activeBranch?.name ?? "Sucursal",
-      shift: {
-        ...shift,
-        caja_status: "CLOSED" as const,
-        notes: notes ?? shift.notes,
-        openingHistory: shift.openingHistory.map((entry) =>
-          entry.status === "abierta" && entry.is_current
-            ? {
-                ...entry,
-                status: "cerrada" as const,
-                closed_at: closedAtIso,
-                notes: notes ?? entry.notes,
-                is_current: false,
-              }
-            : entry,
-        ),
-      },
-      completedPayments,
-      movements: cashRegisterMovements,
-      closureNotes: notes,
-    };
+    const currentOpeningEntry = (shift.openingHistory.find(
+      (entry) => entry.status === "abierta" && entry.is_current,
+    ) ?? null) as CashRegisterOpeningHistoryEntry | null;
 
     try {
       await closeCashRegister.mutateAsync(notes);
 
-      const reportParams = closedOpening
-        ? {
-            ...scopeReportToOpening({
-              ...reportSnapshot,
-              opening: closedOpening,
-              denominationSnapshot: shift.denoms,
-              transferCashChangeTotal: shiftSummaryTransferCashChange,
-            }),
-            reportMode: "opening" as const,
-            includeToolbar: false,
-          }
-        : {
-            ...reportSnapshot,
-            methodSummary: completedPaymentsMethodSummary,
-            transferCashChangeTotal: shiftSummaryTransferCashChange,
-            reportMode: "shift" as const,
-            includeToolbar: false,
+      let reportParams;
+      if (currentOpeningEntry?.id && currentOpeningEntry.cashier_id) {
+        // Foto con el closed_at real de la base (no la lista en memoria de la pantalla).
+        const { data: closedOpeningRow } = await supabase
+          .from("cash_register_openings")
+          .select("closed_at, notes")
+          .eq("id", currentOpeningEntry.id)
+          .maybeSingle();
+        const reportClosedAt = closedOpeningRow?.closed_at ?? closedAtIso;
+        const reportNotes = notes ?? closedOpeningRow?.notes ?? currentOpeningEntry.notes ?? undefined;
+
+        const closedOpening = {
+          opened_at: currentOpeningEntry.opened_at,
+          closed_at: reportClosedAt,
+          status: "cerrada",
+          cashier_name: currentOpeningEntry.cashier_name,
+          cashier_username: currentOpeningEntry.cashier_username,
+          initial_total: Number(currentOpeningEntry.initial_total ?? 0),
+          notes: reportNotes ?? null,
+        };
+
+        reportParams = {
+          ...(await buildOpeningCashReportSnapshot({
+            branchName: activeBranch?.name ?? "Sucursal",
+            shiftId: shift.id,
+            openingId: currentOpeningEntry.id,
+            cashierId: currentOpeningEntry.cashier_id,
+            openedAt: currentOpeningEntry.opened_at,
+            closedAt: reportClosedAt,
+            opening: closedOpening,
+            closureNotes: reportNotes,
+            shiftMeta: {
+              opened_at: shift.opened_at,
+              caja_status: "CLOSED",
+              active_tables_count: Number(shift.active_tables_count ?? 0),
+            },
+            // Conteos físicos del momento del cierre (ya persistidos / en memoria).
+            denominationSnapshot: shift.denoms.map((d) => ({
+              value: d.value,
+              qty_initial: d.qty_initial,
+              qty_current: d.qty_current,
+              label: d.label,
+              display_order: d.display_order,
+              denomination_type: d.denomination_type,
+            })),
+          })),
+          includeToolbar: false,
+        };
+      } else {
+        const [freshMovements, freshPayments] = await Promise.all([
+          fetchCashRegisterMovementsForShift(shift.id),
+          fetchCompletedPaymentsForShift(shift.id),
+        ]);
+        const methodSummaryMap = new Map<string, { methodName: string; amount: number; paymentCount: number }>();
+        for (const payment of freshPayments) {
+          if (isPaymentExcludedFromCashSummary(payment)) continue;
+          const current = methodSummaryMap.get(payment.method_name) ?? {
+            methodName: payment.method_name,
+            amount: 0,
+            paymentCount: 0,
           };
+          current.amount += Number(payment.amount ?? 0);
+          current.paymentCount += 1;
+          methodSummaryMap.set(payment.method_name, current);
+        }
+        const methodSummary: MethodSummaryEntry[] = Array.from(methodSummaryMap.values())
+          .map((entry, index) => ({
+            methodId: `shift-method-${index}-${entry.methodName}`,
+            methodName: entry.methodName,
+            amount: entry.amount,
+            paymentCount: entry.paymentCount,
+          }))
+          .sort((left, right) => right.amount - left.amount || left.methodName.localeCompare(right.methodName));
+
+        reportParams = {
+          branchName: activeBranch?.name ?? "Sucursal",
+          shift: {
+            ...shift,
+            caja_status: "CLOSED" as const,
+            notes: notes ?? shift.notes,
+          },
+          completedPayments: freshPayments,
+          methodSummary,
+          movements: freshMovements,
+          closureNotes: notes,
+          transferCashChangeTotal: shiftSummaryTransferCashChange,
+          reportMode: "shift" as const,
+          includeToolbar: false,
+        };
+      }
 
       const reportHtml = buildCashClosureReportHtml(reportParams);
 

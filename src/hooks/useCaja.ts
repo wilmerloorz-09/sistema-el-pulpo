@@ -277,7 +277,8 @@ export async function fetchCompletedPaymentsForShift(shiftId: string): Promise<C
       id, 
       created_at, 
       amount, 
-      notes, 
+      notes,
+      status,
       order_id, 
       payment_method_id, 
       created_by,
@@ -290,18 +291,27 @@ export async function fetchCompletedPaymentsForShift(shiftId: string): Promise<C
 
   if (error) throw error;
 
-  return (data ?? []).map((row: any) => ({
-    id: row.id,
-    created_at: row.created_at,
-    amount: Number(row.amount ?? 0),
-    notes: row.notes,
-    method_name: row.payment_methods?.name || "N/D",
-    order_code: cleanOrderCode(row.orders?.order_code),
-    order_number: row.orders?.order_number,
-    table_name: row.orders?.table_name_snapshot,
-    cashier_name: getUserDisplayName(row.profiles) || "N/D",
-    status: row.status || "APPLIED"
-  })) as any[];
+  return (data ?? []).map((row: any) => {
+    const notesText = String(row.notes ?? "");
+    let status = String(row.status || "APPLIED");
+    if (notesText.includes("VOIDED:") || status.toLowerCase() === "voided") status = "VOIDED";
+    else if (notesText.includes("REVERSED:") || status.toLowerCase() === "reversed") status = "REVERSED";
+    else if (status.toUpperCase() === "PARTIAL") status = "PARTIAL";
+    else status = "APPLIED";
+
+    return {
+      id: row.id,
+      created_at: row.created_at,
+      amount: Number(row.amount ?? 0),
+      notes: row.notes,
+      method_name: row.payment_methods?.name || "N/D",
+      order_code: cleanOrderCode(row.orders?.order_code),
+      order_number: row.orders?.order_number,
+      table_name: row.orders?.table_name_snapshot,
+      cashier_name: getUserDisplayName(row.profiles) || "N/D",
+      status,
+    };
+  }) as any[];
 }
 
 export async function fetchShiftSnapshot(shiftId: string): Promise<CashShiftSnapshot> {

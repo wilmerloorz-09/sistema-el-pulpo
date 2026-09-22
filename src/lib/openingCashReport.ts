@@ -2,6 +2,7 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   openCashClosureReportWindow,
   scopeReportToOpening,
+  type CashClosureReportParams,
   type CashOpeningSnapshot,
   type CashShiftSnapshot,
   type CompletedPayment,
@@ -154,7 +155,7 @@ async function fetchOpeningDenomSnapshot(params: {
     .sort((a, b) => a.display_order - b.display_order || a.value - b.value);
 }
 
-async function fetchPaymentsForOpeningWindow(params: {
+export async function fetchPaymentsForOpeningWindow(params: {
   cashierId: string;
   openedAt: string;
   closedAt: string;
@@ -194,6 +195,142 @@ async function fetchPaymentsForOpeningWindow(params: {
   }));
 }
 
+async function fetchTransferCashChangeForPayments(payments: CompletedPayment[]): Promise<number> {
+  const paymentIds = payments.map((p) => p.id);
+  if (paymentIds.length === 0) return 0;
+
+  const { data: changeOutRows, error: changeError } = await (supabase.from("cash_movements") as any)
+    .select("payment_id, denomination_id, qty_delta, movement_type")
+    .in("payment_id", paymentIds)
+    .eq("movement_type", "CHANGE_OUT");
+  if (changeError) throw changeError;
+
+  const denomIds = Array.from(
+    new Set(
+      ((changeOutRows ?? []) as Array<{ denomination_id?: string | null }>)
+        .map((row) => row.denomination_id)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  );
+  const { data: denomValues } = denomIds.length > 0
+    ? await supabase.from("denominations").select("id, value").in("id", denomIds)
+    : { data: [] as Array<{ id: string; value: number }> };
+
+  const denominationValueById = Object.fromEntries(
+    (denomValues ?? []).map((d) => [d.id, Number(d.value ?? 0)]),
+  );
+  const { data: payMeta } = await supabase
+    .from("payments")
+    .select("id, payment_method_id, notes, status")
+    .in("id", paymentIds);
+
+  const methodByPaymentId = Object.fromEntries(
+    ((payMeta ?? []) as any[]).map((p) => [p.id, p.payment_method_id]),
+  );
+  const methodNames: Record<string, string> = {};
+  for (const payment of payments) {
+    const methodId = methodByPaymentId[payment.id];
+    if (methodId) methodNames[methodId] = payment.method_name;
+  }
+
+  return sumNonCashPaymentChangeOut({
+    payments: ((payMeta ?? []) as any[]).map((p) => ({
+      id: p.id,
+      payment_method_id: p.payment_method_id,
+      notes: p.notes,
+      status: p.status,
+    })),
+    methodNameById: methodNames,
+    changeOutMovements: changeOutRows ?? [],
+    denominationValueById,
+  });
+}
+
+export type BuildOpeningCashReportSnapshotParams = {
+  branchName: string;
+  shiftId: string;
+  openingId: string;
+  cashierId: string;
+  openedAt: string;
+  closedAt: string;
+  opening: CashOpeningSnapshot & { cashier_username?: string | null; notes?: string | null };
+  closureNotes?: string;
+  /** Si se pasa, evita releer el turno (p. ej. cierre en vivo). */
+  shiftMeta?: Pick<CashShiftSnapshot, "opened_at" | "caja_status" | "active_tables_count">;
+  /** Si se pasa, usa este conteo en vez de releer denominaciones. */
+  denominationSnapshot?: CashShiftSnapshot["denoms"];
+};
+
+/**
+ * Foto completa de una apertura: cobros, métodos, vueltos y denominaciones
+ * siempre desde la base (o snapshot explícito), sin depender de pantallas en memoria.
+ */
+export async function buildOpeningCashReportSnapshot(
+  params: BuildOpeningCashReportSnapshotParams,
+): Promise<CashClosureReportParams> {
+  const [denoms, payments, movements, shiftRow] = await Promise.all([
+    params.denominationSnapshot
+      ? Promise.resolve(params.denominationSnapshot)
+      : fetchOpeningDenomSnapshot({
+          shiftId: params.shiftId,
+          openingId: params.openingId,
+          cashierId: params.cashierId,
+        }),
+    fetchPaymentsForOpeningWindow({
+      cashierId: params.cashierId,
+      openedAt: params.openedAt,
+      closedAt: params.closedAt,
+    }),
+    fetchCashRegisterMovementsForShift(params.shiftId),
+    params.shiftMeta
+      ? Promise.resolve(null)
+      : supabase
+          .from("cash_shifts")
+          .select("id, opened_at, caja_status, active_tables_count")
+          .eq("id", params.shiftId)
+          .single()
+          .then(({ data, error }) => {
+            if (error) throw error;
+            return data;
+          }),
+  ]);
+
+  const transferCashChangeTotal = await fetchTransferCashChangeForPayments(payments);
+
+  const shiftSnapshot: CashShiftSnapshot = {
+    id: params.shiftId,
+    opened_at: params.shiftMeta?.opened_at ?? shiftRow!.opened_at,
+    caja_status: params.shiftMeta?.caja_status ?? shiftRow!.caja_status,
+    active_tables_count: params.shiftMeta?.active_tables_count
+      ?? Number(shiftRow!.active_tables_count ?? 0),
+    denoms,
+    openingHistory: [params.opening],
+  };
+
+  return {
+    ...scopeReportToOpening({
+      branchName: params.branchName,
+      shift: shiftSnapshot,
+      opening: params.opening,
+      completedPayments: payments,
+      movements: movements.map((m) => ({
+        id: m.id,
+        createdAt: m.createdAt,
+        movementType: m.movementType,
+        amount: m.amount,
+        reason: m.reason,
+        recordedBy: m.recordedBy,
+        recordedByName: m.recordedByName ?? undefined,
+        recordedByUsername: m.recordedByUsername ?? undefined,
+      })),
+      closureNotes: params.closureNotes,
+      denominationSnapshot: denoms,
+      transferCashChangeTotal,
+    }),
+    reportMode: "opening",
+  };
+}
+
 /**
  * Genera y abre el reporte HTML de una apertura de caja ya cerrada.
  */
@@ -231,13 +368,6 @@ export async function openClosedOpeningCashReport(params: {
     throw new Error("La apertura no tiene fecha de cierre.");
   }
 
-  const { data: shiftRow, error: shiftError } = await supabase
-    .from("cash_shifts")
-    .select("id, opened_at, caja_status, active_tables_count, notes, status")
-    .eq("id", openingRow.shift_id)
-    .single();
-  if (shiftError) throw shiftError;
-
   const profile = (openingRow as any).profiles ?? {};
   const opening: CashOpeningSnapshot & { cashier_username?: string | null; notes?: string | null } = {
     opened_at: openingRow.opened_at,
@@ -248,99 +378,16 @@ export async function openClosedOpeningCashReport(params: {
     initial_total: Number(openingRow.initial_total ?? 0),
   };
 
-  const [denoms, payments, movements] = await Promise.all([
-    fetchOpeningDenomSnapshot({
-      shiftId: openingRow.shift_id,
-      openingId: openingRow.id,
-      cashierId: openingRow.cashier_id,
-    }),
-    fetchPaymentsForOpeningWindow({
-      cashierId: openingRow.cashier_id,
-      openedAt: openingRow.opened_at,
-      closedAt: openingRow.closed_at,
-    }),
-    fetchCashRegisterMovementsForShift(openingRow.shift_id),
-  ]);
-
-  const paymentIds = payments.map((p) => p.id);
-  let transferCashChangeTotal = 0;
-  if (paymentIds.length > 0) {
-    const { data: changeOutRows, error: changeError } = await (supabase.from("cash_movements") as any)
-      .select("payment_id, denomination_id, qty_delta, movement_type")
-      .in("payment_id", paymentIds)
-      .eq("movement_type", "CHANGE_OUT");
-    if (changeError) throw changeError;
-
-    const denomIds = Array.from(
-      new Set(
-        ((changeOutRows ?? []) as Array<{ denomination_id?: string | null }>)
-          .map((row) => row.denomination_id)
-          .filter((id): id is string => Boolean(id)),
-      ),
-    );
-    const { data: denomValues } = denomIds.length > 0
-      ? await supabase.from("denominations").select("id, value").in("id", denomIds)
-      : { data: [] as Array<{ id: string; value: number }> };
-
-    const denominationValueById = Object.fromEntries(
-      (denomValues ?? []).map((d) => [d.id, Number(d.value ?? 0)]),
-    );
-    const { data: payMeta } = await supabase
-      .from("payments")
-      .select("id, payment_method_id, notes, status")
-      .in("id", paymentIds);
-
-    const methodByPaymentId = Object.fromEntries(
-      ((payMeta ?? []) as any[]).map((p) => [p.id, p.payment_method_id]),
-    );
-    const methodNames: Record<string, string> = {};
-    for (const payment of payments) {
-      const methodId = methodByPaymentId[payment.id];
-      if (methodId) methodNames[methodId] = payment.method_name;
-    }
-
-    transferCashChangeTotal = sumNonCashPaymentChangeOut({
-      payments: ((payMeta ?? []) as any[]).map((p) => ({
-        id: p.id,
-        payment_method_id: p.payment_method_id,
-        notes: p.notes,
-        status: p.status,
-      })),
-      methodNameById: methodNames,
-      changeOutMovements: changeOutRows ?? [],
-      denominationValueById,
-    });
-  }
-
-  const shiftSnapshot: CashShiftSnapshot = {
-    id: shiftRow.id,
-    opened_at: shiftRow.opened_at,
-    caja_status: shiftRow.caja_status,
-    active_tables_count: Number(shiftRow.active_tables_count ?? 0),
-    denoms,
-    openingHistory: [opening],
-  };
-
-  openCashClosureReportWindow({
-    ...scopeReportToOpening({
-      branchName: params.branchName,
-      shift: shiftSnapshot,
-      opening,
-      completedPayments: payments,
-      movements: movements.map((m) => ({
-        id: m.id,
-        createdAt: m.createdAt,
-        movementType: m.movementType,
-        amount: m.amount,
-        reason: m.reason,
-        recordedBy: m.recordedBy,
-        recordedByName: m.recordedByName ?? undefined,
-        recordedByUsername: m.recordedByUsername ?? undefined,
-      })),
-      closureNotes: openingRow.notes ?? undefined,
-      denominationSnapshot: denoms,
-      transferCashChangeTotal,
-    }),
-    reportMode: "opening",
+  const reportParams = await buildOpeningCashReportSnapshot({
+    branchName: params.branchName,
+    shiftId: openingRow.shift_id,
+    openingId: openingRow.id,
+    cashierId: openingRow.cashier_id,
+    openedAt: openingRow.opened_at,
+    closedAt: openingRow.closed_at,
+    opening,
+    closureNotes: openingRow.notes ?? undefined,
   });
+
+  openCashClosureReportWindow(reportParams);
 }

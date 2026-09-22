@@ -137,7 +137,10 @@ export const scopeReportToOpening = (params: {
   transferCashChangeTotal?: number;
 }) => {
   const openedAtMs = new Date(params.opening.opened_at).getTime();
-  const closedAtMs = new Date(params.opening.closed_at ?? params.opening.opened_at).getTime();
+  // Si aún no hay closed_at, usar "ahora" (nunca opened_at: eso vacía todos los cobros).
+  const closedAtMs = params.opening.closed_at
+    ? new Date(params.opening.closed_at).getTime()
+    : Date.now();
 
   const filteredPayments = params.completedPayments.filter((payment) => {
     const paymentTime = new Date(payment.created_at).getTime();
