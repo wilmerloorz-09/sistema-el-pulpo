@@ -358,9 +358,11 @@ export const buildCashClosureReportHtml = (params: CashClosureReportParams) => {
         padding: 8px 14px; min-height: 40px; cursor: pointer;
       }
       .toolbar button.primary { background: #ea580c; border-color: #ea580c; color: #fff; }
-      .header { display:flex; justify-content:space-between; gap:10px; margin-bottom:10px; flex-wrap: wrap; }
-      .header h1 { font-size: 15px; font-weight: 700; }
-      .header p { font-size: 10px; color: #374151; line-height: 1.3; }
+      .header { display:flex; justify-content:space-between; gap:12px; margin-bottom:14px; flex-wrap: wrap; }
+      .header h1 { font-size: 18px; font-weight: 700; margin-bottom: 4px; }
+      .header .branch-name { font-size: 17px; font-weight: 700; color: #111827; line-height: 1.35; margin-bottom: 2px; }
+      .header p { font-size: 14px; color: #1f2937; line-height: 1.45; }
+      .header .meta p { font-size: 12px; color: #4b5563; line-height: 1.4; }
       .grid { display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:6px; margin:8px 0; }
       @media (min-width: 900px) {
         .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -371,8 +373,16 @@ export const buildCashClosureReportHtml = (params: CashClosureReportParams) => {
       .label { font-size:9px; text-transform:uppercase; letter-spacing:0.02em; color:#6b7280; margin-bottom:2px; }
       .value { font-size:14px; font-weight:700; line-height:1.15; }
       .sub { font-size:9px; color:#4b5563; margin-top:2px; line-height:1.25; }
+      /* Resumen (métricas + estados): más compacto y tipografía menor */
+      .summary-compact { margin: 4px 0 6px; gap: 4px; }
+      .summary-compact .card { padding: 4px 6px; border-radius: 6px; }
+      .summary-compact .label { font-size: 7.5px; margin-bottom: 1px; letter-spacing: 0.01em; }
+      .summary-compact .value { font-size: 11px; line-height: 1.1; }
+      .summary-compact .sub { font-size: 7.5px; margin-top: 1px; line-height: 1.15; }
       .section { margin-top:10px; }
       .section h2 { font-size:12px; font-weight:700; margin-bottom:4px; }
+      .section.summary-section { margin-top: 6px; }
+      .section.summary-section h2 { font-size: 10px; margin-bottom: 2px; }
       .table-wrap { width:100%; overflow-x:auto; -webkit-overflow-scrolling: touch; }
       /* separate: evita bordes cortando el texto (collapse + WebView/html2canvas). */
       table {
@@ -405,6 +415,19 @@ export const buildCashClosureReportHtml = (params: CashClosureReportParams) => {
       }
       tbody tr:nth-child(odd) td { background: #ffffff; }
       tbody tr:nth-child(even) td { background: #f8fafc; }
+      /* Tabla de denominaciones: tipografía más grande y legible */
+      .denoms-section { margin-top: 14px; }
+      .denoms-section h2 { font-size: 14px; margin-bottom: 6px; }
+      .denoms-section .denoms-meta { font-size: 12px !important; color: #374151 !important; margin-bottom: 6px !important; }
+      table.denoms-table { font-size: 14px; line-height: 1.45; margin-top: 8px; }
+      table.denoms-table th {
+        font-size: 12px;
+        padding: 10px 9px;
+      }
+      table.denoms-table td {
+        padding: 10px 9px;
+        font-size: 14px;
+      }
       .num { text-align: right; white-space: nowrap; }
       .muted { color: #6b7280; text-align: center; }
       .notes { white-space: pre-wrap; margin-top: 6px; padding: 8px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fafafa; font-size: 10px; }
@@ -419,6 +442,14 @@ export const buildCashClosureReportHtml = (params: CashClosureReportParams) => {
         .toolbar { display: none !important; }
         .page-break { page-break-before: always; break-before: page; }
         .page-summary { page-break-after: avoid; }
+        .header h1 { font-size: 17px; }
+        .header .branch-name { font-size: 16px; }
+        .header p { font-size: 13px; }
+        .summary-compact .value { font-size: 10.5px; }
+        .summary-compact .label, .summary-compact .sub { font-size: 7px; }
+        table.denoms-table { font-size: 13px; }
+        table.denoms-table th { font-size: 11px; padding: 8px 7px; }
+        table.denoms-table td { font-size: 13px; padding: 8px 7px; }
         .page-detail table { font-size: 9.5px; }
         .page-detail th, .page-detail td { padding: 6px 5px; }
       }
@@ -469,7 +500,7 @@ export const buildCashClosureReportHtml = (params: CashClosureReportParams) => {
     <div class="header">
       <div>
         <h1>${escapeHtml(reportTitle)}</h1>
-        <p>${escapeHtml(params.branchName)}</p>
+        <p class="branch-name">${escapeHtml(params.branchName)}</p>
         ${isOpeningReport && currentOpening ? `
           <p>Apertura: ${escapeHtml(formatDateTime(currentOpening.opened_at))}</p>
           <p>Cierre: ${escapeHtml(currentOpening.closed_at ? formatDateTime(currentOpening.closed_at) : "-")}</p>
@@ -480,14 +511,14 @@ export const buildCashClosureReportHtml = (params: CashClosureReportParams) => {
           <p>Turno abierto: ${escapeHtml(formatDateTime(params.shift.opened_at))}</p>
         `}
       </div>
-      <div>
+      <div class="meta">
         <p>Generado: ${escapeHtml(formatDateTime(new Date().toISOString()))}</p>
         <p>Estado caja: ${escapeHtml(translateCashStatus(params.shift.caja_status))}</p>
         <p>Mesas activas al cierre: ${escapeHtml(String(params.shift.active_tables_count ?? 0))}</p>
       </div>
     </div>
 
-    <div class="grid">
+    <div class="grid summary-compact">
       <div class="card"><div class="label">Apertura</div><div class="value">${escapeHtml(formatMoney(totalInitial))}</div></div>
       <div class="card"><div class="label">Caja actual</div><div class="value">${escapeHtml(formatMoney(totalCurrent))}</div></div>
       <div class="card"><div class="label">Diferencia</div><div class="value">${escapeHtml(formatMoney(physicalDelta))}</div></div>
@@ -504,9 +535,9 @@ export const buildCashClosureReportHtml = (params: CashClosureReportParams) => {
       </div>
     </div>
 
-    <div class="section">
+    <div class="section summary-section">
       <h2>Resumen por estado de pago</h2>
-      <div class="grid">${statusCards}</div>
+      <div class="grid summary-compact">${statusCards}</div>
     </div>
 
     <div class="section">
@@ -522,17 +553,17 @@ export const buildCashClosureReportHtml = (params: CashClosureReportParams) => {
     </div>
 
     ${isOpeningReport ? `
-      <div class="section">
+      <div class="section denoms-section">
         <h2>Detalle de monedas y billetes al cierre</h2>
         ${currentOpening ? `
-          <p style="font-size:10px;color:#4b5563;margin-bottom:4px;">
+          <p class="denoms-meta">
             Total en caja al cierre: <strong>${escapeHtml(formatMoney(totalCurrent))}</strong>
             · Cajero: ${escapeHtml(currentOpening.cashier_username || currentOpening.cashier_name || "Sin nombre")}
           </p>
         ` : ""}
         ${hasDenominationSnapshot ? `
         <div class="table-wrap">
-        <table>
+        <table class="denoms-table">
           <thead>
             <tr><th>Denominación</th><th>Tipo</th><th class="num">Valor</th><th class="num">Cantidad</th><th class="num">Subtotal</th></tr>
           </thead>
