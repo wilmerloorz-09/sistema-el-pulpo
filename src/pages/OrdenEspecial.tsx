@@ -80,13 +80,14 @@ const fetchActiveSpecialOrders = async (branchId: string): Promise<SpecialOrderC
   if (!openShiftId) return [];
 
   const specialOrders = await dbSelect<any>("orders", {
-    select: "id, order_number, order_code, status, created_at, created_by, special_total_manual, special_origin_table_id, table_name_snapshot, order_type, order_items(id)",
+    select: "id, order_number, order_code, status, created_at, created_by, special_total_manual, special_origin_table_id, table_name_snapshot, order_type, paid_at, order_items(id)",
     filters: [
       { column: "branch_id", op: "eq", value: branchId },
       { column: "is_special", op: "eq", value: true },
       { column: "is_tray_order", op: "eq", value: false },
       { column: "cash_shift_id", op: "eq", value: openShiftId },
-      { column: "status", op: "in", value: ["DRAFT", "SENT_TO_KITCHEN", "READY", "PAID", "KITCHEN_DISPATCHED"] },
+      // Solo activas de operación. PAID / despachadas no deben listarse aquí.
+      { column: "status", op: "in", value: ["DRAFT", "SENT_TO_KITCHEN", "READY"] },
     ],
     orderBy: { column: "created_at", ascending: true },
   });
@@ -127,6 +128,7 @@ const fetchActiveSpecialOrders = async (branchId: string): Promise<SpecialOrderC
 
   return specialOrders
     .filter((order: any) => !dispatchedOrderIds.has(order.id))
+    .filter((order: any) => !order.paid_at)
     .filter((order: any) => {
       const itemCount = Array.isArray(order.order_items) ? order.order_items.length : 0;
       return String(order.status ?? "") !== "DRAFT" || itemCount > 0;
