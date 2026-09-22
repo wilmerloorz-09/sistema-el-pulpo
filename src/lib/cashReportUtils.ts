@@ -322,7 +322,7 @@ export const buildCashClosureReportHtml = (params: CashClosureReportParams) => {
   const isOpeningReport = params.reportMode === "opening";
   const currentOpening = params.shift.openingHistory[0] ?? null;
   const hasDenominationSnapshot = sortedDenoms.length > 0;
-  const reportTitle = isOpeningReport ? "Reporte por apertura de caja" : "Reporte consolidado del turno";
+  const reportTitle = isOpeningReport ? "Reporte de cierre de caja" : "Reporte consolidado del turno";
 
   return `<!doctype html>
 <html lang="es">

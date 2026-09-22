@@ -75,7 +75,7 @@ export function buildCashReportEscPos(params: CashClosureReportParams): Uint8Arr
 
   const isOpeningReport = params.reportMode === "opening";
   const currentOpening = params.shift.openingHistory[0] ?? null;
-  const reportTitle = isOpeningReport ? "REPORTE APERTURA CAJA" : "REPORTE CIERRE CAJA";
+  const reportTitle = isOpeningReport ? "REPORTE CIERRE CAJA" : "REPORTE CONSOLIDADO TURNO";
 
   const enc = new EscPosEncoder();
   enc.initialize().codePageLatin1();
