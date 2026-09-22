@@ -2,8 +2,8 @@ import { Capacitor } from "@capacitor/core";
 import { prefersDedicatedPrintWindow } from "@/lib/printHtmlDocument";
 
 export type CashReportPdfResult =
-  | { ok: true; filename: string; mode: "download" | "share" | "open" }
-  | { ok: false; message: string };
+  | { ok: true; filename: string; mode: "download" | "share" | "open"; pdf?: BuiltCashReportPdf }
+  | { ok: false; message: string; pdf?: BuiltCashReportPdf };
 
 export type BuiltCashReportPdf = {
   blob: Blob;
@@ -34,13 +34,17 @@ function uint8ToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-/** Escala baja en móvil/tablet: scale:2 suele agotar memoria y fallar en silencio. */
+function isShareAbort(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const name = "name" in error ? String((error as { name?: unknown }).name ?? "") : "";
+  const message = error instanceof Error ? error.message : String(error);
+  return /abort/i.test(name) || /cancel/i.test(message);
+}
+
+/** En móvil baja un poco la escala para memoria, sin caer a 1 (muy borroso / pipelines raros). */
 function pdfRenderScale(): number {
   if (typeof window === "undefined") return 1.5;
-  if (prefersDedicatedPrintWindow()) {
-    const dpr = Number(window.devicePixelRatio || 1);
-    return Math.min(1.25, Math.max(1, dpr * 0.75));
-  }
+  if (prefersDedicatedPrintWindow()) return 1.5;
   return 2;
 }
 
@@ -80,10 +84,10 @@ async function renderHtmlToElement(html: string): Promise<{
   await new Promise<void>((resolve) => {
     const done = () => resolve();
     if (iframe.contentWindow?.document.readyState === "complete") {
-      window.setTimeout(done, 120);
+      window.setTimeout(done, 80);
       return;
     }
-    iframe.addEventListener("load", () => window.setTimeout(done, 120), { once: true });
+    iframe.addEventListener("load", () => window.setTimeout(done, 80), { once: true });
   });
 
   const body = doc.body;
@@ -129,8 +133,7 @@ async function canvasToPdf(canvas: HTMLCanvasElement): Promise<{ blob: Blob; byt
 
     if (pageIndex > 0) pdf.addPage();
     const sliceImgHeight = (sliceHeight * imgWidth) / canvas.width;
-    // JPEG más liviano que PNG en tablets con poca RAM.
-    pdf.addImage(pageCanvas.toDataURL("image/jpeg", 0.88), "JPEG", margin, margin, imgWidth, sliceImgHeight);
+    pdf.addImage(pageCanvas.toDataURL("image/jpeg", 0.92), "JPEG", margin, margin, imgWidth, sliceImgHeight);
 
     renderedY += sliceHeight;
     pageIndex += 1;
@@ -146,14 +149,14 @@ async function canvasToPdf(canvas: HTMLCanvasElement): Promise<{ blob: Blob; byt
   };
 }
 
-async function html2canvasSource(source: HTMLElement): Promise<HTMLCanvasElement> {
+async function html2canvasSource(source: HTMLElement, scale: number): Promise<HTMLCanvasElement> {
   const { default: html2canvas } = await import("html2canvas");
   return html2canvas(source, {
-    scale: pdfRenderScale(),
+    scale,
     useCORS: true,
     backgroundColor: "#ffffff",
     logging: false,
-    windowWidth: Math.max(source.scrollWidth, 794),
+    windowWidth: 794,
     scrollX: 0,
     scrollY: 0,
     onclone: (clonedDoc) => {
@@ -172,29 +175,23 @@ async function html2canvasSource(source: HTMLElement): Promise<HTMLCanvasElement
   });
 }
 
-/**
- * Genera el PDF sin intentar descargarlo.
- * En móvil hay que disparar Compartir/Abrir en un toque posterior (gesto fresco).
- */
-export async function buildCashReportPdf(
-  html: string,
-  options?: { sourceElement?: HTMLElement | null },
-): Promise<BuiltCashReportPdf> {
-  let cleanup: (() => void) | null = null;
+/** Siempre renderiza HTML completo offscreen (el iframe del visor está recortado y falla en tablets). */
+export async function buildCashReportPdf(html: string): Promise<BuiltCashReportPdf> {
+  const { source, cleanup } = await renderHtmlToElement(html);
   try {
-    let source = options?.sourceElement ?? null;
-    if (!source) {
-      const rendered = await renderHtmlToElement(html);
-      source = rendered.source;
-      cleanup = rendered.cleanup;
+    let canvas: HTMLCanvasElement;
+    try {
+      canvas = await html2canvasSource(source, pdfRenderScale());
+    } catch (firstError) {
+      // Reintento con escala mínima si hubo OOM / canvas enorme.
+      console.warn("[cash-report-pdf] retry scale=1", firstError);
+      canvas = await html2canvasSource(source, 1);
     }
-
-    const canvas = await html2canvasSource(source);
     const built = await canvasToPdf(canvas);
     const objectUrl = URL.createObjectURL(built.blob);
     return { ...built, objectUrl };
   } finally {
-    cleanup?.();
+    cleanup();
   }
 }
 
@@ -239,14 +236,6 @@ export async function shareCashReportPdfNative(bytes: Uint8Array, filename: stri
   return true;
 }
 
-function isShareAbort(error: unknown): boolean {
-  if (!error || typeof error !== "object") return false;
-  const name = "name" in error ? String((error as { name?: unknown }).name ?? "") : "";
-  const message = error instanceof Error ? error.message : String(error);
-  return /abort/i.test(name) || /cancel/i.test(message);
-}
-
-/** Requiere gesto de usuario reciente (toque). */
 export async function shareCashReportPdfWeb(blob: Blob, filename: string): Promise<boolean> {
   if (typeof navigator === "undefined" || typeof navigator.share !== "function") return false;
 
@@ -275,13 +264,11 @@ export async function shareCashReportPdfWeb(blob: Blob, filename: string): Promi
   }
 }
 
-/** Requiere gesto de usuario reciente (toque). */
 export function openCashReportPdfTab(objectUrl: string): boolean {
   const win = window.open(objectUrl, "_blank", "noopener,noreferrer");
   return Boolean(win);
 }
 
-/** En muchos móviles `<a download>` no guarda nada; úsalo solo como último recurso en desktop. */
 export function downloadCashReportPdfWeb(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
@@ -297,53 +284,43 @@ export function downloadCashReportPdfWeb(blob: Blob, filename: string) {
 }
 
 /**
- * Intenta entregar el PDF en el mismo flujo.
- * En móvil suele fallar tras await largo: preferir build + botón de segundo toque.
+ * Flujo de un toque (como antes): generar + intentar Compartir/Abrir/Descargar.
+ * Si la entrega automática falla, devuelve el PDF para un segundo toque manual.
  */
 export async function saveCashReportPdf(html: string): Promise<CashReportPdfResult> {
+  let built: BuiltCashReportPdf | null = null;
   try {
-    const built = await buildCashReportPdf(html);
-    try {
-      if (Capacitor.isNativePlatform()) {
-        try {
-          if (await shareCashReportPdfNative(built.bytes, built.filename)) {
-            return { ok: true, filename: built.filename, mode: "share" };
-          }
-        } catch (error: unknown) {
-          if (isShareAbort(error)) {
-            return { ok: true, filename: built.filename, mode: "share" };
-          }
-          console.error("[cash-report-pdf-share]", error);
+    built = await buildCashReportPdf(html);
+
+    if (Capacitor.isNativePlatform()) {
+      try {
+        if (await shareCashReportPdfNative(built.bytes, built.filename)) {
+          return { ok: true, filename: built.filename, mode: "share", pdf: built };
         }
+      } catch (error: unknown) {
+        if (isShareAbort(error)) {
+          return { ok: true, filename: built.filename, mode: "share", pdf: built };
+        }
+        console.error("[cash-report-pdf-share]", error);
       }
-
-      if (await shareCashReportPdfWeb(built.blob, built.filename)) {
-        return { ok: true, filename: built.filename, mode: "share" };
-      }
-
-      if (openCashReportPdfTab(built.objectUrl)) {
-        return { ok: true, filename: built.filename, mode: "open" };
-      }
-
-      if (!prefersDedicatedPrintWindow()) {
-        downloadCashReportPdfWeb(built.blob, built.filename);
-        return { ok: true, filename: built.filename, mode: "download" };
-      }
-
-      return {
-        ok: false,
-        message:
-          "El PDF se generó, pero este dispositivo bloqueó la descarga automática. Use Compartir o Abrir PDF.",
-      };
-    } finally {
-      // Si abrimos pestaña, dejamos el URL un rato; si no, liberamos.
-      window.setTimeout(() => revokeCashReportPdfUrl(built.objectUrl), 60_000);
     }
+
+    if (await shareCashReportPdfWeb(built.blob, built.filename)) {
+      return { ok: true, filename: built.filename, mode: "share", pdf: built };
+    }
+
+    if (openCashReportPdfTab(built.objectUrl)) {
+      return { ok: true, filename: built.filename, mode: "open", pdf: built };
+    }
+
+    downloadCashReportPdfWeb(built.blob, built.filename);
+    return { ok: true, filename: built.filename, mode: "download", pdf: built };
   } catch (error: unknown) {
     console.error("[cash-report-pdf]", error);
     return {
       ok: false,
       message: error instanceof Error ? error.message : "No se pudo generar el PDF",
+      pdf: built ?? undefined,
     };
   }
 }

@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { FileDown, Printer, Share2, ExternalLink } from "lucide-react";
-import { Capacitor } from "@capacitor/core";
 import {
-  buildCashReportPdf,
   downloadCashReportPdfWeb,
   openCashReportPdfTab,
   revokeCashReportPdfUrl,
+  saveCashReportPdf,
   shareCashReportPdfNative,
   shareCashReportPdfWeb,
   type BuiltCashReportPdf,
@@ -19,6 +18,7 @@ import {
   shareCashReportHtml,
 } from "@/lib/printHtmlDocument";
 import { Button } from "@/components/ui/button";
+import { Capacitor } from "@capacitor/core";
 import type { CashClosureReportParams } from "@/lib/cashReportUtils";
 
 type CashReportViewState = {
@@ -29,7 +29,8 @@ type CashReportViewState = {
 
 /**
  * Visor a pantalla completa del reporte de caja.
- * Desktop: Imprimir. Móvil/tablet: generar PDF y luego Compartir/Abrir con un segundo toque.
+ * Desktop: Imprimir.
+ * Móvil/tablet: Guardar PDF (un toque, como antes) + Compartir/Abrir si hace falta un segundo toque.
  */
 export function CashReportViewer() {
   const [state, setState] = useState<CashReportViewState>(null);
@@ -74,33 +75,60 @@ export function CashReportViewer() {
     };
   }, [state]);
 
+  const keepReadyPdf = (pdf: BuiltCashReportPdf | null | undefined) => {
+    const previous = readyPdfRef.current;
+    if (previous && previous.objectUrl !== pdf?.objectUrl) {
+      revokeCashReportPdfUrl(previous.objectUrl);
+    }
+    setReadyPdf(pdf ?? null);
+  };
+
   const handlePrintDesktop = () => {
     if (!state?.html) return;
     printCashReportDesktop(iframeRef.current, state.html);
   };
 
-  const handleGeneratePdf = async () => {
+  const handleSavePdf = async () => {
     if (!state?.html || busy) return;
     setBusy(true);
-    setStatus({ kind: "info", text: "Generando PDF… puede tardar unos segundos en tablet." });
-    const previous = readyPdf;
-    setReadyPdf(null);
-    revokeCashReportPdfUrl(previous?.objectUrl);
+    setStatus({ kind: "info", text: "Generando PDF…" });
+    keepReadyPdf(null);
 
     try {
-      const sourceElement = iframeRef.current?.contentDocument?.body ?? null;
-      const built = await buildCashReportPdf(state.html, { sourceElement });
-      setReadyPdf(built);
+      const result = await saveCashReportPdf(state.html);
+      if (result.pdf) keepReadyPdf(result.pdf);
+
+      if (!result.ok) {
+        setStatus({
+          kind: "error",
+          text: `${result.message || "No se pudo guardar el PDF"}. Pruebe Abrir HTML o Compartir si el PDF quedó listo.`,
+        });
+        return;
+      }
+
+      if (result.mode === "share") {
+        setStatus({
+          kind: "ok",
+          text: `PDF listo (${result.filename}). En el menú elija Guardar o una app.`,
+        });
+        return;
+      }
+      if (result.mode === "open") {
+        setStatus({
+          kind: "ok",
+          text: `PDF abierto (${result.filename}). Use Guardar/Compartir del visor.`,
+        });
+        return;
+      }
       setStatus({
         kind: "ok",
-        text: `PDF listo (${built.filename}). Toque Compartir o Abrir PDF para guardarlo.`,
+        text: `PDF generado (${result.filename}). Revise Descargas; si no aparece use Compartir o Abrir PDF.`,
       });
     } catch (error: unknown) {
       console.error("[cash-report-viewer-pdf]", error);
-      const message = error instanceof Error ? error.message : "No se pudo generar el PDF";
       setStatus({
         kind: "error",
-        text: `${message}. Puede usar Abrir HTML como alternativa.`,
+        text: `${error instanceof Error ? error.message : "No se pudo generar el PDF"}. Pruebe Abrir HTML.`,
       });
     } finally {
       setBusy(false);
@@ -110,7 +138,6 @@ export function CashReportViewer() {
   const handleSharePdf = async () => {
     if (!readyPdf || deliverBusy) return;
     setDeliverBusy(true);
-    setStatus(null);
     try {
       if (Capacitor.isNativePlatform()) {
         try {
@@ -122,21 +149,15 @@ export function CashReportViewer() {
           console.error("[cash-report-viewer-native-share]", error);
         }
       }
-
       if (await shareCashReportPdfWeb(readyPdf.blob, readyPdf.filename)) {
         setStatus({ kind: "ok", text: "Menú Compartir abierto. Elija Guardar o una app." });
         return;
       }
-
       if (openCashReportPdfTab(readyPdf.objectUrl)) {
-        setStatus({ kind: "ok", text: "PDF abierto. Use Guardar/Compartir del visor del sistema." });
+        setStatus({ kind: "ok", text: "PDF abierto. Use Guardar/Compartir del visor." });
         return;
       }
-
-      setStatus({
-        kind: "error",
-        text: "No se pudo compartir en este dispositivo. Pruebe Abrir PDF o Abrir HTML.",
-      });
+      setStatus({ kind: "error", text: "No se pudo compartir. Pruebe Abrir PDF o Abrir HTML." });
     } finally {
       setDeliverBusy(false);
     }
@@ -145,15 +166,11 @@ export function CashReportViewer() {
   const handleOpenPdf = () => {
     if (!readyPdf) return;
     if (openCashReportPdfTab(readyPdf.objectUrl)) {
-      setStatus({ kind: "ok", text: "PDF abierto. Use Guardar/Compartir del visor del sistema." });
+      setStatus({ kind: "ok", text: "PDF abierto. Use Guardar/Compartir del visor." });
       return;
     }
-    // Último recurso: algunos WebViews permiten download en gesto directo.
     downloadCashReportPdfWeb(readyPdf.blob, readyPdf.filename);
-    setStatus({
-      kind: "info",
-      text: "Se intentó descargar el PDF. Si no aparece, use Compartir o Abrir HTML.",
-    });
+    setStatus({ kind: "info", text: "Se intentó descargar el PDF. Si no aparece, use Compartir o Abrir HTML." });
   };
 
   const handleOpenHtml = async () => {
@@ -163,10 +180,10 @@ export function CashReportViewer() {
       return;
     }
     if (openCashReportInNewTab(state.html)) {
-      setStatus({ kind: "ok", text: "Reporte abierto en otra pestaña. Use Guardar/Compartir del navegador." });
+      setStatus({ kind: "ok", text: "Reporte abierto en otra pestaña." });
       return;
     }
-    setStatus({ kind: "error", text: "No se pudo abrir el reporte HTML en este dispositivo." });
+    setStatus({ kind: "error", text: "No se pudo abrir el reporte HTML." });
   };
 
   const handleIframeLoad = () => {
@@ -189,27 +206,27 @@ export function CashReportViewer() {
                 type="button"
                 className="min-h-11 gap-1.5 rounded-full bg-orange-600 px-5 font-bold text-white hover:bg-orange-700"
                 disabled={busy || deliverBusy}
-                onClick={() => void handleGeneratePdf()}
+                onClick={() => void handleSavePdf()}
               >
                 <FileDown className="h-4 w-4" />
-                {busy ? "Generando PDF…" : readyPdf ? "Regenerar PDF" : "Generar PDF"}
+                {busy ? "Generando PDF…" : "Guardar PDF"}
               </Button>
               {readyPdf ? (
                 <>
                   <Button
                     type="button"
                     className="min-h-11 gap-1.5 rounded-full bg-emerald-600 px-5 font-bold text-white hover:bg-emerald-700"
-                    disabled={deliverBusy}
+                    disabled={busy || deliverBusy}
                     onClick={() => void handleSharePdf()}
                   >
                     <Share2 className="h-4 w-4" />
-                    {deliverBusy ? "Abriendo…" : "Compartir"}
+                    Compartir
                   </Button>
                   <Button
                     type="button"
                     variant="outline"
                     className="min-h-11 gap-1.5 rounded-full border-orange-300 px-5 font-bold text-orange-800 hover:bg-orange-50"
-                    disabled={deliverBusy}
+                    disabled={busy || deliverBusy}
                     onClick={handleOpenPdf}
                   >
                     <ExternalLink className="h-4 w-4" />
@@ -253,10 +270,6 @@ export function CashReportViewer() {
             role="status"
           >
             {status.text}
-          </p>
-        ) : isMobileLike ? (
-          <p className="mt-2 text-sm text-slate-600" role="status">
-            En teléfono/tablet: primero Generar PDF y luego Compartir o Abrir PDF (así sí se puede guardar).
           </p>
         ) : null}
       </div>
