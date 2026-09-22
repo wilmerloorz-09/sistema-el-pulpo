@@ -598,10 +598,18 @@ const ShiftSetupAdmin = () => {
   const cajaTemplatesQuery = useQuery({
     queryKey: ["shift-admin-caja-templates", activeBranchId],
     queryFn: async () => {
-      if (!activeBranchId) return [] as Array<{ id: string; name: string }>;
+      if (!activeBranchId) return [] as Array<{ id: string; name: string; total: number }>;
       const { data, error } = await supabase
         .from("cash_register_templates" as any)
-        .select("id, name, is_active")
+        .select(`
+          id,
+          name,
+          is_active,
+          cash_register_template_denoms (
+            qty,
+            denominations ( value )
+          )
+        `)
         .eq("branch_id", activeBranchId)
         .eq("is_auxiliary", false)
         .order("name", { ascending: true });
@@ -610,7 +618,17 @@ const ShiftSetupAdmin = () => {
       
       return ((data ?? []) as any[])
         .filter((row) => Boolean(row.is_active))
-        .map((row) => ({ id: row.id, name: row.name }));
+        .map((row) => {
+          const denoms = Array.isArray(row.cash_register_template_denoms)
+            ? row.cash_register_template_denoms
+            : [];
+          const total = denoms.reduce((sum: number, item: any) => {
+            const qty = Math.max(0, Math.trunc(Number(item?.qty ?? 0)));
+            const value = Number(item?.denominations?.value ?? 0);
+            return sum + qty * value;
+          }, 0);
+          return { id: row.id, name: String(row.name ?? ""), total };
+        });
     },
     enabled: !!activeBranchId,
   });

@@ -167,11 +167,17 @@ export default function OpenShiftForm({
                 disabled={readOnly}
               >
                 <option value="manual">Manual</option>
-                {templates.map((template) => (
-                  <option key={template.id} value={template.id}>
-                    {template.name}
-                  </option>
-                ))}
+                {templates.map((template) => {
+                  const templateTotal = denominations.reduce((sum, denomination) => {
+                    const qty = template.counts.find((c) => c.denomination_id === denomination.id)?.qty ?? 0;
+                    return sum + denomination.value * qty;
+                  }, 0);
+                  return (
+                    <option key={template.id} value={template.id}>
+                      {template.name} (${templateTotal.toFixed(2)})
+                    </option>
+                  );
+                })}
               </select>
               {selectedTemplate && (
                 <p className="mt-2 text-xs text-muted-foreground">

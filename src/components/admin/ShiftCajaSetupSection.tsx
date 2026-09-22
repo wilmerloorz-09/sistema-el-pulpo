@@ -23,6 +23,7 @@ export interface ShiftCajaSetupUserOption {
 export interface CashRegisterTemplateOption {
   id: string;
   name: string;
+  total?: number;
 }
 
 interface Props {
@@ -188,7 +189,9 @@ export default function ShiftCajaSetupSection({
                     <SelectContent>
                       {templates.map((template) => (
                         <SelectItem key={template.id} value={template.id}>
-                          {template.name}
+                          {typeof template.total === "number"
+                            ? `${template.name} ($${template.total.toFixed(2)})`
+                            : template.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
