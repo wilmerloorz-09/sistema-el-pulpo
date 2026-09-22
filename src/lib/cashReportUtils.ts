@@ -364,6 +364,12 @@ export const buildCashClosureReportHtml = (params: CashClosureReportParams) => {
       .header p { font-size: 14px; color: #1f2937; line-height: 1.45; }
       .header .meta p { font-size: 12px; color: #4b5563; line-height: 1.4; }
       .grid { display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:6px; margin:8px 0; }
+      .grid.metrics-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+      .grid.status-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
       @media (min-width: 900px) {
         .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
       }
@@ -519,7 +525,7 @@ export const buildCashClosureReportHtml = (params: CashClosureReportParams) => {
       </div>
     </div>
 
-    <div class="grid summary-compact">
+    <div class="grid summary-compact metrics-grid">
       <div class="card"><div class="label">Apertura</div><div class="value">${escapeHtml(formatMoney(totalInitial))}</div></div>
       <div class="card"><div class="label">Caja actual</div><div class="value">${escapeHtml(formatMoney(totalCurrent))}</div></div>
       <div class="card"><div class="label">Diferencia</div><div class="value">${escapeHtml(formatMoney(physicalDelta))}</div></div>
@@ -538,7 +544,7 @@ export const buildCashClosureReportHtml = (params: CashClosureReportParams) => {
 
     <div class="section summary-section">
       <h2>Resumen por estado de pago</h2>
-      <div class="grid summary-compact">${statusCards}</div>
+      <div class="grid summary-compact status-grid">${statusCards}</div>
     </div>
 
     <div class="section">
