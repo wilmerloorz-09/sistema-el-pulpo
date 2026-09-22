@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { FileDown, Printer, Share2, ExternalLink } from "lucide-react";
+import { FileDown, Printer, Share2, ExternalLink, Eye } from "lucide-react";
+import { Capacitor } from "@capacitor/core";
 import {
-  downloadCashReportPdfWeb,
-  openCashReportPdfTab,
   revokeCashReportPdfUrl,
   saveCashReportPdf,
   shareCashReportPdfNative,
@@ -18,7 +17,6 @@ import {
   shareCashReportHtml,
 } from "@/lib/printHtmlDocument";
 import { Button } from "@/components/ui/button";
-import { Capacitor } from "@capacitor/core";
 import type { CashClosureReportParams } from "@/lib/cashReportUtils";
 
 type CashReportViewState = {
@@ -29,14 +27,14 @@ type CashReportViewState = {
 
 /**
  * Visor a pantalla completa del reporte de caja.
- * Desktop: Imprimir.
- * Móvil/tablet: Guardar PDF (un toque, como antes) + Compartir/Abrir si hace falta un segundo toque.
+ * Móvil: genera PDF y muestra visor + enlaces reales (gesto del usuario) para que funcione en más dispositivos.
  */
 export function CashReportViewer() {
   const [state, setState] = useState<CashReportViewState>(null);
   const [busy, setBusy] = useState(false);
   const [deliverBusy, setDeliverBusy] = useState(false);
   const [readyPdf, setReadyPdf] = useState<BuiltCashReportPdf | null>(null);
+  const [showPdfPreview, setShowPdfPreview] = useState(false);
   const [status, setStatus] = useState<{ kind: "ok" | "error" | "info"; text: string } | null>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const autoPrintDoneRef = useRef(false);
@@ -55,6 +53,7 @@ export function CashReportViewer() {
       setStatus(null);
       setBusy(false);
       setDeliverBusy(false);
+      setShowPdfPreview(false);
       const previous = readyPdfRef.current;
       setReadyPdf(null);
       revokeCashReportPdfUrl(previous?.objectUrl);
@@ -91,17 +90,21 @@ export function CashReportViewer() {
   const handleSavePdf = async () => {
     if (!state?.html || busy) return;
     setBusy(true);
+    setShowPdfPreview(false);
     setStatus({ kind: "info", text: "Generando PDF…" });
     keepReadyPdf(null);
 
     try {
       const result = await saveCashReportPdf(state.html);
-      if (result.pdf) keepReadyPdf(result.pdf);
+      if (result.pdf) {
+        keepReadyPdf(result.pdf);
+        setShowPdfPreview(true);
+      }
 
       if (!result.ok) {
         setStatus({
           kind: "error",
-          text: `${result.message || "No se pudo guardar el PDF"}. Pruebe Abrir HTML o Compartir si el PDF quedó listo.`,
+          text: `${result.message || "No se pudo generar el PDF"}. Pruebe Abrir HTML.`,
         });
         return;
       }
@@ -109,20 +112,24 @@ export function CashReportViewer() {
       if (result.mode === "share") {
         setStatus({
           kind: "ok",
-          text: `PDF listo (${result.filename}). En el menú elija Guardar o una app.`,
+          text: `PDF listo (${result.filename}). En el menú del teléfono elija Guardar en Drive/Archivos/Descargas.`,
         });
         return;
       }
-      if (result.mode === "open") {
+
+      if (result.mode === "open" || result.mode === "download") {
         setStatus({
           kind: "ok",
-          text: `PDF abierto (${result.filename}). Use Guardar/Compartir del visor.`,
+          text: `PDF listo (${result.filename}).`,
         });
         return;
       }
+
+      // mode === "ready": hay que tocar un enlace/botón (gesto fresco).
       setStatus({
         kind: "ok",
-        text: `PDF generado (${result.filename}). Revise Descargas; si no aparece use Compartir o Abrir PDF.`,
+        text:
+          "PDF listo. Toque Compartir (recomendado) o Abrir/Descargar abajo. Si ve el PDF, también puede usar el botón de descarga del visor.",
       });
     } catch (error: unknown) {
       console.error("[cash-report-viewer-pdf]", error);
@@ -142,7 +149,10 @@ export function CashReportViewer() {
       if (Capacitor.isNativePlatform()) {
         try {
           if (await shareCashReportPdfNative(readyPdf.bytes, readyPdf.filename)) {
-            setStatus({ kind: "ok", text: "Menú Compartir abierto. Elija Guardar o una app." });
+            setStatus({
+              kind: "ok",
+              text: "Menú Compartir abierto. Elija Guardar en Drive, Archivos o Descargas.",
+            });
             return;
           }
         } catch (error: unknown) {
@@ -150,27 +160,19 @@ export function CashReportViewer() {
         }
       }
       if (await shareCashReportPdfWeb(readyPdf.blob, readyPdf.filename)) {
-        setStatus({ kind: "ok", text: "Menú Compartir abierto. Elija Guardar o una app." });
+        setStatus({
+          kind: "ok",
+          text: "Menú Compartir abierto. Elija Guardar en Drive, Archivos o Descargas.",
+        });
         return;
       }
-      if (openCashReportPdfTab(readyPdf.objectUrl)) {
-        setStatus({ kind: "ok", text: "PDF abierto. Use Guardar/Compartir del visor." });
-        return;
-      }
-      setStatus({ kind: "error", text: "No se pudo compartir. Pruebe Abrir PDF o Abrir HTML." });
+      setStatus({
+        kind: "error",
+        text: "Este teléfono no permite Compartir archivos desde el navegador. Use Abrir o Descargar (enlace de abajo).",
+      });
     } finally {
       setDeliverBusy(false);
     }
-  };
-
-  const handleOpenPdf = () => {
-    if (!readyPdf) return;
-    if (openCashReportPdfTab(readyPdf.objectUrl)) {
-      setStatus({ kind: "ok", text: "PDF abierto. Use Guardar/Compartir del visor." });
-      return;
-    }
-    downloadCashReportPdfWeb(readyPdf.blob, readyPdf.filename);
-    setStatus({ kind: "info", text: "Se intentó descargar el PDF. Si no aparece, use Compartir o Abrir HTML." });
   };
 
   const handleOpenHtml = async () => {
@@ -196,6 +198,9 @@ export function CashReportViewer() {
     return null;
   }
 
+  const linkClass =
+    "inline-flex min-h-11 items-center justify-center gap-1.5 rounded-full border border-orange-300 bg-white px-5 text-sm font-bold text-orange-800 no-underline hover:bg-orange-50";
+
   return createPortal(
     <div className="cash-report-viewer-overlay fixed inset-0 z-[200] flex flex-col bg-white" role="dialog" aria-modal="true" aria-label="Reporte de caja">
       <div className="no-print shrink-0 border-b border-slate-200 bg-white/95 px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top,0px))] shadow-sm">
@@ -209,8 +214,9 @@ export function CashReportViewer() {
                 onClick={() => void handleSavePdf()}
               >
                 <FileDown className="h-4 w-4" />
-                {busy ? "Generando PDF…" : "Guardar PDF"}
+                {busy ? "Generando PDF…" : readyPdf ? "Regenerar PDF" : "Guardar PDF"}
               </Button>
+
               {readyPdf ? (
                 <>
                   <Button
@@ -220,20 +226,52 @@ export function CashReportViewer() {
                     onClick={() => void handleSharePdf()}
                   >
                     <Share2 className="h-4 w-4" />
-                    Compartir
+                    {deliverBusy ? "Abriendo…" : "Compartir"}
                   </Button>
+
+                  {/* Enlaces reales: el toque del usuario es lo que permite Abrir/Descargar en Android. */}
+                  <a
+                    className={linkClass}
+                    href={readyPdf.objectUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() =>
+                      setStatus({
+                        kind: "ok",
+                        text: "PDF abierto. Use el menú del visor (⋮ o compartir) para Guardar.",
+                      })
+                    }
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                    Abrir
+                  </a>
+                  <a
+                    className={linkClass}
+                    href={readyPdf.objectUrl}
+                    download={readyPdf.filename}
+                    onClick={() =>
+                      setStatus({
+                        kind: "info",
+                        text: "Si no aparece en Descargas, use Compartir → Guardar en Archivos/Drive.",
+                      })
+                    }
+                  >
+                    <FileDown className="h-4 w-4" />
+                    Descargar
+                  </a>
                   <Button
                     type="button"
                     variant="outline"
-                    className="min-h-11 gap-1.5 rounded-full border-orange-300 px-5 font-bold text-orange-800 hover:bg-orange-50"
-                    disabled={busy || deliverBusy}
-                    onClick={handleOpenPdf}
+                    className="min-h-11 gap-1.5 rounded-full px-4 font-semibold"
+                    disabled={busy}
+                    onClick={() => setShowPdfPreview((v) => !v)}
                   >
-                    <ExternalLink className="h-4 w-4" />
-                    Abrir PDF
+                    <Eye className="h-4 w-4" />
+                    {showPdfPreview ? "Ver reporte" : "Ver PDF"}
                   </Button>
                 </>
               ) : null}
+
               <Button
                 type="button"
                 variant="outline"
@@ -271,9 +309,28 @@ export function CashReportViewer() {
           >
             {status.text}
           </p>
+        ) : isMobileLike ? (
+          <p className="mt-2 text-sm text-slate-600" role="status">
+            En teléfono: Generar con Guardar PDF. Si no sale el menú solo, toque Compartir o Abrir.
+          </p>
         ) : null}
       </div>
-      <iframe ref={iframeRef} title="Reporte de caja" srcDoc={state.html} onLoad={handleIframeLoad} className="min-h-0 w-full flex-1 border-0 bg-white" />
+
+      {isMobileLike && readyPdf && showPdfPreview ? (
+        <iframe
+          title="PDF del reporte de caja"
+          src={readyPdf.objectUrl}
+          className="min-h-0 w-full flex-1 border-0 bg-slate-100"
+        />
+      ) : (
+        <iframe
+          ref={iframeRef}
+          title="Reporte de caja"
+          srcDoc={state.html}
+          onLoad={handleIframeLoad}
+          className="min-h-0 w-full flex-1 border-0 bg-white"
+        />
+      )}
     </div>,
     document.body,
   );

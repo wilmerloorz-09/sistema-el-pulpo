@@ -1,8 +1,10 @@
 import { Capacitor } from "@capacitor/core";
 import { prefersDedicatedPrintWindow } from "@/lib/printHtmlDocument";
 
+export type CashReportPdfMode = "share" | "open" | "download" | "ready";
+
 export type CashReportPdfResult =
-  | { ok: true; filename: string; mode: "download" | "share" | "open"; pdf?: BuiltCashReportPdf }
+  | { ok: true; filename: string; mode: CashReportPdfMode; pdf: BuiltCashReportPdf }
   | { ok: false; message: string; pdf?: BuiltCashReportPdf };
 
 export type BuiltCashReportPdf = {
@@ -41,7 +43,6 @@ function isShareAbort(error: unknown): boolean {
   return /abort/i.test(name) || /cancel/i.test(message);
 }
 
-/** En móvil baja un poco la escala para memoria, sin caer a 1 (muy borroso / pipelines raros). */
 function pdfRenderScale(): number {
   if (typeof window === "undefined") return 1.5;
   if (prefersDedicatedPrintWindow()) return 1.5;
@@ -55,7 +56,6 @@ async function renderHtmlToElement(html: string): Promise<{
 }> {
   const host = document.createElement("div");
   host.setAttribute("aria-hidden", "true");
-  // Fuera de pantalla pero “visible” al motor de pintura (sin opacity/visibility hidden).
   host.style.cssText = [
     "position:fixed",
     "left:-10000px",
@@ -133,7 +133,7 @@ async function canvasToPdf(canvas: HTMLCanvasElement): Promise<{ blob: Blob; byt
 
     if (pageIndex > 0) pdf.addPage();
     const sliceImgHeight = (sliceHeight * imgWidth) / canvas.width;
-    pdf.addImage(pageCanvas.toDataURL("image/jpeg", 0.92), "JPEG", margin, margin, imgWidth, sliceImgHeight);
+    pdf.addImage(pageCanvas.toDataURL("image/jpeg", 0.9), "JPEG", margin, margin, imgWidth, sliceImgHeight);
 
     renderedY += sliceHeight;
     pageIndex += 1;
@@ -141,11 +141,10 @@ async function canvasToPdf(canvas: HTMLCanvasElement): Promise<{ blob: Blob; byt
 
   const arrayBuffer = pdf.output("arraybuffer");
   const bytes = new Uint8Array(arrayBuffer);
-  const filename = defaultFilename();
   return {
     blob: new Blob([bytes], { type: "application/pdf" }),
     bytes,
-    filename,
+    filename: defaultFilename(),
   };
 }
 
@@ -175,7 +174,6 @@ async function html2canvasSource(source: HTMLElement, scale: number): Promise<HT
   });
 }
 
-/** Siempre renderiza HTML completo offscreen (el iframe del visor está recortado y falla en tablets). */
 export async function buildCashReportPdf(html: string): Promise<BuiltCashReportPdf> {
   const { source, cleanup } = await renderHtmlToElement(html);
   try {
@@ -183,13 +181,11 @@ export async function buildCashReportPdf(html: string): Promise<BuiltCashReportP
     try {
       canvas = await html2canvasSource(source, pdfRenderScale());
     } catch (firstError) {
-      // Reintento con escala mínima si hubo OOM / canvas enorme.
       console.warn("[cash-report-pdf] retry scale=1", firstError);
       canvas = await html2canvasSource(source, 1);
     }
     const built = await canvasToPdf(canvas);
-    const objectUrl = URL.createObjectURL(built.blob);
-    return { ...built, objectUrl };
+    return { ...built, objectUrl: URL.createObjectURL(built.blob) };
   } finally {
     cleanup();
   }
@@ -215,15 +211,17 @@ export async function shareCashReportPdfNative(bytes: Uint8Array, filename: stri
     import("@capacitor/share"),
   ]);
 
+  // Documents suele ser más visible/estable que Cache en Android.
+  const directory = Directory.Documents ?? Directory.Cache;
   await Filesystem.writeFile({
     path: filename,
     data: uint8ToBase64(bytes),
-    directory: Directory.Cache,
+    directory,
     recursive: true,
   });
 
   const { uri } = await Filesystem.getUri({
-    directory: Directory.Cache,
+    directory,
     path: filename,
   });
 
@@ -231,7 +229,7 @@ export async function shareCashReportPdfNative(bytes: Uint8Array, filename: stri
     title: "Reporte de caja",
     text: "Reporte de cierre de caja",
     url: uri,
-    dialogTitle: "Guardar PDF",
+    dialogTitle: "Guardar o compartir PDF",
   });
   return true;
 }
@@ -269,23 +267,9 @@ export function openCashReportPdfTab(objectUrl: string): boolean {
   return Boolean(win);
 }
 
-export function downloadCashReportPdfWeb(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.rel = "noopener";
-  document.body.appendChild(anchor);
-  anchor.click();
-  window.setTimeout(() => {
-    URL.revokeObjectURL(url);
-    anchor.remove();
-  }, 1_000);
-}
-
 /**
- * Flujo de un toque (como antes): generar + intentar Compartir/Abrir/Descargar.
- * Si la entrega automática falla, devuelve el PDF para un segundo toque manual.
+ * Genera el PDF e intenta entregarlo.
+ * En móvil, si Compartir/Abrir no salen solos, devuelve mode "ready" (sin mentir sobre Descargas).
  */
 export async function saveCashReportPdf(html: string): Promise<CashReportPdfResult> {
   let built: BuiltCashReportPdf | null = null;
@@ -309,11 +293,25 @@ export async function saveCashReportPdf(html: string): Promise<CashReportPdfResu
       return { ok: true, filename: built.filename, mode: "share", pdf: built };
     }
 
-    if (openCashReportPdfTab(built.objectUrl)) {
+    // Solo en escritorio intentamos abrir pestaña automáticamente.
+    if (!prefersDedicatedPrintWindow() && openCashReportPdfTab(built.objectUrl)) {
       return { ok: true, filename: built.filename, mode: "open", pdf: built };
     }
 
-    downloadCashReportPdfWeb(built.blob, built.filename);
+    // Móvil: el PDF quedó listo; el usuario debe tocar Compartir/Abrir/Descargar (gesto fresco).
+    if (prefersDedicatedPrintWindow()) {
+      return { ok: true, filename: built.filename, mode: "ready", pdf: built };
+    }
+
+    // Escritorio: descarga clásica suele funcionar.
+    const url = built.objectUrl;
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = built.filename;
+    anchor.rel = "noopener";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
     return { ok: true, filename: built.filename, mode: "download", pdf: built };
   } catch (error: unknown) {
     console.error("[cash-report-pdf]", error);
