@@ -417,16 +417,16 @@ export const buildCashClosureReportHtml = (params: CashClosureReportParams) => {
       tbody tr:nth-child(even) td { background: #f8fafc; }
       /* Tabla de denominaciones: tipografía más grande y legible */
       .denoms-section { margin-top: 14px; }
-      .denoms-section h2 { font-size: 14px; margin-bottom: 6px; }
-      .denoms-section .denoms-meta { font-size: 12px !important; color: #374151 !important; margin-bottom: 6px !important; }
-      table.denoms-table { font-size: 14px; line-height: 1.45; margin-top: 8px; }
+      .denoms-section h2 { font-size: 16px; margin-bottom: 6px; }
+      .denoms-section .denoms-meta { font-size: 13px !important; color: #374151 !important; margin-bottom: 6px !important; }
+      table.denoms-table { font-size: 16px; line-height: 1.5; margin-top: 8px; }
       table.denoms-table th {
-        font-size: 12px;
-        padding: 10px 9px;
+        font-size: 14px;
+        padding: 11px 10px;
       }
       table.denoms-table td {
-        padding: 10px 9px;
-        font-size: 14px;
+        padding: 11px 10px;
+        font-size: 16px;
       }
       .num { text-align: right; white-space: nowrap; }
       .muted { color: #6b7280; text-align: center; }
@@ -447,9 +447,9 @@ export const buildCashClosureReportHtml = (params: CashClosureReportParams) => {
         .header p { font-size: 13px; }
         .summary-compact .value { font-size: 10.5px; }
         .summary-compact .label, .summary-compact .sub { font-size: 7px; }
-        table.denoms-table { font-size: 13px; }
-        table.denoms-table th { font-size: 11px; padding: 8px 7px; }
-        table.denoms-table td { font-size: 13px; padding: 8px 7px; }
+        table.denoms-table { font-size: 15px; }
+        table.denoms-table th { font-size: 13px; padding: 9px 8px; }
+        table.denoms-table td { font-size: 15px; padding: 9px 8px; }
         .page-detail table { font-size: 9.5px; }
         .page-detail th, .page-detail td { padding: 6px 5px; }
       }
@@ -506,14 +506,15 @@ export const buildCashClosureReportHtml = (params: CashClosureReportParams) => {
           <p>Cierre: ${escapeHtml(currentOpening.closed_at ? formatDateTime(currentOpening.closed_at) : "-")}</p>
           <p>Estado: ${escapeHtml(currentOpening.status)}</p>
           <p>Cajero: ${escapeHtml(currentOpening.cashier_username || currentOpening.cashier_name || "Sin nombre")}</p>
-          <p>Monto inicial: ${escapeHtml(formatMoney(currentOpening.initial_total))}</p>
         ` : `
           <p>Turno abierto: ${escapeHtml(formatDateTime(params.shift.opened_at))}</p>
         `}
       </div>
       <div class="meta">
         <p>Generado: ${escapeHtml(formatDateTime(new Date().toISOString()))}</p>
+        ${isOpeningReport ? "" : `
         <p>Estado caja: ${escapeHtml(translateCashStatus(params.shift.caja_status))}</p>
+        `}
         <p>Mesas activas al cierre: ${escapeHtml(String(params.shift.active_tables_count ?? 0))}</p>
       </div>
     </div>
