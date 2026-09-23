@@ -3,6 +3,7 @@ import { CalendarDays, ChevronsUpDown, FileSpreadsheet, Wallet, Users } from "lu
 import { toast } from "sonner";
 import { useBranch } from "@/contexts/BranchContext";
 import { canManage } from "@/lib/permissions";
+import { filterBranchesForAdminReports } from "@/lib/adminReportBranchScope";
 import { usePersonalLaboral, useSueldosPersonal, useDiasEspecialesPersonal } from "@/hooks/usePersonalLaboral";
 import { resumirPersonal } from "@/lib/personalLaboral";
 import { downloadXlsx } from "@/lib/exportXlsx";
@@ -138,14 +139,23 @@ function CheckMultiSelect({
 
 export default function PersonalLaboral() {
   const { branches, activeBranchId, permissions, isGlobalAdmin } = useBranch();
+  const reportBranches = useMemo(() => filterBranchesForAdminReports(branches), [branches]);
+  const reportBranchIds = useMemo(() => reportBranches.map((b) => b.id), [reportBranches]);
   const canConfigure = isGlobalAdmin
     || canManage(permissions, "jornadas_personal")
     || canManage(permissions, "admin_sucursal")
     || canManage(permissions, "admin_global");
+
+  const resolveInitialSucursalIds = (branchIds: string[]) => {
+    if (activeBranchId && branchIds.includes(activeBranchId)) return [activeBranchId];
+    // "Todas" = solo sucursales permitidas (nunca vacío sin filtro, para excluir las temporalmente fuera).
+    return [...branchIds];
+  };
+
   const initialFilters = {
     desde: new Date(Date.now() - 6 * 86_400_000).toLocaleDateString("en-CA", { timeZone: "America/Guayaquil" }),
     hasta: today(),
-    sucursalIds: activeBranchId ? [activeBranchId] : ([] as string[]),
+    sucursalIds: resolveInitialSucursalIds(reportBranchIds),
     personaIds: [] as string[],
   };
   const [draftFilters, setDraftFilters] = useState(initialFilters);
@@ -153,7 +163,11 @@ export default function PersonalLaboral() {
   const personal = usePersonalLaboral(appliedFilters);
   const sueldos = useSueldosPersonal();
   const diasEspeciales = useDiasEspecialesPersonal();
-  const [configBranchId, setConfigBranchId] = useState(activeBranchId ?? (isGlobalAdmin ? ALL_BRANCHES : ""));
+  const allowedConfigBranchId =
+    activeBranchId && reportBranchIds.includes(activeBranchId)
+      ? activeBranchId
+      : (isGlobalAdmin ? ALL_BRANCHES : (reportBranchIds[0] ?? ""));
+  const [configBranchId, setConfigBranchId] = useState(allowedConfigBranchId);
   const [special, setSpecial] = useState({ fecha: today(), nombre: "", valor: "" });
   const [sueldoDrafts, setSueldoDrafts] = useState<Record<string, { lunesViernes: string; sabado: string; domingo: string; diaEspecial: string }>>({});
   const [isSavingSueldos, setIsSavingSueldos] = useState(false);
@@ -198,23 +212,65 @@ export default function PersonalLaboral() {
     setCurrentPage(1);
   }, [appliedFilters.desde, appliedFilters.hasta, appliedFilters.sucursalIds, appliedFilters.personaIds, pageSize]);
 
+  // Cuando cargan las sucursales (o cambia el alcance), quitar excluidas y expandir "todas".
+  useEffect(() => {
+    if (reportBranchIds.length === 0) return;
+
+    const sanitize = (ids: string[]) => {
+      if (ids.length === 1 && ids[0] === NONE_SELECTED) return [NONE_SELECTED];
+      const kept = ids.filter((id) => reportBranchIds.includes(id));
+      if (kept.length === 0) return [...reportBranchIds];
+      return kept;
+    };
+
+    setDraftFilters((prev) => {
+      const next = sanitize(prev.sucursalIds);
+      if (next.length === prev.sucursalIds.length && next.every((id, i) => id === prev.sucursalIds[i])) {
+        return prev;
+      }
+      return { ...prev, sucursalIds: next };
+    });
+    setAppliedFilters((prev) => {
+      const next = sanitize(prev.sucursalIds);
+      if (next.length === prev.sucursalIds.length && next.every((id, i) => id === prev.sucursalIds[i])) {
+        return prev;
+      }
+      return { ...prev, sucursalIds: next };
+    });
+
+    setConfigBranchId((prev) => {
+      if (prev === ALL_BRANCHES) return prev;
+      if (prev && reportBranchIds.includes(prev)) return prev;
+      return isGlobalAdmin ? ALL_BRANCHES : (reportBranchIds[0] ?? "");
+    });
+  }, [reportBranchIds, isGlobalAdmin]);
+
   useEffect(() => {
     if (currentPage > totalPages) setCurrentPage(totalPages);
   }, [currentPage, totalPages]);
 
   const applyFilters = () => {
-    const branchIds = branches.map((branch) => branch.id);
     const personIds = people.map((person) => person.id);
+    const normalizedBranches = normalizeMultiSelectIds(draftFilters.sucursalIds, reportBranchIds);
     const next = {
       desde: draftFilters.desde,
       hasta: draftFilters.hasta,
-      sucursalIds: normalizeMultiSelectIds(draftFilters.sucursalIds, branchIds),
+      // Vacío en UI = "todas", pero en query usamos solo las permitidas.
+      sucursalIds:
+        normalizedBranches.length === 0
+          ? [...reportBranchIds]
+          : normalizedBranches,
       personaIds: normalizeMultiSelectIds(draftFilters.personaIds, personIds),
     };
     setAppliedFilters(next);
     setDraftFilters({
       ...next,
-      sucursalIds: [...next.sucursalIds],
+      // Mantener "Todas" visual cuando el alcance es el completo permitido.
+      sucursalIds:
+        next.sucursalIds.length === reportBranchIds.length
+        && reportBranchIds.every((id) => next.sucursalIds.includes(id))
+          ? []
+          : [...next.sucursalIds],
       personaIds: [...next.personaIds],
     });
     setCurrentPage(1);
@@ -423,7 +479,7 @@ export default function PersonalLaboral() {
             <Field label="Hasta"><Input type="date" value={draftFilters.hasta} onChange={(e) => setDraftFilters({ ...draftFilters, hasta: e.target.value })} /></Field>
             <Field label="Sucursal">
               <CheckMultiSelect
-                items={branches}
+                items={reportBranches}
                 selectedIds={draftFilters.sucursalIds}
                 onChange={(sucursalIds) => setDraftFilters({ ...draftFilters, sucursalIds })}
               />
@@ -652,7 +708,7 @@ export default function PersonalLaboral() {
                 <select className={selectClass} value={configBranchId} onChange={(e) => setConfigBranchId(e.target.value)}>
                   <option value="">Seleccionar…</option>
                   {isGlobalAdmin && <option value={ALL_BRANCHES}>Todas las sucursales</option>}
-                  {branches.map((branch) => (
+                  {reportBranches.map((branch) => (
                     <option key={branch.id} value={branch.id}>{branch.name}</option>
                   ))}
                 </select>

@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useBranch } from '@/contexts/BranchContext';
 import { hasPermission } from '@/lib/permissions';
+import { filterBranchesForAdminReports } from '@/lib/adminReportBranchScope';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
@@ -15,6 +16,14 @@ import type { ReportesFilters } from '@/hooks/useReportesOnlineData';
 
 const Reportes = () => {
   const { permissions, isGlobalAdmin, activeBranchId, branches } = useBranch();
+  const reportBranches = useMemo(() => filterBranchesForAdminReports(branches), [branches]);
+  const reportBranchScopeIds = useMemo(() => reportBranches.map((b) => b.id), [reportBranches]);
+
+  const resolveReportBranchId = (candidate: string | null | undefined) => {
+    if (candidate && reportBranches.some((b) => b.id === candidate)) return candidate;
+    if (isGlobalAdmin) return 'ALL';
+    return reportBranches[0]?.id || candidate || '';
+  };
   
   const [activeTab, setActiveTab] = useState<string>('payments');
 
@@ -25,6 +34,7 @@ const Reportes = () => {
 
   const [filters, setFilters] = useState<ReportesFilters>({
     branchId: activeBranchId || '',
+    branchScopeIds: null,
     desde: startOfToday.toISOString(),
     hasta: endOfToday.toISOString(),
     shiftId: null,
@@ -37,15 +47,16 @@ const Reportes = () => {
     sortDir: 'asc',
   });
 
-  // Mantener sincronizado el branchId del filtro con el branch activo del contexto
+  // Mantener sincronizado el branchId del filtro con el branch activo (sin excluidas).
   useEffect(() => {
-    if (activeBranchId) {
-      setFilters(prev => ({
-        ...prev,
-        branchId: activeBranchId
-      }));
-    }
-  }, [activeBranchId]);
+    if (!activeBranchId && reportBranchScopeIds.length === 0) return;
+    const nextBranchId = resolveReportBranchId(activeBranchId);
+    setFilters((prev) => ({
+      ...prev,
+      branchId: nextBranchId,
+      branchScopeIds: nextBranchId === 'ALL' ? reportBranchScopeIds : null,
+    }));
+  }, [activeBranchId, reportBranchScopeIds, isGlobalAdmin, reportBranches]);
 
   // Validaciones de Acceso: solo administracion (no supervisores).
   const canAccessAdmin = isGlobalAdmin
@@ -131,11 +142,8 @@ const Reportes = () => {
           </p>
         </div>
 
-        {/* Roles Badge */}
         <div className="flex items-center gap-2 print:hidden">
           {canAccessAdmin && <Badge className="bg-violet-600 rounded-lg text-[10px] font-bold">🛠️ Administrador</Badge>}
-          {!canAccessAdmin && isSupervisor && <Badge className="bg-indigo-600 rounded-lg text-[10px] font-bold">🛡️ Supervisor</Badge>}
-          {!canAccessAdmin && !isSupervisor && canAuthorizeOrderCancel && <Badge className="bg-amber-600 rounded-lg text-[10px] font-bold">🔑 Autorizante</Badge>}
         </div>
       </div>
 

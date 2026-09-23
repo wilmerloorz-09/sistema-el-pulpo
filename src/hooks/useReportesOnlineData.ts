@@ -2,9 +2,15 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { getOrderRef } from '@/lib/orderPresentation';
 import { getUserDisplayName, getUserRealName } from '@/lib/userDisplay';
+import { applyAdminReportBranchFilter } from '@/lib/adminReportBranchScope';
 
 export interface ReportesFilters {
   branchId: string;
+  /**
+   * Cuando branchId es ALL: sucursales incluidas (sin las excluidas temporales).
+   * Vacío/null = no restringir (legacy).
+   */
+  branchScopeIds?: string[] | null;
   desde: string | null; // ISOString
   hasta: string | null; // ISOString
   shiftId: string | null;
@@ -163,11 +169,12 @@ export function useReportesFiltros(
   branchId: string,
   desde?: string | null,
   hasta?: string | null,
+  branchScopeIds?: string[] | null,
 ) {
   const dateBounds = resolveReportesDateBounds(desde ?? null, hasta ?? null);
 
   return useQuery({
-    queryKey: ['reportes-filtros-data', branchId, dateBounds.desde, dateBounds.hasta, 'v4'],
+    queryKey: ['reportes-filtros-data', branchId, branchScopeIds ?? null, dateBounds.desde, dateBounds.hasta, 'v4'],
     queryFn: async () => {
       if (!branchId) {
         return {
@@ -189,9 +196,7 @@ export function useReportesFiltros(
         .order('opened_at', { ascending: false })
         .limit(200);
 
-      if (branchId !== 'ALL') {
-        shiftsQuery = shiftsQuery.eq('branch_id', branchId);
-      }
+      shiftsQuery = applyAdminReportBranchFilter(shiftsQuery, 'branch_id', branchId, branchScopeIds);
 
       const { data: shiftsData, error: shiftsError } = await shiftsQuery;
       if (shiftsError) throw shiftsError;
@@ -299,6 +304,8 @@ export function useReportesFiltros(
 
       if (branchId !== 'ALL') {
         menuQuery = menuQuery.eq('branch_id', branchId);
+      } else if (branchScopeIds && branchScopeIds.length > 0) {
+        menuQuery = menuQuery.in('branch_id', branchScopeIds);
       }
 
       const { data: menuRaw, error: menuNodesError } = await menuQuery;
@@ -444,6 +451,7 @@ export function useReportesPagos(
 ) {
   const {
     branchId,
+    branchScopeIds = null,
     desde,
     hasta,
     shiftId,
@@ -461,6 +469,7 @@ export function useReportesPagos(
     queryKey: [
       'reportes-pagos',
       branchId,
+      branchScopeIds,
       desde,
       hasta,
       shiftId,
@@ -505,6 +514,9 @@ export function useReportesPagos(
         let scoped = itemsData;
         if (branchId !== 'ALL') {
           scoped = scoped.filter((item) => item.order?.branch_id === branchId);
+        } else if (branchScopeIds && branchScopeIds.length > 0) {
+          const allowed = new Set(branchScopeIds);
+          scoped = scoped.filter((item) => item.order?.branch_id && allowed.has(item.order.branch_id));
         }
         orderIdsFilter = Array.from(new Set(scoped.map((item) => item.order_id)));
         
@@ -556,6 +568,8 @@ export function useReportesPagos(
 
         if (branchId !== 'ALL') {
           query = query.eq('order.branch_id', branchId);
+        } else if (branchScopeIds && branchScopeIds.length > 0) {
+          query = query.in('order.branch_id', branchScopeIds);
         }
         if (shiftId) query = query.eq('shift_id', shiftId);
         if (cashierId) query = query.eq('created_by', cashierId);
@@ -878,10 +892,10 @@ export function useReportesPagos(
  * Reporte 2: Anulación de Pagos (Trazabilidad y Auditoría)
  */
 export function useReportesAnulaciones(filters: ReportesFilters) {
-  const { branchId, desde, hasta, shiftId, cashierId, supervisorId } = filters;
+  const { branchId, branchScopeIds = null, desde, hasta, shiftId, cashierId, supervisorId } = filters;
 
   return useQuery({
-    queryKey: ['reportes-anulaciones', branchId, desde, hasta, shiftId, cashierId, supervisorId],
+    queryKey: ['reportes-anulaciones', branchId, branchScopeIds, desde, hasta, shiftId, cashierId, supervisorId],
     queryFn: async () => {
       if (!branchId) return { voids: [], kpis: { totalAnulado: 0, incidentes: 0, topSupervisor: 'Ninguno' } };
 
@@ -917,6 +931,8 @@ export function useReportesAnulaciones(filters: ReportesFilters) {
 
         if (branchId !== 'ALL') {
           query = query.eq('order.branch_id', branchId);
+        } else if (branchScopeIds && branchScopeIds.length > 0) {
+          query = query.in('order.branch_id', branchScopeIds);
         }
         if (shiftId) query = query.eq('shift_id', shiftId);
         if (cashierId) query = query.eq('requested_by_user_id', cashierId);
@@ -1024,6 +1040,7 @@ export function useReportesAnulaciones(filters: ReportesFilters) {
 export function useReportesProductos(filters: ReportesFilters) {
   const {
     branchId,
+    branchScopeIds = null,
     desde,
     hasta,
     shiftId,
@@ -1039,6 +1056,7 @@ export function useReportesProductos(filters: ReportesFilters) {
     queryKey: [
       'reportes-productos-vendidos',
       branchId,
+      branchScopeIds,
       desde,
       hasta,
       shiftId,
@@ -1108,6 +1126,8 @@ export function useReportesProductos(filters: ReportesFilters) {
 
           if (branchId !== 'ALL') {
             query = query.eq('order.branch_id', branchId);
+          } else if (branchScopeIds && branchScopeIds.length > 0) {
+            query = query.in('order.branch_id', branchScopeIds);
           }
           if (shiftId) query = query.eq('order.cash_shift_id', shiftId);
           if (creatorId) query = query.eq('order.created_by', creatorId);
@@ -1422,6 +1442,7 @@ function formatLocalDayKey(d: Date): string {
 export function useReportesPersonal(filters: ReportesFilters) {
   const {
     branchId,
+    branchScopeIds = null,
     desde,
     hasta,
     shiftId,
@@ -1450,9 +1471,7 @@ export function useReportesPersonal(filters: ReportesFilters) {
         .order('opened_at', { ascending: false })
         .limit(200);
 
-      if (branchId !== 'ALL') {
-        shiftsQuery = shiftsQuery.eq('branch_id', branchId);
-      }
+      shiftsQuery = applyAdminReportBranchFilter(shiftsQuery, 'branch_id', branchId, branchScopeIds);
       if (shiftId) {
         shiftsQuery = shiftsQuery.eq('id', shiftId);
       }

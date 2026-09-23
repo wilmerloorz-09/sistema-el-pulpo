@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useReportesFiltros, type ReportesFilters } from '@/hooks/useReportesOnlineData';
 import { useBranchShiftGate } from '@/hooks/useBranchShiftGate';
 import { useBranch } from '@/contexts/BranchContext';
+import { filterBranchesForAdminReports } from '@/lib/adminReportBranchScope';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -23,6 +24,8 @@ interface FiltrosPanelProps {
 export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: FiltrosPanelProps) {
   const { data: shiftGate } = useBranchShiftGate();
   const { isGlobalAdmin, branches } = useBranch();
+  const reportBranches = React.useMemo(() => filterBranchesForAdminReports(branches), [branches]);
+  const reportBranchScopeIds = React.useMemo(() => reportBranches.map((b) => b.id), [reportBranches]);
 
   // Estados de filtros
   const [localBranchId, setLocalBranchId] = useState<string>(branchId);
@@ -30,6 +33,14 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
   useEffect(() => {
     setLocalBranchId(branchId);
   }, [branchId]);
+
+  // Si la sucursal activa está excluida, pasar a la primera permitida (o ALL para admin).
+  useEffect(() => {
+    if (!localBranchId || localBranchId === 'ALL') return;
+    if (reportBranches.some((b) => b.id === localBranchId)) return;
+    setLocalBranchId(isGlobalAdmin ? 'ALL' : (reportBranches[0]?.id ?? localBranchId));
+  }, [localBranchId, reportBranches, isGlobalAdmin]);
+
   const [rangeType, setRangeType] = useState<string>('HOY');
   const [desde, setDesde] = useState<string>('');
   const [hasta, setHasta] = useState<string>('');
@@ -71,10 +82,12 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
   }, [activeTab]);
 
   const effectiveBranchId = localBranchId || branchId;
+  const effectiveScopeIds = effectiveBranchId === 'ALL' ? reportBranchScopeIds : null;
   const { data: filtersData, isLoading } = useReportesFiltros(
     effectiveBranchId,
     desde || null,
     hasta || null,
+    effectiveScopeIds,
   );
 
   // Si el cajero elegido ya no está en el rango, volver a "Todos"
@@ -235,6 +248,7 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
 
     onFilterChange({
       branchId: localBranchId,
+      branchScopeIds: localBranchId === 'ALL' ? reportBranchScopeIds : null,
       desde: desdeISO,
       hasta: hastaISO,
       shiftId: shiftId === 'ALL' ? null : shiftId,
@@ -368,7 +382,7 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="ALL" className="font-bold text-primary">🏢 Todas las sucursales</SelectItem>
-                {branches.map(b => (
+                {reportBranches.map(b => (
                   <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
                 ))}
               </SelectContent>
