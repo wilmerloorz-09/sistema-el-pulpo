@@ -28,6 +28,14 @@ import DenominationVisual from "@/components/caja/DenominationVisual";
 
 type CountMap = Record<string, number>;
 
+/** Monedas: +/− de 10; billetes: de 1. */
+function quantityStepForDenomination(denomination: AuxiliaryDenomination): number {
+  if (denomination.denomination_type === "bill") return 1;
+  if (denomination.denomination_type === "coin") return 10;
+  // Fallback si el contexto aún no trae denomination_type.
+  return Number(denomination.value) < 5 ? 10 : 1;
+}
+
 function linesFromCounts(counts: CountMap) {
   return Object.entries(counts)
     .filter(([, qty]) => qty > 0)
@@ -67,6 +75,7 @@ function ExchangeDenominationEditor({
         {denominations.map((denomination) => {
           const qty = counts[denomination.id] ?? 0;
           const max = available[denomination.id] ?? 0;
+          const step = quantityStepForDenomination(denomination);
           return (
             <div
               key={denomination.id}
@@ -88,7 +97,7 @@ function ExchangeDenominationEditor({
                   size="icon"
                   className="h-8 w-8"
                   disabled={disabled || qty <= 0}
-                  onClick={() => onChange(denomination.id, qty - 1)}
+                  onClick={() => onChange(denomination.id, Math.max(0, qty - step))}
                 >
                   <Minus className="h-3.5 w-3.5" />
                 </Button>
@@ -106,7 +115,7 @@ function ExchangeDenominationEditor({
                   size="icon"
                   className="h-8 w-8"
                   disabled={disabled || qty >= max}
-                  onClick={() => onChange(denomination.id, qty + 1)}
+                  onClick={() => onChange(denomination.id, Math.min(max, qty + step))}
                 >
                   <Plus className="h-3.5 w-3.5" />
                 </Button>

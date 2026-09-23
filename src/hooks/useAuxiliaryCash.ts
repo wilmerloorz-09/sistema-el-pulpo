@@ -17,6 +17,7 @@ export interface AuxiliaryDenomination {
   image_url: string | null;
   display_order: number;
   qty_current: number;
+  denomination_type?: "coin" | "bill";
 }
 
 export interface AuxiliaryTarget {
