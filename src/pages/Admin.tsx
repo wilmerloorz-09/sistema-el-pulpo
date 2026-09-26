@@ -16,12 +16,13 @@ import {
   ShoppingBag,
   Scale,
   FileStack,
+  Package,
   PackagePlus,
   Landmark,
   QrCode,
   UserCog,
-  Package,
   Wallet,
+  Truck,
 } from "lucide-react";
 import BancosCrud from "@/components/admin/BancosCrud";
 import CuentasBancariasDestinoAdmin from "@/components/admin/CuentasBancariasDestinoAdmin";
@@ -35,9 +36,10 @@ import BranchesCrud from "@/components/admin/BranchesCrud";
 import CloneBranchCatalog from "@/components/admin/CloneBranchCatalog";
 import FrequentProductsAdmin from "@/components/admin/FrequentProductsAdmin";
 import MenuNodesCrud from "@/components/admin/MenuNodesCrud";
-import ProductosGlobalesAdmin from "@/components/admin/ProductosGlobalesAdmin";
 import QrMesasAdmin from "@/components/admin/QrMesasAdmin";
 import TemporarySupervisorAdmin from "@/components/admin/TemporarySupervisorAdmin";
+import ProveedoresAdmin from "@/components/admin/ProveedoresAdmin";
+import ProductosGlobalesAdmin from "@/components/admin/ProductosGlobalesAdmin";
 import { useBranch } from "@/contexts/BranchContext";
 import { canManage } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
@@ -154,13 +156,11 @@ const TABS: AdminTab[] = [
     visible: (_permissions, isGlobalAdmin) => isGlobalAdmin,
   },
   {
-    value: "productos-globales",
-    label: "Productos generales",
-    icon: <Package className="h-4 w-4" />,
-    component: ProductosGlobalesAdmin,
-    visible: (permissions, isGlobalAdmin, usaCatalogoGlobal) =>
-      (isGlobalAdmin || canManage(permissions, "admin_global") || canManage(permissions, "admin_sucursal"))
-      && (isGlobalAdmin || usaCatalogoGlobal),
+    value: "proveedores",
+    label: "Proveedores",
+    icon: <Truck className="h-4 w-4" />,
+    component: ProveedoresAdmin,
+    visible: (permissions, isGlobalAdmin) => isGlobalAdmin || canManage(permissions, "admin_global"),
   },
   {
     value: "clone",
@@ -168,6 +168,13 @@ const TABS: AdminTab[] = [
     icon: <Copy className="h-4 w-4" />,
     component: CloneBranchCatalog,
     visible: () => false,
+  },
+  {
+    value: "productos-generales",
+    label: "Productos Generales",
+    icon: <Package className="h-4 w-4" />,
+    component: ProductosGlobalesAdmin,
+    visible: (_permissions, isGlobalAdmin) => isGlobalAdmin,
   },
   {
     value: "menu-tree-table",
@@ -260,14 +267,14 @@ const ADMIN_CATEGORIES: AdminCategoryDef[] = [
     id: "organization",
     label: "Organización",
     icon: <Building2 className="h-4 w-4" />,
-    tabValues: ["branches", "users", "temporary-supervisor"],
+    tabValues: ["branches", "users", "temporary-supervisor", "proveedores"],
   },
   {
     id: "menu-sales",
     label: "Menú y ventas",
     icon: <UtensilsCrossed className="h-4 w-4" />,
     tabValues: [
-      "productos-globales",
+      "productos-generales",
       "menu-tree-table",
       "menu-tree-takeout",
       "menu-tree-bulk",

@@ -6,7 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { Building2, Camera, Check, Loader2, Shield, UserPlus } from "lucide-react";
+import { Building2, Camera, Check, Loader2, Shield, UserPlus, Warehouse } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { getUserAlias } from "@/lib/userDisplay";
 import { resolveRoleCodeFromCatalog } from "./userRoleUtils";
 
@@ -102,6 +104,8 @@ const AddUserDialog = ({ open, onClose, onRefresh, catalog, existingUsers }: Add
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [selectedBranchId, setSelectedBranchId] = useState("");
+  const [bodegueroGeneralEnabled, setBodegueroGeneralEnabled] = useState(false);
+  const [bodegaSucursalEnabled, setBodegaSucursalEnabled] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const isAdmin = form.user_type === "administrador";
@@ -121,6 +125,8 @@ const AddUserDialog = ({ open, onClose, onRefresh, catalog, existingUsers }: Add
     setAvatarFile(null);
     setAvatarPreview(null);
     setSelectedBranchId("");
+    setBodegueroGeneralEnabled(false);
+    setBodegaSucursalEnabled(false);
     setErrorMsg(null);
     onClose();
   };
@@ -290,6 +296,17 @@ const AddUserDialog = ({ open, onClose, onRefresh, catalog, existingUsers }: Add
           p_reason: "Sucursal inicial al crear usuario",
         });
         if (activeBranchErr) throw activeBranchErr;
+
+        if (bodegaSucursalEnabled) {
+          const { error: bodegaSucursalErr } = await supabase.rpc("upsert_user_branch_module", {
+            p_target_user_id: createdUserId,
+            p_branch_id: selectedBranchId,
+            p_module_code: "bodega_sucursal",
+            p_is_active: true,
+            p_reason: "Permiso bodeguero de sucursal al crear usuario",
+          });
+          if (bodegaSucursalErr) throw bodegaSucursalErr;
+        }
       }
 
       if (isAdmin) {
@@ -298,6 +315,12 @@ const AddUserDialog = ({ open, onClose, onRefresh, catalog, existingUsers }: Add
           p_role_code: "administrador",
         } as any);
         if (adminErr && !isAlreadyExistsAssignmentError(adminErr)) throw adminErr;
+      } else if (bodegueroGeneralEnabled) {
+        const { error: bodegueroErr } = await supabase.rpc("assign_user_global_role" as any, {
+          p_target_user_id: createdUserId,
+          p_role_code: "bodeguero_general",
+        } as any);
+        if (bodegueroErr) throw bodegueroErr;
       }
     },
     onSuccess: () => {
@@ -533,6 +556,8 @@ const AddUserDialog = ({ open, onClose, onRefresh, catalog, existingUsers }: Add
                 setForm({ ...form, user_type: val as typeof form.user_type });
                 if (val === "administrador") {
                   setSelectedBranchId("");
+                  setBodegueroGeneralEnabled(false);
+                  setBodegaSucursalEnabled(false);
                 }
               }}
             >
@@ -562,7 +587,11 @@ const AddUserDialog = ({ open, onClose, onRefresh, catalog, existingUsers }: Add
               </div>
               <Select
                 value={selectedBranchId || (isSupervisor ? undefined : NO_BRANCH_VALUE)}
-                onValueChange={(value) => setSelectedBranchId(value === NO_BRANCH_VALUE ? "" : value)}
+                onValueChange={(value) => {
+                  const nextBranchId = value === NO_BRANCH_VALUE ? "" : value;
+                  setSelectedBranchId(nextBranchId);
+                  if (!nextBranchId) setBodegaSucursalEnabled(false);
+                }}
               >
                 <SelectTrigger className="h-10 rounded-xl border-slate-200 bg-white">
                   <SelectValue placeholder="Seleccionar sucursal..." />
@@ -583,6 +612,56 @@ const AddUserDialog = ({ open, onClose, onRefresh, catalog, existingUsers }: Add
                   ? "El supervisor debe tener una sucursal asignada."
                   : "El usuario operativo puede crearse sin sucursal y asignarse despues."}
               </p>
+            </div>
+          )}
+
+          {!isAdmin && (
+            <div className="space-y-3">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-1.5">
+                      <Warehouse className="h-3.5 w-3.5 text-primary" />
+                      <Label htmlFor="add-bodeguero-general" className="text-xs font-bold text-slate-800">
+                        Bodeguero general
+                      </Label>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">
+                      Opera la bodega general. Solo puede haber un bodeguero general a la vez.
+                    </p>
+                  </div>
+                  <Switch
+                    id="add-bodeguero-general"
+                    checked={bodegueroGeneralEnabled}
+                    onCheckedChange={setBodegueroGeneralEnabled}
+                    disabled={createUser.isPending}
+                  />
+                </div>
+              </div>
+
+              {selectedBranchId ? (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-1.5">
+                        <Warehouse className="h-3.5 w-3.5 text-primary" />
+                        <Label htmlFor="add-bodega-sucursal" className="text-xs font-bold text-slate-800">
+                          Bodeguero de sucursal
+                        </Label>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground">
+                        Opera la bodega de la sucursal asignada.
+                      </p>
+                    </div>
+                    <Switch
+                      id="add-bodega-sucursal"
+                      checked={bodegaSucursalEnabled}
+                      onCheckedChange={setBodegaSucursalEnabled}
+                      disabled={createUser.isPending}
+                    />
+                  </div>
+                </div>
+              ) : null}
             </div>
           )}
 

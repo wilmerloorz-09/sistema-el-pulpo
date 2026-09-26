@@ -7,6 +7,8 @@ import {
   etiquetaTipoProducto,
   etiquetaIntegraConVentas,
   productoBloqueadoPorStockInventario,
+  stockVisibleParaOrden,
+  formatearStockVisible,
   formatCantidadInventarioDisplay,
   formatearMensajeStockInventario,
   normalizarCantidadInventario,
@@ -35,6 +37,14 @@ describe("inventarioProductos", () => {
     expect(productoBloqueadoPorStockInventario({ integraConVentas: false, cantidadDisponible: 0 })).toBe(false);
     expect(productoBloqueadoPorStockInventario({ integraConVentas: true, cantidadDisponible: 0 })).toBe(true);
     expect(productoBloqueadoPorStockInventario({ integraConVentas: true, cantidadDisponible: 2 })).toBe(false);
+  });
+
+  it("muestra stock en órdenes solo si integra con ventas", () => {
+    expect(stockVisibleParaOrden({ integraConVentas: false, cantidadDisponible: 5 })).toBeNull();
+    expect(stockVisibleParaOrden({ integraConVentas: true, cantidadDisponible: 5 })).toBe(5);
+    expect(stockVisibleParaOrden({ integraConVentas: true, cantidadDisponible: 0 })).toBe(0);
+    expect(formatearStockVisible(6)).toBe("6");
+    expect(formatearStockVisible(1.5)).toBe("1.5");
   });
 
   it("formatea cantidades y mensajes de stock sin ceros sobrantes", () => {

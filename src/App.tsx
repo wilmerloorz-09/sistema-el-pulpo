@@ -52,9 +52,9 @@ import Admin from "./pages/Admin";
 import Turno from "./pages/Turno";
 import ForzarCierreTurno from "./pages/ForzarCierreTurno";
 import Inventario from "./pages/Inventario";
-import InventarioProductos from "./pages/InventarioProductos";
-import InventarioMovimientos from "./pages/InventarioMovimientos";
-import InventarioHistorial from "./pages/InventarioHistorial";
+import InventarioBodegaGeneral from "./pages/InventarioBodegaGeneral";
+import InventarioBodegaSucursal from "./pages/InventarioBodegaSucursal";
+import InventarioNevera from "./pages/InventarioNevera";
 import MonitoreoGlobal from "./pages/MonitoreoGlobal";
 import NotFound from "./pages/NotFound";
 import PrintCashReport from "./pages/PrintCashReport";
@@ -201,6 +201,7 @@ const AuthGate = ({ children }: { children: React.ReactNode }) => {
 const BranchGate = ({ children }: { children: React.ReactNode }) => {
   const { branches, activeBranch, setActiveBranch, loading, isGlobalAdmin } = useBranch();
   const { signOut } = useAuth();
+  const autoSelectedBranchRef = useRef<string | null>(null);
 
   if (loading) {
     return <LoadingScreen />;
@@ -227,6 +228,16 @@ const BranchGate = ({ children }: { children: React.ReactNode }) => {
         </div>
       </div>
     );
+  }
+
+  if (branches.length === 1 && !activeBranch) {
+    const onlyBranch = branches[0];
+    if (autoSelectedBranchRef.current !== onlyBranch.id) {
+      autoSelectedBranchRef.current = onlyBranch.id;
+      void setActiveBranch(onlyBranch);
+      return <LoadingScreen />;
+    }
+    // Ya se intento fijar la unica sucursal; no bloquear el ingreso.
   }
 
   if (branches.length > 1 && !activeBranch) {
@@ -267,7 +278,20 @@ const HomeRedirect = () => {
     return <LoadingScreen />;
   }
 
-  return <Navigate to={preferredPath ?? firstVisiblePath ?? (canAccessAdmin ? "/admin" : "/mesas")} replace />;
+  // Inventario no debe ser el "home": si el gate aún no resolvió roles de turno,
+  // firstVisiblePath puede ser nevera y provocar redirecciones en bucle.
+  const safeFirstVisible =
+    firstVisiblePath
+    && !firstVisiblePath.startsWith("/inventario")
+      ? firstVisiblePath
+      : null;
+
+  return (
+    <Navigate
+      to={preferredPath ?? safeFirstVisible ?? (canAccessAdmin ? "/admin" : "/turno")}
+      replace
+    />
+  );
 };
 
 const SyncInit = () => {
@@ -597,29 +621,42 @@ const App = () => (
                 />
                 <Route path="/inventario" element={<Inventario />} />
                 <Route
-                  path="/inventario/productos"
+                  path="/inventario/bodega-general"
                   element={
-                    <ProtectedRoute allowedModules={["admin_sucursal", "admin_global"]}>
-                      <InventarioProductos />
+                    <ProtectedRoute allowedModules={["bodega_general", "admin_global"]}>
+                      <InventarioBodegaGeneral />
                     </ProtectedRoute>
                   }
                 />
                 <Route
-                  path="/inventario/movimientos"
+                  path="/inventario/bodega-sucursal"
                   element={
-                    <ProtectedRoute allowedModules={["inventario_movimientos", "admin_sucursal", "admin_global"]}>
-                      <InventarioMovimientos />
+                    <ProtectedRoute allowedModules={["bodega_sucursal", "admin_global"]}>
+                      <InventarioBodegaSucursal />
                     </ProtectedRoute>
                   }
                 />
                 <Route
-                  path="/inventario/historial"
+                  path="/inventario/nevera"
                   element={
-                    <ProtectedRoute allowedModules={["inventario_movimientos", "admin_sucursal", "admin_global"]}>
-                      <InventarioHistorial />
+                    <ProtectedRoute allowedModules={["inventario_movimientos", "admin_global"]}>
+                      <InventarioNevera />
                     </ProtectedRoute>
                   }
                 />
+                {/* Compatibilidad rutas legacy → módulos con pestañas */}
+                <Route path="/inventario/bodega-general/productos" element={<Navigate to="/inventario/bodega-general?tab=productos" replace />} />
+                <Route path="/inventario/bodega-general/movimientos" element={<Navigate to="/inventario/bodega-general?tab=compra" replace />} />
+                <Route path="/inventario/bodega-general/historial" element={<Navigate to="/inventario/bodega-general?tab=historial" replace />} />
+                <Route path="/inventario/bodega-sucursal/productos" element={<Navigate to="/inventario/bodega-sucursal?tab=productos" replace />} />
+                <Route path="/inventario/bodega-sucursal/movimientos" element={<Navigate to="/inventario/bodega-sucursal?tab=movimientos" replace />} />
+                <Route path="/inventario/bodega-sucursal/historial" element={<Navigate to="/inventario/bodega-sucursal?tab=historial" replace />} />
+                <Route path="/inventario/nevera/productos" element={<Navigate to="/inventario/nevera?tab=productos" replace />} />
+                <Route path="/inventario/nevera/movimientos" element={<Navigate to="/inventario/nevera?tab=productos" replace />} />
+                <Route path="/inventario/nevera/historial" element={<Navigate to="/inventario/nevera?tab=historial" replace />} />
+                <Route path="/inventario/productos" element={<Navigate to="/inventario/bodega-sucursal?tab=productos" replace />} />
+                <Route path="/inventario/movimientos" element={<Navigate to="/inventario/nevera?tab=productos" replace />} />
+                <Route path="/inventario/historial" element={<Navigate to="/inventario/nevera?tab=historial" replace />} />
                 <Route
                   path="/campanas"
                   element={

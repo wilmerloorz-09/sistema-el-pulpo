@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAuth } from "@/contexts/AuthContext";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { Building2, Camera, Check, KeyRound, Loader2, Shield, Package } from "lucide-react";
+import { Building2, Camera, Check, KeyRound, Loader2, Shield, Package, Warehouse } from "lucide-react";
 import ChangePasswordDialog from "@/components/ChangePasswordDialog";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -98,6 +98,10 @@ const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }
   const [selectedUserType, setSelectedUserType] = useState(currentUserType);
   const [selectedBranchId, setSelectedBranchId] = useState(initialBranchId);
   const [inventarioMovimientosEnabled, setInventarioMovimientosEnabled] = useState(false);
+  const [bodegueroGeneralEnabled, setBodegueroGeneralEnabled] = useState(
+    () => user.global_roles.some((r) => r.code === "bodeguero_general"),
+  );
+  const [bodegaSucursalEnabled, setBodegaSucursalEnabled] = useState(false);
   const displayName = getUserRealName(user) || user.first_name || user.full_name || getUserAlias(user);
 
   const isNewAdmin = selectedUserType === "administrador";
@@ -112,45 +116,65 @@ const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }
   const phoneValid = TEN_DIGIT_PATTERN.test(editValues.phone);
   const canSaveProfile = usernameValid && aliasValid && firstNameValid && lastNameValid && identityNumberValid && homeAddressValid && emailValid && phoneValid;
 
-  const inventarioModuleQuery = useQuery({
-    queryKey: ["edit-user-inventario-module", user.id, selectedBranchId],
+  const branchModulesQuery = useQuery({
+    queryKey: ["edit-user-branch-modules", user.id, selectedBranchId],
     enabled: open && Boolean(selectedBranchId) && !isNewAdmin,
     queryFn: async () => {
-      const { data: moduleRow, error: moduleError } = await supabase
+      const { data: moduleRows, error: moduleError } = await supabase
         .from("modules")
-        .select("id")
-        .eq("code", "inventario_movimientos")
-        .eq("is_active", true)
-        .maybeSingle();
+        .select("id, code")
+        .in("code", ["inventario_movimientos", "bodega_sucursal"])
+        .eq("is_active", true);
       if (moduleError) throw moduleError;
-      if (!moduleRow?.id) return false;
+
+      const moduleIds = (moduleRows ?? []).map((row) => row.id);
+      if (moduleIds.length === 0) {
+        return { inventario_movimientos: false, bodega_sucursal: false };
+      }
 
       const { data, error } = await supabase
         .from("user_branch_modules")
-        .select("is_active")
+        .select("module_id, is_active")
         .eq("user_id", user.id)
         .eq("branch_id", selectedBranchId)
-        .eq("module_id", moduleRow.id)
-        .maybeSingle();
+        .in("module_id", moduleIds);
       if (error) throw error;
-      return Boolean(data?.is_active);
+
+      const activeByModuleId = new Map(
+        (data ?? []).map((row) => [row.module_id, Boolean(row.is_active)]),
+      );
+      const codeToId = new Map((moduleRows ?? []).map((row) => [row.code, row.id]));
+
+      return {
+        inventario_movimientos: Boolean(
+          activeByModuleId.get(codeToId.get("inventario_movimientos") ?? ""),
+        ),
+        bodega_sucursal: Boolean(activeByModuleId.get(codeToId.get("bodega_sucursal") ?? "")),
+      };
     },
   });
 
   useEffect(() => {
+    if (!open) return;
+    setBodegueroGeneralEnabled(user.global_roles.some((r) => r.code === "bodeguero_general"));
+  }, [open, user.global_roles]);
+
+  useEffect(() => {
     if (!open || isNewAdmin || !selectedBranchId) {
       setInventarioMovimientosEnabled(false);
+      setBodegaSucursalEnabled(false);
       return;
     }
-    if (!inventarioModuleQuery.isLoading) {
-      setInventarioMovimientosEnabled(Boolean(inventarioModuleQuery.data));
+    if (!branchModulesQuery.isLoading && branchModulesQuery.data) {
+      setInventarioMovimientosEnabled(Boolean(branchModulesQuery.data.inventario_movimientos));
+      setBodegaSucursalEnabled(Boolean(branchModulesQuery.data.bodega_sucursal));
     }
   }, [
     open,
     isNewAdmin,
     selectedBranchId,
-    inventarioModuleQuery.data,
-    inventarioModuleQuery.isLoading,
+    branchModulesQuery.data,
+    branchModulesQuery.isLoading,
   ]);
 
   const saveUser = useMutation({
@@ -223,6 +247,14 @@ const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }
           if (error) throw error;
         }
 
+        if (user.global_roles.some((r) => r.code === "bodeguero_general") || bodegueroGeneralEnabled) {
+          const { error: removeBodegueroError } = await supabase.rpc("remove_user_global_role" as any, {
+            p_target_user_id: user.id,
+            p_role_code: "bodeguero_general",
+          } as any);
+          if (removeBodegueroError) throw removeBodegueroError;
+        }
+
         for (const assignment of user.branch_assignments) {
           const { error } = await supabase.rpc("remove_user_branch_role" as any, {
             p_target_user_id: user.id,
@@ -246,6 +278,21 @@ const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }
           p_role_code: "administrador",
         } as any);
         if (error) throw error;
+      }
+
+      const hadBodegueroGeneral = user.global_roles.some((r) => r.code === "bodeguero_general");
+      if (bodegueroGeneralEnabled && !hadBodegueroGeneral) {
+        const { error: assignBodegueroError } = await supabase.rpc("assign_user_global_role" as any, {
+          p_target_user_id: user.id,
+          p_role_code: "bodeguero_general",
+        } as any);
+        if (assignBodegueroError) throw assignBodegueroError;
+      } else if (!bodegueroGeneralEnabled && hadBodegueroGeneral) {
+        const { error: removeBodegueroError } = await supabase.rpc("remove_user_global_role" as any, {
+          p_target_user_id: user.id,
+          p_role_code: "bodeguero_general",
+        } as any);
+        if (removeBodegueroError) throw removeBodegueroError;
       }
 
       for (const assignment of user.branch_assignments) {
@@ -295,6 +342,15 @@ const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }
           p_reason: "Permiso movimientos de inventario desde administracion",
         });
         if (inventarioModuleError) throw inventarioModuleError;
+
+        const { error: bodegaSucursalError } = await supabase.rpc("upsert_user_branch_module", {
+          p_target_user_id: user.id,
+          p_branch_id: selectedBranchId,
+          p_module_code: "bodega_sucursal",
+          p_is_active: bodegaSucursalEnabled,
+          p_reason: "Permiso bodeguero de sucursal desde administracion",
+        });
+        if (bodegaSucursalError) throw bodegaSucursalError;
       }
     },
     onSuccess: () => {
@@ -543,6 +599,9 @@ const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }
                   setSelectedUserType(val);
                   if (val === "administrador") {
                     setSelectedBranchId("");
+                    setBodegueroGeneralEnabled(false);
+                    setBodegaSucursalEnabled(false);
+                    setInventarioMovimientosEnabled(false);
                   }
                   if (val === "supervisor" && !selectedBranchId) {
                     setSelectedBranchId(initialBranchId || "");
@@ -597,27 +656,77 @@ const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }
             )}
           </div>
 
-          {!isNewAdmin && selectedBranchId ? (
-            <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-              <div className="flex items-start justify-between gap-4">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-1.5">
-                    <Package className="h-3.5 w-3.5 text-primary" />
+          {!isNewAdmin ? (
+            <div className="space-y-3">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-1.5">
+                      <Warehouse className="h-3.5 w-3.5 text-primary" />
+                      <Label htmlFor="bodeguero-general" className="text-xs font-bold text-slate-800">
+                        Bodeguero general
+                      </Label>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">
+                      Opera la bodega general. Solo puede haber un bodeguero general a la vez.
+                    </p>
+                  </div>
+                  <Switch
+                    id="bodeguero-general"
+                    checked={bodegueroGeneralEnabled}
+                    onCheckedChange={setBodegueroGeneralEnabled}
+                    disabled={isProtected || saveUser.isPending}
+                  />
+                </div>
+              </div>
+
+              {selectedBranchId ? (
+                <>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-1.5">
+                          <Warehouse className="h-3.5 w-3.5 text-primary" />
+                          <Label htmlFor="bodega-sucursal" className="text-xs font-bold text-slate-800">
+                            Bodeguero de sucursal
+                          </Label>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground">
+                          Opera la bodega de la sucursal asignada.
+                        </p>
+                      </div>
+                      <Switch
+                        id="bodega-sucursal"
+                        checked={bodegaSucursalEnabled}
+                        onCheckedChange={setBodegaSucursalEnabled}
+                        disabled={isProtected || saveUser.isPending || branchModulesQuery.isLoading}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-1.5">
+                          <Package className="h-3.5 w-3.5 text-primary" />
                     <Label htmlFor="inventario-movimientos" className="text-xs font-bold text-slate-800">
-                      Movimientos de inventario
+                      Nevera
                     </Label>
                   </div>
                   <p className="text-[11px] text-muted-foreground">
-                    Permite registrar ingresos, salidas y ajustes en la sucursal asignada.
+                    Permite ver el stock de nevera e historial en la sucursal asignada.
                   </p>
-                </div>
-                <Switch
-                  id="inventario-movimientos"
-                  checked={inventarioMovimientosEnabled}
-                  onCheckedChange={setInventarioMovimientosEnabled}
-                  disabled={isProtected || saveUser.isPending || inventarioModuleQuery.isLoading}
-                />
-              </div>
+                      </div>
+                      <Switch
+                        id="inventario-movimientos"
+                        checked={inventarioMovimientosEnabled}
+                        onCheckedChange={setInventarioMovimientosEnabled}
+                        disabled={isProtected || saveUser.isPending || branchModulesQuery.isLoading}
+                      />
+                    </div>
+                  </div>
+                </>
+              ) : null}
             </div>
           ) : null}
           

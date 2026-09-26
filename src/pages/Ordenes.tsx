@@ -64,7 +64,7 @@ import {
   mergeInventarioInfo,
   resolveMenuNodeProductId,
 } from "@/lib/inventarioMenuData";
-import { formatearMensajeStockInventario, productoBloqueadoPorStockInventario } from "@/lib/inventarioProductos";
+import { formatearMensajeStockInventario, productoBloqueadoPorStockInventario, stockVisibleParaOrden } from "@/lib/inventarioProductos";
 import { useCancellation } from "@/hooks/useCancellation";
 import { formatTableNameLabel, getOrderMesaHeaderNumber, getOrderRef } from "@/lib/orderPresentation";
 import { getDispatchedEditQuantity, getOrderStatusLabel, isExtraOrder as orderIsExtra, isOrderItemEditableInDispatchFirstEditMode, isOrderItemFullyDispatched, isSpecialOrderExplicitZeroTotal, resolveInDispatchStagingQuantities } from "@/lib/orderFlow";
@@ -2433,6 +2433,17 @@ const OrdenesContent = () => {
     },
     [productosSinStockInventario],
   );
+
+  const getProductStock = useCallback(
+    (node: MenuNode) => {
+      if (node.node_type !== "product") return null;
+      const productId = resolveMenuNodeProductId(node);
+      if (!productId || !inventarioMapQuery.data) return null;
+      const info = mergeInventarioInfo(inventarioMapQuery.data, productId);
+      return stockVisibleParaOrden(info);
+    },
+    [inventarioMapQuery.data],
+  );
   const handleSelectMenuProduct = async (node: MenuNode) => {
     if (!canEditItems) {
       toast.error("Esta orden no admite agregar productos.");
@@ -3362,6 +3373,7 @@ const OrdenesContent = () => {
         context={frequentProductContext}
         onSelectProduct={handleSelectMenuProduct}
         disabled={!canEditItems}
+        getProductStock={getProductStock}
       />
     ) : null;
 
@@ -3475,6 +3487,7 @@ const OrdenesContent = () => {
         trayMode={isTrayOrder && effectiveTrayType === "C"}
         disabled={!canEditItems}
         onSelectProduct={handleSelectMenuProduct}
+        getProductStock={getProductStock}
         renderNodeAction={(node) =>
           selectingProductId === node.id ? (
             <div className="rounded-2xl border border-orange-200 bg-orange-50 px-3 py-2 text-center text-xs font-bold text-orange-700">

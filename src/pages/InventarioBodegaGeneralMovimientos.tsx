@@ -1,11 +1,16 @@
-import InventarioProductosAdmin from "@/components/admin/InventarioProductosAdmin";
+import BodegaGeneralMovimientosAdmin from "@/components/admin/BodegaGeneralMovimientosAdmin";
 import { useBranch } from "@/contexts/BranchContext";
+import { canManage, canOperate, canView } from "@/lib/permissions";
 import { Card } from "@/components/ui/card";
 import { Lock } from "lucide-react";
 
-const InventarioProductos = () => {
-  const { isGlobalAdmin, activeBranchId } = useBranch();
-  const hasAccess = isGlobalAdmin;
+const InventarioBodegaGeneralMovimientos = () => {
+  const { permissions, isGlobalAdmin, activeBranchId } = useBranch();
+  const hasAccess =
+    isGlobalAdmin
+    || canOperate(permissions, "bodega_general")
+    || canView(permissions, "bodega_general")
+    || canManage(permissions, "admin_global");
 
   if (!hasAccess) {
     return (
@@ -14,7 +19,7 @@ const InventarioProductos = () => {
           <Lock className="mx-auto mb-3 h-10 w-10 text-destructive" />
           <h2 className="font-display text-lg font-black text-destructive">Acceso restringido</h2>
           <p className="mt-2 text-xs text-muted-foreground">
-            Productos Sucursal solo está disponible para Administradores generales.
+            Los movimientos de bodega general requieren ser Administrador general o Bodeguero general.
           </p>
         </Card>
       </div>
@@ -25,7 +30,7 @@ const InventarioProductos = () => {
     return (
       <div className="p-6">
         <Card className="rounded-[28px] border border-border/80 p-6 text-sm text-muted-foreground">
-          Selecciona una sucursal activa para administrar el inventario.
+          Selecciona una sucursal activa para registrar movimientos de bodega general.
         </Card>
       </div>
     );
@@ -33,9 +38,9 @@ const InventarioProductos = () => {
 
   return (
     <div className="mx-auto max-w-6xl p-4 sm:p-6">
-      <InventarioProductosAdmin />
+      <BodegaGeneralMovimientosAdmin />
     </div>
   );
 };
 
-export default InventarioProductos;
+export default InventarioBodegaGeneralMovimientos;

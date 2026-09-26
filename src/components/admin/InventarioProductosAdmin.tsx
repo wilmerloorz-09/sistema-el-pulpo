@@ -82,7 +82,7 @@ const InventarioProductosAdmin = () => {
           <Package className="h-5 w-5" />
         </div>
         <div>
-          <h2 className="font-display text-lg font-bold text-foreground">Productos de la sucursal</h2>
+          <h2 className="font-display text-lg font-bold text-foreground">Productos Sucursal</h2>
           <p className="text-xs text-muted-foreground">
             Sucursal: <span className="font-semibold text-foreground">{activeBranch?.name ?? activeBranchId}</span>
             {" · "}Menú mesa
@@ -91,7 +91,7 @@ const InventarioProductosAdmin = () => {
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Cada producto muestra su stock y configuración por sucursal. La cantidad se modifica solo desde Movimientos.
+        Cada producto muestra su stock y configuración por sucursal. La cantidad se modifica solo desde Movimientos de Nevera.
         {" "}
         <span className="font-semibold">Integra ventas = No</span> significa que las ventas no validarán stock (hasta activarlo).
         {!canEditInventario ? " Modo solo lectura." : null}

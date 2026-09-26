@@ -1,5 +1,5 @@
 import { useMemo, type ReactNode } from "react";
-import { BarChart3, ChefHat, CircleDollarSign, ConciergeBell, LayoutGrid, Package, PackagePlus, Settings, UtensilsCrossed, PlayCircle, ShoppingBag, Sparkles, Zap, Banknote, History, Users, Gift, Megaphone, Search, PowerOff, PackageCheck, ArrowLeftRight, ClipboardList, FileText, HandCoins } from "lucide-react";
+import { BarChart3, ChefHat, CircleDollarSign, ConciergeBell, LayoutGrid, Package, PackagePlus, Settings, UtensilsCrossed, PlayCircle, ShoppingBag, Sparkles, Zap, Banknote, History, Users, Gift, Megaphone, Search, PowerOff, PackageCheck, ArrowLeftRight, FileText, HandCoins, Warehouse } from "lucide-react";
 import { useBranch } from "@/contexts/BranchContext";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { useDispatchAccess } from "@/hooks/useDispatchAccess";
@@ -256,9 +256,9 @@ const NAV_ITEMS: AppNavItem[] = [
     visible: () => false,
   },
   {
-    to: "/inventario/productos",
-    label: "Productos de la sucursal",
-    icon: <Package className="h-5 w-5" />,
+    to: "/inventario/bodega-general",
+    label: "Bodega General",
+    icon: <Warehouse className="h-5 w-5" />,
     group: "INVENTARIO",
     tone: {
       active: "from-teal-500 to-emerald-400",
@@ -266,14 +266,28 @@ const NAV_ITEMS: AppNavItem[] = [
       iconIdle: "bg-teal-50 text-teal-600",
     },
     visible: (permissions) =>
-      canManage(permissions, "admin_sucursal")
-      || canManage(permissions, "admin_global")
-      || canView(permissions, "admin_sucursal")
-      || canView(permissions, "admin_global"),
+      canOperate(permissions, "bodega_general")
+      || canView(permissions, "bodega_general")
+      || canManage(permissions, "admin_global"),
   },
   {
-    to: "/inventario/movimientos",
-    label: "Movimientos",
+    to: "/inventario/bodega-sucursal",
+    label: "Bodega Sucursal",
+    icon: <Package className="h-5 w-5" />,
+    group: "INVENTARIO",
+    tone: {
+      active: "from-orange-500 to-amber-400",
+      idle: "hover:border-orange-200 hover:bg-orange-50/90 hover:text-orange-700",
+      iconIdle: "bg-orange-50 text-orange-600",
+    },
+    visible: (permissions) =>
+      canOperate(permissions, "bodega_sucursal")
+      || canView(permissions, "bodega_sucursal")
+      || canManage(permissions, "admin_global"),
+  },
+  {
+    to: "/inventario/nevera",
+    label: "Nevera",
     icon: <ArrowLeftRight className="h-5 w-5" />,
     group: "INVENTARIO",
     tone: {
@@ -282,25 +296,7 @@ const NAV_ITEMS: AppNavItem[] = [
       iconIdle: "bg-cyan-50 text-cyan-600",
     },
     visible: (permissions) =>
-      canManage(permissions, "admin_sucursal")
-      || canManage(permissions, "admin_global")
-      || canOperate(permissions, "inventario_movimientos")
-      || canView(permissions, "inventario_movimientos"),
-  },
-  {
-    to: "/inventario/historial",
-    label: "Historial",
-    icon: <ClipboardList className="h-5 w-5" />,
-    group: "INVENTARIO",
-    tone: {
-      active: "from-indigo-500 to-violet-400",
-      idle: "hover:border-indigo-200 hover:bg-indigo-50/90 hover:text-indigo-700",
-      iconIdle: "bg-indigo-50 text-indigo-600",
-    },
-    visible: (permissions) =>
-      canManage(permissions, "admin_sucursal")
-      || canManage(permissions, "admin_global")
-      || canOperate(permissions, "inventario_movimientos")
+      canOperate(permissions, "inventario_movimientos")
       || canView(permissions, "inventario_movimientos"),
   },
   {
@@ -401,15 +397,35 @@ export function useVisibleNavItems() {
 
     const isGlobalAdminWithoutBranches = isGlobalAdmin && branches.length === 0;
     const canAccessAdmin = isGlobalAdmin || canView(permissions, "admin_sucursal") || canView(permissions, "admin_global");
-    const canAccessInventarioProductos =
-      canManage(permissions, "admin_sucursal")
-      || canManage(permissions, "admin_global")
-      || canView(permissions, "admin_sucursal")
-      || canView(permissions, "admin_global");
-    const canAccessInventarioMovimientos =
-      canAccessInventarioProductos
+    const canAccessBodegaGeneral =
+      isGlobalAdmin
+      || canOperate(permissions, "bodega_general")
+      || canView(permissions, "bodega_general");
+    const canAccessBodegaSucursal =
+      isGlobalAdmin
+      || canOperate(permissions, "bodega_sucursal")
+      || canView(permissions, "bodega_sucursal");
+    // Productos Sucursal (config stock nevera): solo Administrador general.
+    const canAccessProductosSucursal = isGlobalAdmin;
+    const canAccessInventarioNevera =
+      isGlobalAdmin
       || canOperate(permissions, "inventario_movimientos")
       || canView(permissions, "inventario_movimientos");
+    const canAccessInventarioPath = (path: string) => {
+      if (path === "/inventario/bodega-general" || path.startsWith("/inventario/bodega-general/")) {
+        return canAccessBodegaGeneral;
+      }
+      if (path === "/inventario/bodega-sucursal" || path.startsWith("/inventario/bodega-sucursal/")) {
+        return canAccessBodegaSucursal || canAccessProductosSucursal;
+      }
+      if (path === "/inventario/nevera" || path.startsWith("/inventario/nevera/")) {
+        return canAccessInventarioNevera;
+      }
+      // Rutas legacy
+      if (path === "/inventario/productos") return canAccessProductosSucursal;
+      if (path === "/inventario/movimientos" || path === "/inventario/historial") return canAccessInventarioNevera;
+      return false;
+    };
     const canAccessTurno = canAccessAdmin || canView(permissions, "turno");
     const puedeGestionarCampanas = isGlobalAdmin || canManage(permissions, "admin_global");
     const puedeRegistrarPromociones = Boolean(sg?.puedeRegistrarPromociones);
@@ -441,9 +457,7 @@ export function useVisibleNavItems() {
       if (!hasOperationalShift) {
         return (
           (item.to === "/admin" && canAccessAdmin)
-          || (item.to === "/inventario/productos" && canAccessInventarioProductos)
-          || (item.to === "/inventario/movimientos" && canAccessInventarioMovimientos)
-          || (item.to === "/inventario/historial" && canAccessInventarioMovimientos)
+          || (item.group === "INVENTARIO" && canAccessInventarioPath(item.to))
           || (item.to.startsWith("/campanas") && puedeGestionarCampanas)
           || (item.to.startsWith("/promociones/consulta") && (puedeRegistrarPromociones || puedeGestionarCampanas))
           || (item.to.startsWith("/promociones") && (puedeRegistrarPromociones || isGlobalAdmin))
@@ -462,16 +476,8 @@ export function useVisibleNavItems() {
         return true;
       }
 
-      if (item.to === "/inventario/productos" && (isGlobalAdmin || canAccessInventarioProductos)) {
-        return true;
-      }
-
-      if (item.to === "/inventario/movimientos" && (isGlobalAdmin || canAccessInventarioMovimientos)) {
-        return true;
-      }
-
-      if (item.to === "/inventario/historial" && (isGlobalAdmin || canAccessInventarioMovimientos)) {
-        return true;
+      if (item.group === "INVENTARIO") {
+        return canAccessInventarioPath(item.to);
       }
 
       if (item.to === "/cierres-caja") {

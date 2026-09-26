@@ -53,7 +53,9 @@ export function usePreferredHomePath() {
 
     return {
       preferredPath,
-      firstVisiblePath: visibleItems[0]?.to ?? null,
+      firstVisiblePath: visibleItems.find((item) => !item.to.startsWith("/inventario"))?.to
+        ?? visibleItems[0]?.to
+        ?? null,
       canAccessAdmin,
       hasOperationalShift,
       // No esperar config de despacho: bloqueaba el login con otra round-trip.

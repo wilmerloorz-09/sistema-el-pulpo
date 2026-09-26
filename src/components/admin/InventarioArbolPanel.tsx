@@ -4,25 +4,34 @@ import MenuNavigator from "@/components/order/MenuNavigator";
 import type { MenuNode } from "@/hooks/useMenuTree";
 import type { InventarioProductoInfo } from "@/lib/inventarioMenuData";
 import {
+  fetchInventarioBodegaSucursalMap,
   fetchInventarioProductoMap,
   mergeInventarioInfo,
   resolveMenuNodeProductId,
 } from "@/lib/inventarioMenuData";
 
+export type InventarioStockSource = "nevera" | "bodega_sucursal";
+
 type InventarioArbolPanelProps = {
   branchId: string | null;
+  /** nevera = inventario_productos; bodega_sucursal = inventario_bodega_sucursal */
+  stockSource?: InventarioStockSource;
   renderNodeAction: (node: MenuNode, info: InventarioProductoInfo) => ReactNode;
 };
 
 const InventarioArbolPanel = ({
   branchId,
+  stockSource = "nevera",
   renderNodeAction,
 }: InventarioArbolPanelProps) => {
   const inventarioQuery = useQuery({
-    queryKey: ["inventario-producto-map", branchId],
+    queryKey: ["inventario-producto-map", branchId, stockSource],
     enabled: Boolean(branchId),
     queryFn: async () => {
       if (!branchId) return new Map();
+      if (stockSource === "bodega_sucursal") {
+        return fetchInventarioBodegaSucursalMap(branchId);
+      }
       return fetchInventarioProductoMap(branchId);
     },
   });
@@ -33,7 +42,10 @@ const InventarioArbolPanel = ({
     const productoId = resolveMenuNodeProductId(node);
     if (!productoId) return null;
     const info = mergeInventarioInfo(inventarioMap, productoId);
-    return renderNodeAction(node, info);
+    return renderNodeAction(node, {
+      ...info,
+      productoId,
+    });
   };
 
   return (

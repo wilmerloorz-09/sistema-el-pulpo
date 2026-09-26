@@ -184,3 +184,102 @@ export const InventarioMovimientosNodeMeta = ({
     </div>
   );
 };
+
+type BodegaSucursalProductosNodeMetaProps = {
+  info: InventarioProductoInfo;
+  canEdit?: boolean;
+  savingIntegra?: boolean;
+  onIntegraChange?: (integra: boolean) => void;
+  /** Solo Productos Sucursal; en bodega general no aplica. */
+  showIntegraVentas?: boolean;
+  canAjustar?: boolean;
+  onAjustar?: () => void;
+};
+
+export const BodegaSucursalProductosNodeMeta = ({
+  info,
+  canEdit = false,
+  savingIntegra = false,
+  onIntegraChange,
+  showIntegraVentas = false,
+  canAjustar = false,
+  onAjustar,
+}: BodegaSucursalProductosNodeMetaProps) => {
+  const estado = estadoInventarioDesdeCantidad(info.cantidadDisponible);
+
+  return (
+    <div
+      className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
+      onClick={stopTreeClick}
+      onKeyDown={stopTreeClick}
+    >
+      <div
+        className={cn(
+          "grid flex-1 grid-cols-2 gap-2 sm:grid-cols-3",
+          showIntegraVentas ? "lg:grid-cols-5" : "lg:grid-cols-4",
+        )}
+      >
+        <MetaField label="Cantidad">
+          <p className="text-sm font-bold tabular-nums text-foreground">{info.cantidadDisponible}</p>
+        </MetaField>
+        <MetaField label="Estado">
+          <Badge
+            variant="outline"
+            className={cn(
+              "rounded-lg text-[10px] font-bold",
+              estado === "DISPONIBLE"
+                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                : "border-rose-200 bg-rose-50 text-rose-800",
+            )}
+          >
+            {etiquetaEstadoInventario(estado)}
+          </Badge>
+        </MetaField>
+        <MetaField label="Activo catálogo">
+          <Badge variant="outline" className="rounded-lg text-[10px] font-bold">
+            {info.activoCatalogo ? "Sí" : "No"}
+          </Badge>
+        </MetaField>
+        <MetaField label="Tipo">
+          <p className="text-xs font-semibold text-foreground">{etiquetaTipoProducto(info.tipoProducto)}</p>
+        </MetaField>
+        {showIntegraVentas ? (
+          <MetaField label="Integra ventas">
+            {canEdit && onIntegraChange ? (
+              <Select
+                value={info.integraConVentas ? "si" : "no"}
+                onValueChange={(value) => onIntegraChange(value === "si")}
+                disabled={savingIntegra}
+              >
+                <SelectTrigger className="h-8 rounded-lg text-[11px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="no">No</SelectItem>
+                  <SelectItem value="si">Sí</SelectItem>
+                </SelectContent>
+              </Select>
+            ) : (
+              <Badge variant="outline" className="rounded-lg text-[10px] font-bold">
+                {info.integraConVentas ? "Sí" : "No"}
+              </Badge>
+            )}
+          </MetaField>
+        ) : null}
+      </div>
+
+      {canAjustar && onAjustar ? (
+        <Button
+          size="sm"
+          className="h-9 shrink-0 rounded-xl"
+          onClick={(event) => {
+            event.stopPropagation();
+            onAjustar();
+          }}
+        >
+          Ajustar
+        </Button>
+      ) : null}
+    </div>
+  );
+};

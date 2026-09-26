@@ -118,3 +118,19 @@ export function productoBloqueadoPorStockInventario(params: {
 }): boolean {
   return params.integraConVentas && Number(params.cantidadDisponible) <= 0;
 }
+
+/** Stock a mostrar en menú/órdenes: solo si Integra ventas = Sí. */
+export function stockVisibleParaOrden(params: {
+  integraConVentas: boolean;
+  cantidadDisponible: number;
+}): number | null {
+  if (!params.integraConVentas) return null;
+  const qty = Number(params.cantidadDisponible);
+  return Number.isFinite(qty) ? Math.max(0, qty) : 0;
+}
+
+export function formatearStockVisible(qty: number): string {
+  if (!Number.isFinite(qty)) return "0";
+  if (Number.isInteger(qty)) return String(qty);
+  return String(Number(qty.toFixed(3)));
+}

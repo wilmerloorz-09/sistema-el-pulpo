@@ -59,6 +59,75 @@ export async function fetchInventarioProductoMap(
       cantidadDisponible: Number(row.cantidad_disponible ?? 0),
       tipoProducto: product.tipo_producto === "PREPARADO" ? "PREPARADO" : "COMPRADO",
       activoCatalogo: product.is_active,
+      // Se sobrescribe abajo con el flag de bodega sucursal (fuente de verdad).
+      integraConVentas: Boolean(row.integra_con_ventas),
+    });
+  }
+
+  // Integra ventas se configura en bodega sucursal.
+  const { data: bodegaRows, error: bodegaError } = await supabase
+    .from("inventario_bodega_sucursal" as any)
+    .select("producto_global_id, integra_con_ventas")
+    .eq("sucursal_id", branchId);
+  if (bodegaError) throw bodegaError;
+
+  for (const row of (bodegaRows as any[]) ?? []) {
+    const productoId = String(row.producto_global_id ?? "");
+    if (!productoId) continue;
+    const existing = map.get(productoId);
+    if (existing) {
+      existing.integraConVentas = Boolean(row.integra_con_ventas);
+    } else if (row.integra_con_ventas) {
+      map.set(productoId, {
+        productoId,
+        inventarioId: null,
+        cantidadDisponible: 0,
+        tipoProducto: "COMPRADO",
+        activoCatalogo: true,
+        integraConVentas: true,
+      });
+    }
+  }
+
+  return map;
+}
+
+/** Stock de bodega de sucursal (recibido desde bodega general), keyed por producto_global_id. */
+export async function fetchInventarioBodegaSucursalMap(
+  branchId: string,
+): Promise<Map<string, InventarioProductoInfo>> {
+  const map = new Map<string, InventarioProductoInfo>();
+
+  const { data: inventoryRows, error: invError } = await supabase
+    .from("inventario_bodega_sucursal" as any)
+    .select(`
+      id,
+      producto_global_id,
+      cantidad_disponible,
+      integra_con_ventas,
+      productos_globales (
+        id,
+        tipo_producto,
+        activo
+      )
+    `)
+    .eq("sucursal_id", branchId);
+  if (invError) throw invError;
+
+  for (const row of (inventoryRows as any[]) ?? []) {
+    const product = row.productos_globales as {
+      id: string;
+      tipo_producto: TipoProducto | null;
+      activo: boolean;
+    } | null;
+    const productoGlobalId = String(row.producto_global_id ?? "");
+    if (!productoGlobalId) continue;
+    map.set(productoGlobalId, {
+      productoId: productoGlobalId,
+      inventarioId: row.id ?? null,
+      cantidadDisponible: Number(row.cantidad_disponible ?? 0),
+      tipoProducto: product?.tipo_producto === "PREPARADO" ? "PREPARADO" : "COMPRADO",
+      activoCatalogo: product?.activo ?? true,
       integraConVentas: Boolean(row.integra_con_ventas),
     });
   }

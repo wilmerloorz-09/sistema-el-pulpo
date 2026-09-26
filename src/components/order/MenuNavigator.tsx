@@ -5,12 +5,15 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useMenuTree, type MenuNode, type MenuScope } from "@/hooks/useMenuTree";
+import { formatearStockVisible } from "@/lib/inventarioProductos";
 
 interface MenuNavigatorProps {
   onSelectProduct?: (node: MenuNode) => void;
   includeInactive?: boolean;
   menuScope?: MenuScope;
   renderNodeAction?: (node: MenuNode) => ReactNode;
+  /** Stock de nevera cuando el producto integra ventas; null = no mostrar. */
+  getProductStock?: (node: MenuNode) => number | null;
   trayMode?: boolean;
   trayNodes?: MenuNode[];
   nodesOverride?: MenuNode[] | null;
@@ -70,18 +73,21 @@ const NodeCard = ({
   node,
   onClick,
   nodeAction,
+  stock,
   trayMode = false,
   hidePrices = false,
 }: {
   node: MenuNode;
   onClick: () => void;
   nodeAction?: ReactNode;
+  stock?: number | null;
   trayMode?: boolean;
   hidePrices?: boolean;
 }) => {
   const isProduct = node.node_type === "product";
   const isDisabledNode = !node.is_active && !nodeAction;
   const showsManualPrice = trayMode || node.price == null;
+  const showStock = isProduct && stock != null;
 
   if (isProduct) {
     return (
@@ -118,14 +124,30 @@ const NodeCard = ({
           "min-w-0 flex flex-1",
           hidePrices && nodeAction ? "flex-col gap-2" : "items-center justify-between gap-3",
         )}>
-          <p className="truncate text-sm font-semibold text-foreground md:text-[15px]">{node.name}</p>
+          <p className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground md:text-[15px]">{node.name}</p>
           {hidePrices && nodeAction ? (
             nodeAction
-          ) : !hidePrices ? (
-            <p className="shrink-0 text-lg font-bold text-red-600 md:text-xl">
-              {showsManualPrice ? "Manual" : `$${Number(node.price).toFixed(2)}`}
-            </p>
-          ) : null}
+          ) : (
+            <div className="flex shrink-0 items-center gap-2.5 sm:gap-3">
+              {showStock ? (
+                <span
+                  className={cn(
+                    "rounded-lg border px-2 py-0.5 text-[11px] font-bold tabular-nums md:text-xs",
+                    stock! <= 0
+                      ? "border-rose-200 bg-rose-50 text-rose-700"
+                      : "border-emerald-200 bg-emerald-50 text-emerald-800",
+                  )}
+                >
+                  Stock {formatearStockVisible(stock!)}
+                </span>
+              ) : null}
+              {!hidePrices ? (
+                <p className="text-lg font-bold text-red-600 md:text-xl">
+                  {showsManualPrice ? "Manual" : `$${Number(node.price).toFixed(2)}`}
+                </p>
+              ) : null}
+            </div>
+          )}
         </div>
 
         {!node.is_active && (
@@ -196,6 +218,7 @@ const MenuNavigator = ({
   includeInactive = false,
   menuScope = "TABLE",
   renderNodeAction,
+  getProductStock,
   trayMode = false,
   trayNodes,
   nodesOverride,
@@ -588,6 +611,7 @@ const MenuNavigator = ({
               node={node}
               trayMode={trayMode}
               hidePrices={hidePrices}
+              stock={node.node_type === "product" ? (getProductStock?.(node) ?? null) : null}
               onClick={() => {
                 if (disabled) return;
                 if (!node.is_active && !renderNodeAction?.(node)) return;

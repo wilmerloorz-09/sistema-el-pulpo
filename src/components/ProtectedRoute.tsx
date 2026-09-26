@@ -200,16 +200,16 @@ const ProtectedRoute = ({
 
   const fallback = (() => {
     if (isStaleShift && canAccessTurno) return "/turno";
-    if (preferredPath) return preferredPath;
-    if (firstVisiblePath) return firstVisiblePath;
-    const firstVisibleItem = visibleItems[0]?.to;
+    if (preferredPath && !preferredPath.startsWith("/inventario")) return preferredPath;
+    if (firstVisiblePath && !firstVisiblePath.startsWith("/inventario")) return firstVisiblePath;
+    const firstVisibleItem = visibleItems.find((item) => !item.to.startsWith("/inventario"))?.to;
     if (firstVisibleItem) return firstVisibleItem;
     const firstAllowed = currentModules.find((code) => MODULE_FALLBACK_PATH[code]);
     if (firstAllowed) return MODULE_FALLBACK_PATH[firstAllowed];
     if (isGlobalAdminWithoutBranches) return "/admin";
     if (canAccessAdmin || preferredCanAccessAdmin) return "/admin";
     if (canAccessTurno) return "/turno";
-    return "/";
+    return "/admin";
   })();
 
   if (isPersonnelOnlyOnShift) {
@@ -354,6 +354,21 @@ const ProtectedRoute = ({
       || (isGlobalAdmin && allowedModules.includes("admin_global"));
 
     if (!hasModule) {
+      // Evitar Navigate al mismo path (bucle infinito / spinner eterno).
+      if (fallback === location.pathname || fallback.startsWith(`${location.pathname}?`)) {
+        return (
+          <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center p-4">
+            <div className="w-full max-w-lg rounded-[28px] border border-orange-200 bg-white/90 p-6 text-center shadow-sm">
+              <h2 className="font-display text-xl font-black text-foreground">
+                Acceso restringido
+              </h2>
+              <p className="mt-2 text-sm text-muted-foreground">
+                No tienes permiso para entrar a este modulo.
+              </p>
+            </div>
+          </div>
+        );
+      }
       return <Navigate to={fallback} replace />;
     }
   }

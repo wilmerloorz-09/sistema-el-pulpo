@@ -128,13 +128,7 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onOpenAutopedidos, o
           const items = visibleItems.filter(item => item.group === group);
           if (items.length === 0) return null;
 
-          return (
-            <div key={group} className="flex flex-col gap-1.5">
-              <h3 className="mb-1 px-3 text-[10px] font-black uppercase tracking-[0.15em] text-slate-500">
-                {group}
-              </h3>
-              <div className="flex flex-col gap-1">
-                {items.map((item) => {
+          const renderNavItem = (item: (typeof items)[number]) => {
                   const mesasListOrigin = searchParams.get("origin");
                   const isOriginMesasList = isMesasListOrigin(mesasListOrigin);
                   const isOriginParaLlevar = searchParams.get("origin") === "para-llevar";
@@ -169,7 +163,7 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onOpenAutopedidos, o
                         ? (location.pathname + location.search === item.to)
                         : item.end
                           ? (location.pathname === item.to && location.search === "")
-                          : (location.pathname === item.to || (hasSubItems && location.pathname.startsWith(item.to)));
+                          : (location.pathname === item.to || location.pathname.startsWith(`${item.to}/`) || (hasSubItems && location.pathname.startsWith(item.to)));
 
                   const isExpanded = expandedItem === item.to;
 
@@ -302,7 +296,15 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onOpenAutopedidos, o
                       )}
                     </div>
                   );
-                })}
+          };
+
+          return (
+            <div key={group} className="flex flex-col gap-1.5">
+              <h3 className="mb-1 px-3 text-[10px] font-black uppercase tracking-[0.15em] text-slate-500">
+                {group}
+              </h3>
+              <div className="flex flex-col gap-1">
+                {items.map((item) => renderNavItem(item))}
               </div>
             </div>
           );

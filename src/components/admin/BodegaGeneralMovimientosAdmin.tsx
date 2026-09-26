@@ -1,36 +1,35 @@
 import { useState } from "react";
 import { ArrowLeftRight } from "lucide-react";
-import { useBranch } from "@/contexts/BranchContext";
-import { canOperate } from "@/lib/permissions";
-import InventarioArbolPanel from "@/components/admin/InventarioArbolPanel";
-import InventarioMovimientoDialog from "@/components/admin/InventarioMovimientoDialog";
-import { InventarioMovimientosNodeMeta } from "@/components/admin/inventarioNodeMeta";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { useBranch } from "@/contexts/BranchContext";
+import { canOperate } from "@/lib/permissions";
+import BodegaGeneralArbolPanel from "@/components/admin/BodegaGeneralArbolPanel";
+import BodegaGeneralMovimientoDialog from "@/components/admin/BodegaGeneralMovimientoDialog";
+import { InventarioMovimientosNodeMeta } from "@/components/admin/inventarioNodeMeta";
 
-const InventarioMovimientosAdmin = () => {
+const BodegaGeneralMovimientosAdmin = () => {
   const { activeBranchId, activeBranch, isGlobalAdmin, permissions } = useBranch();
   const qc = useQueryClient();
   const canRegistrarMovimientos =
-    isGlobalAdmin
-    || canOperate(permissions, "inventario_movimientos");
+    isGlobalAdmin || canOperate(permissions, "bodega_general");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selected, setSelected] = useState<{
-    productoId: string;
+    productoGlobalId: string;
     nombre: string;
     cantidad: number;
   } | null>(null);
 
   const handleSuccess = () => {
     toast.success("Movimiento registrado");
-    void qc.invalidateQueries({ queryKey: ["inventario-producto-map", activeBranchId] });
-    void qc.invalidateQueries({ queryKey: ["admin-inventario-movimientos", activeBranchId] });
+    void qc.invalidateQueries({ queryKey: ["inventario-bodega-general-map"] });
+    void qc.invalidateQueries({ queryKey: ["admin-movimientos-bodega-general"] });
   };
 
   if (!activeBranchId) {
     return (
       <div className="rounded-2xl border border-border/80 bg-card/60 p-6 text-sm text-muted-foreground">
-        Selecciona una sucursal activa para registrar movimientos de nevera.
+        Selecciona una sucursal activa para navegar el menú y registrar movimientos de bodega general.
       </div>
     );
   }
@@ -42,28 +41,32 @@ const InventarioMovimientosAdmin = () => {
           <ArrowLeftRight className="h-5 w-5" />
         </div>
         <div>
-          <h2 className="font-display text-lg font-bold text-foreground">Movimientos de Nevera</h2>
+          <h2 className="font-display text-lg font-bold text-foreground">
+            Movimientos de Bodega General
+          </h2>
           <p className="text-xs text-muted-foreground">
-            Sucursal: <span className="font-semibold text-foreground">{activeBranch?.name ?? activeBranchId}</span>
-            {" · "}Stock en nevera · Menú mesa
+            Sucursal:{" "}
+            <span className="font-semibold text-foreground">
+              {activeBranch?.name ?? activeBranchId}
+            </span>
+            {" · "}Stock en bodega general · Menú mesa
           </p>
         </div>
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Usa el botón en cada producto para registrar ingreso, salida o ajuste de nevera.
+        Usa el botón en cada producto para registrar ingreso, salida o ajuste de bodega general.
         {!canRegistrarMovimientos ? " Modo solo lectura." : null}
       </p>
 
-      <InventarioArbolPanel
-        branchId={activeBranchId}
+      <BodegaGeneralArbolPanel
         renderNodeAction={(node, info) => (
           <InventarioMovimientosNodeMeta
             info={info}
             canRegistrar={canRegistrarMovimientos}
             onRegistrar={() => {
               setSelected({
-                productoId: info.productoId,
+                productoGlobalId: info.productoId,
                 nombre: node.name,
                 cantidad: info.cantidadDisponible,
               });
@@ -73,17 +76,16 @@ const InventarioMovimientosAdmin = () => {
         )}
       />
 
-      <InventarioMovimientoDialog
+      <BodegaGeneralMovimientoDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}
-        productoId={selected?.productoId ?? null}
+        productoGlobalId={selected?.productoGlobalId ?? null}
         productoNombre={selected?.nombre ?? ""}
         cantidadActual={selected?.cantidad ?? 0}
-        sucursalId={activeBranchId}
         onSuccess={handleSuccess}
       />
     </div>
   );
 };
 
-export default InventarioMovimientosAdmin;
+export default BodegaGeneralMovimientosAdmin;

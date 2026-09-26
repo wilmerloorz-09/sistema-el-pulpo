@@ -22,27 +22,25 @@ import {
   type TipoMovimientoInventario,
 } from "@/lib/inventarioProductos";
 
-type InventarioMovimientoDialogProps = {
+type BodegaGeneralMovimientoDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  productoId: string | null;
+  productoGlobalId: string | null;
   productoNombre: string;
   cantidadActual: number;
-  sucursalId: string | null;
   defaultTipoMovimiento?: TipoMovimientoInventario;
   onSuccess: () => void;
 };
 
-const InventarioMovimientoDialog = ({
+const BodegaGeneralMovimientoDialog = ({
   open,
   onOpenChange,
-  productoId,
+  productoGlobalId,
   productoNombre,
   cantidadActual,
-  sucursalId,
   defaultTipoMovimiento = "INGRESO",
   onSuccess,
-}: InventarioMovimientoDialogProps) => {
+}: BodegaGeneralMovimientoDialogProps) => {
   const [tipoMovimiento, setTipoMovimiento] = useState<TipoMovimientoInventario>(defaultTipoMovimiento);
   const [cantidad, setCantidad] = useState("");
   const [motivo, setMotivo] = useState("");
@@ -55,7 +53,7 @@ const InventarioMovimientoDialog = ({
     setCantidad("");
     setMotivo("");
     setError(null);
-  }, [open, productoId, defaultTipoMovimiento]);
+  }, [open, productoGlobalId, defaultTipoMovimiento]);
 
   const cantidadNum = normalizarCantidadInventario(cantidad);
   const cantidadNueva = calcularCantidadNuevaMovimiento(cantidadActual, tipoMovimiento, cantidadNum);
@@ -67,7 +65,7 @@ const InventarioMovimientoDialog = ({
   }, [tipoMovimiento]);
 
   const handleSubmit = async () => {
-    if (!productoId || !sucursalId) return;
+    if (!productoGlobalId) return;
 
     const validationError = validarMovimientoInventario(
       cantidadActual,
@@ -83,13 +81,13 @@ const InventarioMovimientoDialog = ({
     setSaving(true);
     setError(null);
 
-    const { error: rpcError } = await supabase.rpc("registrar_movimiento_inventario", {
-      p_producto_id: productoId,
-      p_sucursal_id: sucursalId,
+    const { error: rpcError } = await supabase.rpc("registrar_movimiento_bodega_general" as any, {
+      p_producto_global_id: productoGlobalId,
       p_tipo_movimiento: tipoMovimiento,
       p_cantidad: cantidadNum,
       p_motivo: motivoMovimientoParaRpc(tipoMovimiento, motivo),
-    });
+      p_sucursal_destino_id: null,
+    } as any);
 
     setSaving(false);
 
@@ -158,7 +156,7 @@ const InventarioMovimientoDialog = ({
               placeholder={
                 tipoMovimiento === "INGRESO"
                   ? "Opcional. Ej: compra, reposición..."
-                  : "Ej: Traslado a sucursal Portoviejo, conteo físico, merma..."
+                  : "Ej: Traslado a sucursal, conteo físico, merma..."
               }
             />
           </div>
@@ -198,4 +196,4 @@ const InventarioMovimientoDialog = ({
   );
 };
 
-export default InventarioMovimientoDialog;
+export default BodegaGeneralMovimientoDialog;

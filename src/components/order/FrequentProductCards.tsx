@@ -3,15 +3,23 @@ import { ChevronDown, ImageIcon, Loader2 } from "lucide-react";
 import { useBranch } from "@/contexts/BranchContext";
 import { useFrequentProducts, type FrequentProductContext } from "@/hooks/useFrequentProducts";
 import type { MenuNode } from "@/hooks/useMenuTree";
+import { formatearStockVisible } from "@/lib/inventarioProductos";
 import { cn } from "@/lib/utils";
 
 interface Props {
   context: FrequentProductContext;
   onSelectProduct: (node: MenuNode) => void;
   disabled?: boolean;
+  /** Stock de nevera cuando el producto integra ventas; null = no mostrar. */
+  getProductStock?: (node: MenuNode) => number | null;
 }
 
-export default function FrequentProductCards({ context, onSelectProduct, disabled = false }: Props) {
+export default function FrequentProductCards({
+  context,
+  onSelectProduct,
+  disabled = false,
+  getProductStock,
+}: Props) {
   const { activeBranchId } = useBranch();
   const { products, isLoading } = useFrequentProducts(activeBranchId, context);
   const [expanded, setExpanded] = useState(true);
@@ -88,6 +96,7 @@ export default function FrequentProductCards({ context, onSelectProduct, disable
             {visibleProducts.map((row) => {
               const node = row.menu_node;
               if (!node) return null;
+              const stock = getProductStock?.(node) ?? null;
 
               return (
                 <button
@@ -113,9 +122,19 @@ export default function FrequentProductCards({ context, onSelectProduct, disable
                       <ImageIcon className="h-3.5 w-3.5 text-muted-foreground/60 sm:h-4 sm:w-4" />
                     )}
                   </div>
-                  <span className="line-clamp-3 w-full text-[6px] font-medium leading-[1.05] text-foreground sm:text-[7px] sm:leading-[1.1]">
+                  <span className="line-clamp-2 w-full text-[6px] font-medium leading-[1.05] text-foreground sm:text-[7px] sm:leading-[1.1]">
                     {node.name}
                   </span>
+                  {stock != null ? (
+                    <span
+                      className={cn(
+                        "rounded px-1 text-[7px] font-bold tabular-nums leading-none sm:text-[8px]",
+                        stock <= 0 ? "text-rose-700" : "text-emerald-700",
+                      )}
+                    >
+                      {formatearStockVisible(stock)}
+                    </span>
+                  ) : null}
                 </button>
               );
             })}

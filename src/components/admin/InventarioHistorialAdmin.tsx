@@ -23,10 +23,10 @@ const InventarioHistorialAdmin = () => {
           <History className="h-5 w-5" />
         </div>
         <div>
-          <h2 className="font-display text-lg font-bold text-foreground">Historial</h2>
+          <h2 className="font-display text-lg font-bold text-foreground">Historial de Nevera</h2>
           <p className="text-xs text-muted-foreground">
             Sucursal: <span className="font-semibold text-foreground">{activeBranch?.name ?? activeBranchId}</span>
-            {" · "}Últimos 100 movimientos
+            {" · "}Últimos 100 movimientos de nevera
           </p>
         </div>
       </div>

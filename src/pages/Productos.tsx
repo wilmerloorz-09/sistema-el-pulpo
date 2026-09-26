@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Eye, PackageSearch, Power, PowerOff } from "lucide-react";
 import { toast } from "sonner";
 import MenuNavigator from "@/components/order/MenuNavigator";
@@ -9,12 +9,32 @@ import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { supabase } from "@/integrations/supabase/client";
 import { canOperate, canView } from "@/lib/permissions";
 import type { MenuNode } from "@/hooks/useMenuTree";
+import {
+  fetchInventarioProductoMap,
+  mergeInventarioInfo,
+  resolveMenuNodeProductId,
+} from "@/lib/inventarioMenuData";
+import { stockVisibleParaOrden } from "@/lib/inventarioProductos";
 
 const Productos = () => {
   const { permissions, activeBranchId } = useBranch();
   const shiftGateQuery = useBranchShiftGate();
   const qc = useQueryClient();
   const [pendingNodeId, setPendingNodeId] = useState<string | null>(null);
+
+  const inventarioMapQuery = useQuery({
+    queryKey: ["inventario-producto-map", activeBranchId],
+    queryFn: () => fetchInventarioProductoMap(activeBranchId!),
+    enabled: Boolean(activeBranchId),
+    staleTime: 60_000,
+  });
+
+  const getProductStock = (node: MenuNode) => {
+    if (node.node_type !== "product") return null;
+    const productId = resolveMenuNodeProductId(node);
+    if (!productId || !inventarioMapQuery.data) return null;
+    return stockVisibleParaOrden(mergeInventarioInfo(inventarioMapQuery.data, productId));
+  };
 
   const canViewOrders = canView(permissions, "ordenes");
   const canViewDispatch =
@@ -136,6 +156,7 @@ const Productos = () => {
         <MenuNavigator
           includeInactive={true}
           onSelectProduct={() => {}}
+          getProductStock={getProductStock}
           renderNodeAction={(node) => (
             <Button
               type="button"
