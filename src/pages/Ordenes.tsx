@@ -2063,49 +2063,17 @@ const OrdenesContent = () => {
     return `Entregar: ${previewRows.map((row) => `${row.included_node_name} X${row.matched_quantity}`).join(", ")}`;
   }, [resolveBulkIncludedPreview]);
 
-  if (isLoading && !order) {
-    return <OrdenesSkeleton />;
-  }
-
-  if (!order) {
-    return <OrdenesSkeleton />;
-  }
-
-  const itemCount = itemsToUse.reduce((s, i) => s + i.quantity, 0);
-  /** En móvil el panel de orden se oculta detrás de `showCart`; `quantity` puede ser 0 con líneas despachadas aún visibles. */
-  const mobileOrderBadgeCount = itemsToUse.reduce((sum, i) => {
-    const qo = Number((i as { quantity_ordered?: number }).quantity_ordered ?? 0);
-    if (qo > 0) return sum + qo;
-    return sum + Math.max(0, Number(i.quantity ?? 0));
-  }, 0);
-  const getTableOrderButtonLabel = (tableOrder: { order_code?: string | null; order_number: number | null; table_order_position: number | null }) => {
-    const label = getOrderMesaHeaderNumber({
-      orderCode: tableOrder.order_code,
-      orderNumber: tableOrder.order_number,
-      tableOrderPosition: tableOrder.table_order_position,
-    });
-    return label.match(/^\d+$/) ? label : `Orden ${label}`;
-  };
-
-  const total = itemsToUse.reduce((s, i) => s + i.total, 0);
-  const draftItemsTotal = itemsToUse
-    .filter((item) => item.status === "DRAFT" && Math.max(0, Number(item.quantity ?? 0)) > 0)
-    .reduce((sum, item) => sum + item.total, 0);
+  // Hooks que antes estaban DESPUÉS de `if (!order) return` (violación React #300).
+  // Deben ejecutarse siempre; el return temprano va al final de este bloque.
   const effectiveSpecialTotalManual = useMemo((): number | null => {
-    if (!order.is_special) return null;
+    if (!order?.is_special) return null;
     const rawValue = specialTotalInput.trim().replace(",", ".");
     if (!rawValue) return null;
     const parsed = Number(rawValue);
     if (!Number.isFinite(parsed) || parsed < 0) return null;
     return Math.round(parsed * 100) / 100;
-  }, [order.is_special, specialTotalInput]);
-  const specialDifference =
-    effectiveSpecialTotalManual == null
-      ? null
-      : Math.round((effectiveSpecialTotalManual - total) * 100) / 100;
+  }, [order?.is_special, specialTotalInput]);
 
-  /** Orden especial MIXTA: parte con valor manual (grupo) + resto a precio real. */
-  const isMixedSpecial = Boolean(order.is_special) && order.special_group_total != null;
   const specialBreakdown = useMemo(() => {
     const lines = itemsToUse.map((item) => {
       const qty = Math.max(0, Number(item.quantity ?? 0));
@@ -2129,16 +2097,13 @@ const OrdenesContent = () => {
   }, [itemsToUse]);
 
   const specialGroupValueNum = useMemo(() => {
-    const fallback = order.special_group_total != null ? Number(order.special_group_total) : 0;
+    const fallback = order?.special_group_total != null ? Number(order.special_group_total) : 0;
     const raw = specialGroupInput.trim().replace(",", ".");
     if (!raw) return fallback;
     const n = Number(raw);
     return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : fallback;
-  }, [specialGroupInput, order.special_group_total]);
+  }, [specialGroupInput, order?.special_group_total]);
 
-  const mixedGeneralTotal = Math.round((specialGroupValueNum + specialBreakdown.restRealTotal) * 100) / 100;
-
-  /** Items del resto proyectados a cantidad normal (sin unidades del grupo especial). */
   const mixedRestoItems = useMemo(() => {
     return specialBreakdown.normalLines.map((l) => {
       const item = l.item;
@@ -2171,6 +2136,106 @@ const OrdenesContent = () => {
     }
     return map;
   }, [specialBreakdown]);
+
+  const editableItemIdsForEditar = useMemo(
+    () =>
+      fromEditar && isDispatchFirstFlow
+        ? stagedItems.filter(isOrderItemEditableInDispatchFirstEditMode).map((item) => item.id)
+        : [],
+    [fromEditar, isDispatchFirstFlow, stagedItems],
+  );
+
+  const productosSinStockInventario = useMemo(() => {
+    const blocked = new Set<string>();
+    const map = inventarioMapQuery.data;
+    if (!map) return blocked;
+    for (const [productoId, info] of map) {
+      if (productoBloqueadoPorStockInventario(info)) blocked.add(productoId);
+    }
+    return blocked;
+  }, [inventarioMapQuery.data]);
+
+  const addItemMaxStock = useMemo(() => {
+    const productId = selectedProduct?.id ?? null;
+    if (!productId || !inventarioMapQuery.data) return null;
+    const info = mergeInventarioInfo(inventarioMapQuery.data, productId);
+    if (!info.integraConVentas) return null;
+    return info.cantidadDisponible;
+  }, [selectedProduct?.id, inventarioMapQuery.data]);
+
+  const isNodeBlockedByInventory = useCallback(
+    (node: MenuNode) => {
+      if (node.node_type !== "product") return false;
+      const productId = resolveMenuNodeProductId(node);
+      if (!productId) return false;
+      return productosSinStockInventario.has(productId);
+    },
+    [productosSinStockInventario],
+  );
+
+  const getProductStock = useCallback(
+    (node: MenuNode) => {
+      if (node.node_type !== "product") return null;
+      const productId = resolveMenuNodeProductId(node);
+      if (!productId || !inventarioMapQuery.data) return null;
+      const info = mergeInventarioInfo(inventarioMapQuery.data, productId);
+      return stockVisibleParaOrden(info);
+    },
+    [inventarioMapQuery.data],
+  );
+
+  if (isLoading && !order) {
+    return <OrdenesSkeleton />;
+  }
+
+  if (!order) {
+    return (
+      <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center p-4">
+        <div className="w-full max-w-md rounded-2xl border border-red-200 bg-red-50 p-5 text-center shadow-sm">
+          <p className="font-display text-lg font-black text-red-800">Orden no encontrada</p>
+          <p className="mt-2 text-sm font-medium text-red-700">
+            La orden ya no está disponible o no se pudo cargar. Vuelve a abrirla desde el listado.
+          </p>
+          <Button
+            type="button"
+            className="mt-4 rounded-xl"
+            onClick={() => navigate(isGlobalAdmin || canOperateOrders ? "/ordenes" : "/")}
+          >
+            Volver
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  const itemCount = itemsToUse.reduce((s, i) => s + i.quantity, 0);
+  /** En móvil el panel de orden se oculta detrás de `showCart`; `quantity` puede ser 0 con líneas despachadas aún visibles. */
+  const mobileOrderBadgeCount = itemsToUse.reduce((sum, i) => {
+    const qo = Number((i as { quantity_ordered?: number }).quantity_ordered ?? 0);
+    if (qo > 0) return sum + qo;
+    return sum + Math.max(0, Number(i.quantity ?? 0));
+  }, 0);
+  const getTableOrderButtonLabel = (tableOrder: { order_code?: string | null; order_number: number | null; table_order_position: number | null }) => {
+    const label = getOrderMesaHeaderNumber({
+      orderCode: tableOrder.order_code,
+      orderNumber: tableOrder.order_number,
+      tableOrderPosition: tableOrder.table_order_position,
+    });
+    return label.match(/^\d+$/) ? label : `Orden ${label}`;
+  };
+
+  const total = itemsToUse.reduce((s, i) => s + i.total, 0);
+  const draftItemsTotal = itemsToUse
+    .filter((item) => item.status === "DRAFT" && Math.max(0, Number(item.quantity ?? 0)) > 0)
+    .reduce((sum, item) => sum + item.total, 0);
+  const specialDifference =
+    effectiveSpecialTotalManual == null
+      ? null
+      : Math.round((effectiveSpecialTotalManual - total) * 100) / 100;
+
+  /** Orden especial MIXTA: parte con valor manual (grupo) + resto a precio real. */
+  const isMixedSpecial = Boolean(order.is_special) && order.special_group_total != null;
+  const mixedGeneralTotal = Math.round((specialGroupValueNum + specialBreakdown.restRealTotal) * 100) / 100;
 
   const finalButtonTotal = order.is_special
     ? (effectiveSpecialTotalManual ?? draftItemsTotal)
@@ -2279,13 +2344,6 @@ const OrdenesContent = () => {
   const isLockedFromEditar = fromEditar && !isEditableInEditar;
 
   const hasDispatchedItems = itemsToUse.some((item) => Number(item.quantity_dispatched ?? 0) > 0 || item.status === "DISPATCHED");
-  const editableItemIdsForEditar = useMemo(
-    () =>
-      fromEditar && isDispatchFirstFlow
-        ? stagedItems.filter(isOrderItemEditableInDispatchFirstEditMode).map((item) => item.id)
-        : [],
-    [fromEditar, isDispatchFirstFlow, stagedItems],
-  );
   const hasVoidableItemsInEditar = itemsToUse.some((item) => {
     if (item.status === "ITEM_PENDING_CANCELLATION" || item.status === "PENDING_CANCELLATION") {
       return false;
@@ -2406,44 +2464,6 @@ const OrdenesContent = () => {
       !hasPendingCancellationItems &&
       !isLockedFromEditar
     );
-  const productosSinStockInventario = useMemo(() => {
-    const blocked = new Set<string>();
-    const map = inventarioMapQuery.data;
-    if (!map) return blocked;
-    for (const [productoId, info] of map) {
-      if (productoBloqueadoPorStockInventario(info)) blocked.add(productoId);
-    }
-    return blocked;
-  }, [inventarioMapQuery.data]);
-
-  const addItemMaxStock = useMemo(() => {
-    const productId = selectedProduct?.id ?? null;
-    if (!productId || !inventarioMapQuery.data) return null;
-    const info = mergeInventarioInfo(inventarioMapQuery.data, productId);
-    if (!info.integraConVentas) return null;
-    return info.cantidadDisponible;
-  }, [selectedProduct?.id, inventarioMapQuery.data]);
-
-  const isNodeBlockedByInventory = useCallback(
-    (node: MenuNode) => {
-      if (node.node_type !== "product") return false;
-      const productId = resolveMenuNodeProductId(node);
-      if (!productId) return false;
-      return productosSinStockInventario.has(productId);
-    },
-    [productosSinStockInventario],
-  );
-
-  const getProductStock = useCallback(
-    (node: MenuNode) => {
-      if (node.node_type !== "product") return null;
-      const productId = resolveMenuNodeProductId(node);
-      if (!productId || !inventarioMapQuery.data) return null;
-      const info = mergeInventarioInfo(inventarioMapQuery.data, productId);
-      return stockVisibleParaOrden(info);
-    },
-    [inventarioMapQuery.data],
-  );
   const handleSelectMenuProduct = async (node: MenuNode) => {
     if (!canEditItems) {
       toast.error("Esta orden no admite agregar productos.");

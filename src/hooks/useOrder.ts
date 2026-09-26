@@ -1088,13 +1088,10 @@ export function useOrder(orderId: string | null) {
       if (!orderId) return null;
       const fresh = await fetchOrderDetail(orderId);
       if (fresh) return fresh;
+      // Si el refetch falla o llega vacío, conservar caché (TAKEOUT/especial incluido).
+      // Evita order=null intermitente que tumba Ordenes por mismatch de hooks.
       const cached = qc.getQueryData(getOrderQueryKey(orderId)) as Order | undefined;
-      if (
-        cached
-        && cached.id === orderId
-        && cached.order_type === "DINE_IN"
-        && cached.status === "DRAFT"
-      ) {
+      if (cached && cached.id === orderId) {
         return cached;
       }
       return null;
