@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { Loader2, Plus, RefreshCw, Sparkles, UserRound } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { dbSelect, dbUpdate } from "@/services/DatabaseService";
+import { dbSelect } from "@/services/DatabaseService";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
@@ -271,18 +271,13 @@ const OrdenEspecial = () => {
       const { data, error } = await supabase.rpc("create_dine_in_order" as any, {
         p_branch_id: activeBranchId,
         p_created_by: user.id,
-        p_table_id: null,
+        p_table_id: tableId,
         p_is_special: true,
       } as any);
 
       if (error) throw error;
 
       const orderId = String(data);
-      await dbUpdate("orders", orderId, {
-        special_origin_table_id: tableId,
-        table_name_snapshot: tableName,
-        updated_at: now,
-      });
 
       seedSpecialDraftOrderCache(qc, orderId, {
         branchId: activeBranchId,
