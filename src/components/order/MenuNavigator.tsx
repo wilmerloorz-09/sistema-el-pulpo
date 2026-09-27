@@ -16,6 +16,8 @@ interface MenuNavigatorProps {
   getProductStock?: (node: MenuNode) => number | null;
   /** Límite de la sucursal; stock menor al límite se muestra en rojo. */
   getProductStockLimit?: (node: MenuNode) => number;
+  /** Productos que no se pueden seleccionar (ej. stock en 0). */
+  isProductBlocked?: (node: MenuNode) => boolean;
   trayMode?: boolean;
   trayNodes?: MenuNode[];
   nodesOverride?: MenuNode[] | null;
@@ -77,6 +79,7 @@ const NodeCard = ({
   nodeAction,
   stock,
   stockLimit = 0,
+  blocked = false,
   trayMode = false,
   hidePrices = false,
 }: {
@@ -85,11 +88,12 @@ const NodeCard = ({
   nodeAction?: ReactNode;
   stock?: number | null;
   stockLimit?: number;
+  blocked?: boolean;
   trayMode?: boolean;
   hidePrices?: boolean;
 }) => {
   const isProduct = node.node_type === "product";
-  const isDisabledNode = !node.is_active && !nodeAction;
+  const isDisabledNode = blocked || (!node.is_active && !nodeAction);
   const showsManualPrice = trayMode || node.price == null;
   const showStock = isProduct && stock != null;
 
@@ -98,7 +102,11 @@ const NodeCard = ({
       <div
         role="button"
         tabIndex={isDisabledNode ? -1 : 0}
-        onClick={onClick}
+        aria-disabled={isDisabledNode || undefined}
+        onClick={() => {
+          if (blocked) return;
+          onClick();
+        }}
         onKeyDown={(event) => {
           if (isDisabledNode) return;
           if (event.key === "Enter" || event.key === " ") {
@@ -109,7 +117,7 @@ const NodeCard = ({
         className={cn(
           "group relative col-span-full flex min-h-[72px] items-start gap-2.5 rounded-[1.15rem] border border-emerald-300/80 bg-white px-3 py-2.5 text-left transition-all md:gap-3 md:px-4 md:py-3",
           hidePrices && nodeAction && "min-h-[120px] md:min-h-[128px]",
-          !node.is_active && "opacity-70 saturate-75",
+          (!node.is_active || blocked) && "opacity-60 saturate-50",
           !isDisabledNode && "cursor-pointer hover:border-emerald-400 hover:bg-emerald-50/40",
           isDisabledNode && "cursor-not-allowed",
         )}
@@ -226,6 +234,7 @@ const MenuNavigator = ({
   renderNodeAction,
   getProductStock,
   getProductStockLimit,
+  isProductBlocked,
   trayMode = false,
   trayNodes,
   nodesOverride,
@@ -620,6 +629,7 @@ const MenuNavigator = ({
               hidePrices={hidePrices}
               stock={node.node_type === "product" ? (getProductStock?.(node) ?? null) : null}
               stockLimit={node.node_type === "product" ? (getProductStockLimit?.(node) ?? 0) : 0}
+              blocked={node.node_type === "product" && Boolean(isProductBlocked?.(node))}
               onClick={() => {
                 if (disabled) return;
                 if (!node.is_active && !renderNodeAction?.(node)) return;

@@ -3405,6 +3405,7 @@ const OrdenesContent = () => {
         disabled={!canEditItems}
         getProductStock={getProductStock}
         getProductStockLimit={getProductStockLimit}
+        isProductBlocked={isNodeBlockedByInventory}
       />
     ) : null;
 
@@ -3520,6 +3521,7 @@ const OrdenesContent = () => {
         onSelectProduct={handleSelectMenuProduct}
         getProductStock={getProductStock}
         getProductStockLimit={getProductStockLimit}
+        isProductBlocked={isNodeBlockedByInventory}
         renderNodeAction={(node) =>
           selectingProductId === node.id ? (
             <div className="rounded-2xl border border-orange-200 bg-orange-50 px-3 py-2 text-center text-xs font-bold text-orange-700">
