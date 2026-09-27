@@ -124,23 +124,25 @@ const NodeCard = ({
           "min-w-0 flex flex-1",
           hidePrices && nodeAction ? "flex-col gap-2" : "items-center justify-between gap-3",
         )}>
-          <p className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground md:text-[15px]">{node.name}</p>
+          <div className="flex min-w-0 flex-1 flex-col items-start gap-1">
+            <p className="w-full min-w-0 truncate text-sm font-semibold text-foreground md:text-[15px]">{node.name}</p>
+            {showStock ? (
+              <span
+                className={cn(
+                  "rounded-lg border px-2 py-0.5 text-[11px] font-bold tabular-nums md:text-xs",
+                  stock! <= 0
+                    ? "border-rose-200 bg-rose-50 text-rose-700"
+                    : "border-emerald-200 bg-emerald-50 text-emerald-800",
+                )}
+              >
+                Stock {formatearStockVisible(stock!)}
+              </span>
+            ) : null}
+          </div>
           {hidePrices && nodeAction ? (
             nodeAction
           ) : (
             <div className="flex shrink-0 items-center gap-2.5 sm:gap-3">
-              {showStock ? (
-                <span
-                  className={cn(
-                    "rounded-lg border px-2.5 py-1 text-sm font-bold tabular-nums md:text-base",
-                    stock! <= 0
-                      ? "border-rose-200 bg-rose-50 text-rose-700"
-                      : "border-emerald-200 bg-emerald-50 text-emerald-800",
-                  )}
-                >
-                  Stock {formatearStockVisible(stock!)}
-                </span>
-              ) : null}
               {!hidePrices ? (
                 <p className="text-lg font-bold text-red-600 md:text-xl">
                   {showsManualPrice ? "Manual" : `$${Number(node.price).toFixed(2)}`}
