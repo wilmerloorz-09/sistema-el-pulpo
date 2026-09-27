@@ -22,7 +22,6 @@ const BodegaSucursalProductosAdmin = () => {
     || canManage(permissions, "admin_global");
   const qc = useQueryClient();
   const [savingIntegraProductoId, setSavingIntegraProductoId] = useState<string | null>(null);
-  const [savingLimiteProductoId, setSavingLimiteProductoId] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selected, setSelected] = useState<{
     productoGlobalId: string;
@@ -88,62 +87,6 @@ const BodegaSucursalProductosAdmin = () => {
     onSettled: () => setSavingIntegraProductoId(null),
   });
 
-  const saveLimiteMutation = useMutation({
-    mutationFn: async ({
-      productoId,
-      limiteStock,
-    }: {
-      productoId: string;
-      limiteStock: number;
-    }) => {
-      if (!activeBranchId) throw new Error("Sucursal no seleccionada");
-      setSavingLimiteProductoId(productoId);
-
-      const { data, error: readError } = await supabase
-        .from("inventario_bodega_sucursal" as any)
-        .select("id")
-        .eq("producto_global_id", productoId)
-        .eq("sucursal_id", activeBranchId)
-        .maybeSingle();
-      if (readError) throw readError;
-      const existing = data as unknown as { id: string } | null;
-
-      if (existing?.id) {
-        const { error } = await supabase
-          .from("inventario_bodega_sucursal" as any)
-          .update({
-            limite_stock: limiteStock,
-            actualizado_en: new Date().toISOString(),
-          } as any)
-          .eq("id", existing.id);
-        if (error) throw error;
-        return;
-      }
-
-      const { error } = await supabase
-        .from("inventario_bodega_sucursal" as any)
-        .insert({
-          producto_global_id: productoId,
-          sucursal_id: activeBranchId,
-          cantidad_disponible: 0,
-          limite_stock: limiteStock,
-          activo: true,
-        } as any);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      void qc.invalidateQueries({
-        queryKey: ["inventario-producto-map", activeBranchId, "bodega_sucursal"],
-      });
-      void qc.invalidateQueries({
-        queryKey: ["inventario-producto-map", activeBranchId],
-      });
-      toast.success("Límite actualizado");
-    },
-    onError: (error: Error) => toast.error(error.message || "No se pudo guardar el límite"),
-    onSettled: () => setSavingLimiteProductoId(null),
-  });
-
   const handleSuccess = () => {
     toast.success("Movimiento registrado");
     void qc.invalidateQueries({
@@ -194,14 +137,6 @@ const BodegaSucursalProductosAdmin = () => {
             info={info}
             canEdit={canEdit}
             showIntegraVentas
-            showLimite
-            savingLimite={savingLimiteProductoId === info.productoId}
-            onLimiteChange={(limite) =>
-              saveLimiteMutation.mutate({
-                productoId: info.productoId,
-                limiteStock: limite,
-              })
-            }
             savingIntegra={savingIntegraProductoId === info.productoId}
             onIntegraChange={(integra) =>
               saveIntegraMutation.mutate({

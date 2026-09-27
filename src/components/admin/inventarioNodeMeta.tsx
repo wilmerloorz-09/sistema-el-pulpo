@@ -242,7 +242,7 @@ type BodegaSucursalProductosNodeMetaProps = {
   onIntegraChange?: (integra: boolean) => void;
   /** Solo Productos Sucursal; en bodega general no aplica. */
   showIntegraVentas?: boolean;
-  /** Productos Sucursal: muestra Límite y oculta Estado, Activo catálogo y Tipo. */
+  /** Nevera: muestra Límite y oculta Estado, Activo catálogo y Tipo. */
   showLimite?: boolean;
   savingLimite?: boolean;
   onLimiteChange?: (limite: number) => void;

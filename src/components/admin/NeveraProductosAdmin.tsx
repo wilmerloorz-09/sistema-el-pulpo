@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { Package } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 import { useBranch } from "@/contexts/BranchContext";
-import { canOperate } from "@/lib/permissions";
+import { canManage, canOperate } from "@/lib/permissions";
 import InventarioArbolPanel from "@/components/admin/InventarioArbolPanel";
 import InventarioMovimientoDialog from "@/components/admin/InventarioMovimientoDialog";
 import { BodegaSucursalProductosNodeMeta } from "@/components/admin/inventarioNodeMeta";
@@ -13,12 +14,65 @@ const NeveraProductosAdmin = () => {
   const qc = useQueryClient();
   const canAjustar =
     isGlobalAdmin || canOperate(permissions, "inventario_movimientos");
+  const canEditLimite =
+    isGlobalAdmin
+    || canManage(permissions, "admin_sucursal")
+    || canManage(permissions, "admin_global");
+  const [savingLimiteProductoId, setSavingLimiteProductoId] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selected, setSelected] = useState<{
     productoId: string;
     nombre: string;
     cantidad: number;
   } | null>(null);
+
+  const saveLimiteMutation = useMutation({
+    mutationFn: async ({
+      productoId,
+      limiteStock,
+    }: {
+      productoId: string;
+      limiteStock: number;
+    }) => {
+      if (!activeBranchId) throw new Error("Sucursal no seleccionada");
+      setSavingLimiteProductoId(productoId);
+
+      const { data, error: readError } = await supabase
+        .from("inventario_productos")
+        .select("id")
+        .eq("producto_id", productoId)
+        .eq("sucursal_id", activeBranchId)
+        .maybeSingle();
+      if (readError) throw readError;
+
+      if (data?.id) {
+        const { error } = await supabase
+          .from("inventario_productos")
+          .update({ limite_stock: limiteStock })
+          .eq("id", data.id);
+        if (error) throw error;
+        return;
+      }
+
+      const { error } = await supabase
+        .from("inventario_productos")
+        .insert({
+          producto_id: productoId,
+          sucursal_id: activeBranchId,
+          cantidad_disponible: 0,
+          limite_stock: limiteStock,
+          activo: true,
+        });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["inventario-producto-map", activeBranchId, "nevera"] });
+      void qc.invalidateQueries({ queryKey: ["inventario-producto-map", activeBranchId] });
+      toast.success("Límite actualizado");
+    },
+    onError: (error: Error) => toast.error(error.message || "No se pudo guardar el límite"),
+    onSettled: () => setSavingLimiteProductoId(null),
+  });
 
   const handleSuccess = () => {
     toast.success("Movimiento registrado");
@@ -56,6 +110,8 @@ const NeveraProductosAdmin = () => {
       <p className="text-xs text-muted-foreground">
         La cantidad se actualiza cuando bodega sucursal abastece la nevera y cuando se venden
         productos con Integra ventas = Sí.
+        {" "}
+        <span className="font-semibold">Límite</span>: en la orden, el stock menor a este valor sale en rojo.
         Usa <span className="font-semibold">Ajustar</span> para ingreso, salida o ajuste manual.
       </p>
 
@@ -65,6 +121,15 @@ const NeveraProductosAdmin = () => {
         renderNodeAction={(node, info) => (
           <BodegaSucursalProductosNodeMeta
             info={info}
+            canEdit={canEditLimite}
+            showLimite
+            savingLimite={savingLimiteProductoId === info.productoId}
+            onLimiteChange={(limite) =>
+              saveLimiteMutation.mutate({
+                productoId: info.productoId,
+                limiteStock: limite,
+              })
+            }
             canAjustar={canAjustar}
             onAjustar={() => {
               setSelected({

@@ -1004,6 +1004,7 @@ export type Database = {
           cantidad_disponible: number
           activo: boolean
           integra_con_ventas: boolean
+          limite_stock: number
           creado_en: string
           actualizado_en: string
         }
@@ -1014,6 +1015,7 @@ export type Database = {
           cantidad_disponible?: number
           activo?: boolean
           integra_con_ventas?: boolean
+          limite_stock?: number
           creado_en?: string
           actualizado_en?: string
         }
@@ -1024,6 +1026,7 @@ export type Database = {
           cantidad_disponible?: number
           activo?: boolean
           integra_con_ventas?: boolean
+          limite_stock?: number
           creado_en?: string
           actualizado_en?: string
         }
