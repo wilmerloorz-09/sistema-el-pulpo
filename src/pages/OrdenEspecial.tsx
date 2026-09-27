@@ -311,18 +311,12 @@ const OrdenEspecial = () => {
       const { data, error } = await supabase.rpc("create_takeout_order" as any, {
         p_branch_id: activeBranchId,
         p_created_by: user.id,
+        p_is_special: true,
       } as any);
 
       if (error) throw error;
 
       const orderId = String(data);
-      await dbUpdate("orders", orderId, {
-        is_special: true,
-        table_name_snapshot: TAKEOUT_SPECIAL_LABEL,
-        special_marked_at: now,
-        special_marked_by: user.id,
-        updated_at: now,
-      });
 
       seedSpecialDraftOrderCache(qc, orderId, {
         branchId: activeBranchId,
