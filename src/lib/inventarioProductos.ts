@@ -39,11 +39,21 @@ export function etiquetaCantidadMovimiento(
   return `${cantidadAnterior} → ${cantidadNueva}`;
 }
 
-/** Normaliza cantidad editable: no negativa, hasta 3 decimales. */
+/** Normaliza cantidad editable: entero no negativo. */
 export function normalizarCantidadInventario(raw: string | number): number {
   const n = typeof raw === "number" ? raw : Number(String(raw).replace(",", ".").trim());
   if (!Number.isFinite(n) || n < 0) return 0;
-  return Math.round(n * 1000) / 1000;
+  return Math.round(n);
+}
+
+/** Para inputs de cantidad: solo dígitos (sin punto, coma ni signo). */
+export function soloDigitosCantidad(raw: string): string {
+  return String(raw ?? "").replace(/\D/g, "");
+}
+
+/** Bloquea teclas que no forman un entero (punto, coma, signo, exponente). */
+export function bloquearTeclaNoEntera(event: { key: string; preventDefault: () => void }): void {
+  if ([".", ",", "-", "+", "e", "E"].includes(event.key)) event.preventDefault();
 }
 
 export function calcularCantidadNuevaMovimiento(

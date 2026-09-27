@@ -11,9 +11,12 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
+  bloquearTeclaNoEntera,
   estadoInventarioDesdeCantidad,
   etiquetaEstadoInventario,
   etiquetaTipoProducto,
+  normalizarCantidadInventario,
+  soloDigitosCantidad,
   type TipoProducto,
 } from "@/lib/inventarioProductos";
 import type { InventarioProductoInfo } from "@/lib/inventarioMenuData";
@@ -205,12 +208,11 @@ const LimiteStockField = ({ value, canEdit, saving, onSave }: LimiteStockFieldPr
   }
 
   const commit = () => {
-    const parsed = Number(draft.replace(",", "."));
-    if (!Number.isFinite(parsed) || parsed < 0) {
+    if (!draft) {
       setDraft(String(value));
       return;
     }
-    const next = Math.round(parsed * 1000) / 1000;
+    const next = normalizarCantidadInventario(draft);
     if (next === value) {
       setDraft(String(value));
       return;
@@ -220,12 +222,14 @@ const LimiteStockField = ({ value, canEdit, saving, onSave }: LimiteStockFieldPr
 
   return (
     <Input
-      inputMode="decimal"
+      inputMode="numeric"
+      pattern="[0-9]*"
       value={draft}
       disabled={saving}
-      onChange={(event) => setDraft(event.target.value.replace(/[^0-9.,]/g, ""))}
+      onChange={(event) => setDraft(soloDigitosCantidad(event.target.value))}
       onBlur={commit}
       onKeyDown={(event) => {
+        bloquearTeclaNoEntera(event);
         if (event.key === "Enter") {
           event.currentTarget.blur();
         }

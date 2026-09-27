@@ -12,6 +12,7 @@ import {
   formatCantidadInventarioDisplay,
   formatearMensajeStockInventario,
   normalizarCantidadInventario,
+  soloDigitosCantidad,
   validarMovimientoInventario,
   motivoMovimientoParaRpc,
 } from "@/lib/inventarioProductos";
@@ -59,10 +60,18 @@ describe("inventarioProductos", () => {
     ).toBe('Stock insuficiente para "Coca Cola". Disponible: 1, solicitado: 2');
   });
 
-  it("normaliza cantidad sin negativos", () => {
+  it("normaliza cantidad a entero sin negativos", () => {
     expect(normalizarCantidadInventario("-3")).toBe(0);
-    expect(normalizarCantidadInventario("2,5")).toBe(2.5);
-    expect(normalizarCantidadInventario("1.2345")).toBe(1.235);
+    expect(normalizarCantidadInventario("7")).toBe(7);
+    expect(normalizarCantidadInventario("2,4")).toBe(2);
+    expect(normalizarCantidadInventario(1.6)).toBe(2);
+  });
+
+  it("deja solo dígitos en inputs de cantidad", () => {
+    expect(soloDigitosCantidad("12")).toBe("12");
+    expect(soloDigitosCantidad("2.5")).toBe("25");
+    expect(soloDigitosCantidad("-3,0")).toBe("30");
+    expect(soloDigitosCantidad("")).toBe("");
   });
 
   it("calcula cantidad nueva por tipo de movimiento", () => {

@@ -17,7 +17,9 @@ import {
   calcularCantidadNuevaMovimiento,
   etiquetaTipoMovimientoInventario,
   motivoMovimientoParaRpc,
+  bloquearTeclaNoEntera,
   normalizarCantidadInventario,
+  soloDigitosCantidad,
   validarMovimientoInventario,
   type TipoMovimientoInventario,
 } from "@/lib/inventarioProductos";
@@ -137,11 +139,12 @@ const InventarioMovimientoDialog = ({
           <div className="space-y-2">
             <Label className="text-xs">{cantidadLabel}</Label>
             <Input
-              type="number"
-              min={0}
-              step="0.001"
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
               value={cantidad}
-              onChange={(e) => setCantidad(e.target.value)}
+              onKeyDown={bloquearTeclaNoEntera}
+              onChange={(e) => setCantidad(soloDigitosCantidad(e.target.value))}
               className="h-10 rounded-xl tabular-nums"
               placeholder={tipoMovimiento === "AJUSTE" ? "Ej: 25" : "Ej: 10"}
             />

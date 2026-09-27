@@ -25,7 +25,11 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
-import { normalizarCantidadInventario } from "@/lib/inventarioProductos";
+import {
+  bloquearTeclaNoEntera,
+  normalizarCantidadInventario,
+  soloDigitosCantidad,
+} from "@/lib/inventarioProductos";
 import { cn } from "@/lib/utils";
 
 type ProveedorOption = {
@@ -377,15 +381,17 @@ const CompraBodegaGeneralAdmin = () => {
                 <div className="space-y-1.5">
                   <Label className="text-[10px] uppercase text-muted-foreground">Cantidad</Label>
                   <Input
-                    type="number"
-                    min={0}
-                    step="0.001"
-                    inputMode="decimal"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
                     value={linea.cantidad}
+                    onKeyDown={bloquearTeclaNoEntera}
                     onChange={(e) =>
                       setLineas((prev) =>
                         prev.map((row) =>
-                          row.key === linea.key ? { ...row, cantidad: e.target.value } : row,
+                          row.key === linea.key
+                            ? { ...row, cantidad: soloDigitosCantidad(e.target.value) }
+                            : row,
                         ),
                       )
                     }

@@ -13,6 +13,7 @@ import ProductoGlobalSearchCombobox, {
   type ProductoGlobalOption,
 } from "@/components/admin/ProductoGlobalSearchCombobox";
 import { cn } from "@/lib/utils";
+import { bloquearTeclaNoEntera } from "@/lib/inventarioProductos";
 
 type LineaTraslado = {
   key: string;
@@ -439,6 +440,7 @@ const MovimientoSucursalANeveraAdmin = () => {
                     inputMode="numeric"
                     disabled={!linea.productoGlobalId}
                     value={linea.productoGlobalId ? linea.cantidad : ""}
+                    onKeyDown={bloquearTeclaNoEntera}
                     onChange={(e) => {
                       const raw = e.target.value.replace(/[^\d]/g, "");
                       setLineas((prev) =>
