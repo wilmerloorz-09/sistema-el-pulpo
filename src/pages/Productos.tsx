@@ -36,6 +36,13 @@ const Productos = () => {
     return stockVisibleParaOrden(mergeInventarioInfo(inventarioMapQuery.data, productId));
   };
 
+  const getProductStockLimit = (node: MenuNode) => {
+    if (node.node_type !== "product") return 0;
+    const productId = resolveMenuNodeProductId(node);
+    if (!productId || !inventarioMapQuery.data) return 0;
+    return mergeInventarioInfo(inventarioMapQuery.data, productId).limiteStock;
+  };
+
   const canViewOrders = canView(permissions, "ordenes");
   const canViewDispatch =
     canView(permissions, "despacho_total") ||
@@ -157,6 +164,7 @@ const Productos = () => {
           includeInactive={true}
           onSelectProduct={() => {}}
           getProductStock={getProductStock}
+          getProductStockLimit={getProductStockLimit}
           renderNodeAction={(node) => (
             <Button
               type="button"

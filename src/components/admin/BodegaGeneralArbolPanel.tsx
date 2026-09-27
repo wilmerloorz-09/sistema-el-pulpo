@@ -34,6 +34,7 @@ async function fetchBodegaGeneralProductoMap(): Promise<Map<string, InventarioPr
       tipoProducto,
       activoCatalogo: Boolean(row.activo),
       integraConVentas: false,
+      limiteStock: 0,
     });
   }
 

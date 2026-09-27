@@ -3,7 +3,7 @@ import { ChevronDown, ImageIcon, Loader2 } from "lucide-react";
 import { useBranch } from "@/contexts/BranchContext";
 import { useFrequentProducts, type FrequentProductContext } from "@/hooks/useFrequentProducts";
 import type { MenuNode } from "@/hooks/useMenuTree";
-import { formatearStockVisible } from "@/lib/inventarioProductos";
+import { formatearStockVisible, stockEnRojo } from "@/lib/inventarioProductos";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -12,6 +12,8 @@ interface Props {
   disabled?: boolean;
   /** Stock de nevera cuando el producto integra ventas; null = no mostrar. */
   getProductStock?: (node: MenuNode) => number | null;
+  /** Límite de la sucursal; stock menor al límite se muestra en rojo. */
+  getProductStockLimit?: (node: MenuNode) => number;
 }
 
 export default function FrequentProductCards({
@@ -19,6 +21,7 @@ export default function FrequentProductCards({
   onSelectProduct,
   disabled = false,
   getProductStock,
+  getProductStockLimit,
 }: Props) {
   const { activeBranchId } = useBranch();
   const { products, isLoading } = useFrequentProducts(activeBranchId, context);
@@ -129,7 +132,7 @@ export default function FrequentProductCards({
                     <span
                       className={cn(
                         "rounded px-1 text-[7px] font-bold tabular-nums leading-none sm:text-[8px]",
-                        stock <= 0 ? "text-rose-700" : "text-emerald-700",
+                        stockEnRojo(stock, getProductStockLimit?.(node) ?? 0) ? "text-rose-700" : "text-emerald-700",
                       )}
                     >
                       {formatearStockVisible(stock)}

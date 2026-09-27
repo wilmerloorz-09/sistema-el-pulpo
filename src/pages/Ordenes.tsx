@@ -2184,6 +2184,16 @@ const OrdenesContent = () => {
     [inventarioMapQuery.data],
   );
 
+  const getProductStockLimit = useCallback(
+    (node: MenuNode) => {
+      if (node.node_type !== "product") return 0;
+      const productId = resolveMenuNodeProductId(node);
+      if (!productId || !inventarioMapQuery.data) return 0;
+      return mergeInventarioInfo(inventarioMapQuery.data, productId).limiteStock;
+    },
+    [inventarioMapQuery.data],
+  );
+
   if (isLoading && !order) {
     return <OrdenesSkeleton />;
   }
@@ -3394,6 +3404,7 @@ const OrdenesContent = () => {
         onSelectProduct={handleSelectMenuProduct}
         disabled={!canEditItems}
         getProductStock={getProductStock}
+        getProductStockLimit={getProductStockLimit}
       />
     ) : null;
 
@@ -3508,6 +3519,7 @@ const OrdenesContent = () => {
         disabled={!canEditItems}
         onSelectProduct={handleSelectMenuProduct}
         getProductStock={getProductStock}
+        getProductStockLimit={getProductStockLimit}
         renderNodeAction={(node) =>
           selectingProductId === node.id ? (
             <div className="rounded-2xl border border-orange-200 bg-orange-50 px-3 py-2 text-center text-xs font-bold text-orange-700">

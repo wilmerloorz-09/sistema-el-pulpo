@@ -1,5 +1,6 @@
-import type { ReactNode, SyntheticEvent } from "react";
+import { useEffect, useState, type ReactNode, type SyntheticEvent } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -185,6 +186,55 @@ export const InventarioMovimientosNodeMeta = ({
   );
 };
 
+type LimiteStockFieldProps = {
+  value: number;
+  canEdit: boolean;
+  saving: boolean;
+  onSave: (limite: number) => void;
+};
+
+const LimiteStockField = ({ value, canEdit, saving, onSave }: LimiteStockFieldProps) => {
+  const [draft, setDraft] = useState(String(value));
+
+  useEffect(() => {
+    setDraft(String(value));
+  }, [value]);
+
+  if (!canEdit) {
+    return <p className="text-sm font-bold tabular-nums text-foreground">{value}</p>;
+  }
+
+  const commit = () => {
+    const parsed = Number(draft.replace(",", "."));
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      setDraft(String(value));
+      return;
+    }
+    const next = Math.round(parsed * 1000) / 1000;
+    if (next === value) {
+      setDraft(String(value));
+      return;
+    }
+    onSave(next);
+  };
+
+  return (
+    <Input
+      inputMode="decimal"
+      value={draft}
+      disabled={saving}
+      onChange={(event) => setDraft(event.target.value.replace(/[^0-9.,]/g, ""))}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          event.currentTarget.blur();
+        }
+      }}
+      className="h-8 rounded-lg text-[12px] font-bold tabular-nums"
+    />
+  );
+};
+
 type BodegaSucursalProductosNodeMetaProps = {
   info: InventarioProductoInfo;
   canEdit?: boolean;
@@ -192,6 +242,10 @@ type BodegaSucursalProductosNodeMetaProps = {
   onIntegraChange?: (integra: boolean) => void;
   /** Solo Productos Sucursal; en bodega general no aplica. */
   showIntegraVentas?: boolean;
+  /** Productos Sucursal: muestra Límite y oculta Estado, Activo catálogo y Tipo. */
+  showLimite?: boolean;
+  savingLimite?: boolean;
+  onLimiteChange?: (limite: number) => void;
   canAjustar?: boolean;
   onAjustar?: () => void;
 };
@@ -202,10 +256,14 @@ export const BodegaSucursalProductosNodeMeta = ({
   savingIntegra = false,
   onIntegraChange,
   showIntegraVentas = false,
+  showLimite = false,
+  savingLimite = false,
+  onLimiteChange,
   canAjustar = false,
   onAjustar,
 }: BodegaSucursalProductosNodeMetaProps) => {
   const estado = estadoInventarioDesdeCantidad(info.cantidadDisponible);
+  const columnas = 1 + (showLimite ? 1 : 3) + (showIntegraVentas ? 1 : 0);
 
   return (
     <div
@@ -215,34 +273,47 @@ export const BodegaSucursalProductosNodeMeta = ({
     >
       <div
         className={cn(
-          "grid flex-1 grid-cols-2 gap-2 sm:grid-cols-3",
-          showIntegraVentas ? "lg:grid-cols-5" : "lg:grid-cols-4",
+          "grid flex-1 grid-cols-2 gap-2",
+          columnas >= 5 ? "sm:grid-cols-3 lg:grid-cols-5" : columnas === 4 ? "sm:grid-cols-3 lg:grid-cols-4" : "sm:grid-cols-3",
         )}
       >
         <MetaField label="Cantidad">
           <p className="text-sm font-bold tabular-nums text-foreground">{info.cantidadDisponible}</p>
         </MetaField>
-        <MetaField label="Estado">
-          <Badge
-            variant="outline"
-            className={cn(
-              "rounded-lg text-[10px] font-bold",
-              estado === "DISPONIBLE"
-                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                : "border-rose-200 bg-rose-50 text-rose-800",
-            )}
-          >
-            {etiquetaEstadoInventario(estado)}
-          </Badge>
-        </MetaField>
-        <MetaField label="Activo catálogo">
-          <Badge variant="outline" className="rounded-lg text-[10px] font-bold">
-            {info.activoCatalogo ? "Sí" : "No"}
-          </Badge>
-        </MetaField>
-        <MetaField label="Tipo">
-          <p className="text-xs font-semibold text-foreground">{etiquetaTipoProducto(info.tipoProducto)}</p>
-        </MetaField>
+        {showLimite ? (
+          <MetaField label="Límite">
+            <LimiteStockField
+              value={info.limiteStock}
+              canEdit={canEdit && Boolean(onLimiteChange)}
+              saving={savingLimite}
+              onSave={(limite) => onLimiteChange?.(limite)}
+            />
+          </MetaField>
+        ) : (
+          <>
+            <MetaField label="Estado">
+              <Badge
+                variant="outline"
+                className={cn(
+                  "rounded-lg text-[10px] font-bold",
+                  estado === "DISPONIBLE"
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                    : "border-rose-200 bg-rose-50 text-rose-800",
+                )}
+              >
+                {etiquetaEstadoInventario(estado)}
+              </Badge>
+            </MetaField>
+            <MetaField label="Activo catálogo">
+              <Badge variant="outline" className="rounded-lg text-[10px] font-bold">
+                {info.activoCatalogo ? "Sí" : "No"}
+              </Badge>
+            </MetaField>
+            <MetaField label="Tipo">
+              <p className="text-xs font-semibold text-foreground">{etiquetaTipoProducto(info.tipoProducto)}</p>
+            </MetaField>
+          </>
+        )}
         {showIntegraVentas ? (
           <MetaField label="Integra ventas">
             {canEdit && onIntegraChange ? (

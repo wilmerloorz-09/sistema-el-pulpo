@@ -9,6 +9,8 @@ export type InventarioProductoInfo = {
   /** Por sucursal; false si no hay fila en inventario_productos. */
   integraConVentas: boolean;
   inventarioId: string | null;
+  /** Por sucursal (bodega sucursal); stock de nevera menor a este valor se muestra en rojo. */
+  limiteStock: number;
 };
 
 export function resolveMenuNodeProductId(node: {
@@ -61,22 +63,25 @@ export async function fetchInventarioProductoMap(
       activoCatalogo: product.is_active,
       // Se sobrescribe abajo con el flag de bodega sucursal (fuente de verdad).
       integraConVentas: Boolean(row.integra_con_ventas),
+      limiteStock: 0,
     });
   }
 
-  // Integra ventas se configura en bodega sucursal.
+  // Integra ventas y límite se configuran en bodega sucursal.
   const { data: bodegaRows, error: bodegaError } = await supabase
     .from("inventario_bodega_sucursal" as any)
-    .select("producto_global_id, integra_con_ventas")
+    .select("producto_global_id, integra_con_ventas, limite_stock")
     .eq("sucursal_id", branchId);
   if (bodegaError) throw bodegaError;
 
   for (const row of (bodegaRows as any[]) ?? []) {
     const productoId = String(row.producto_global_id ?? "");
     if (!productoId) continue;
+    const limiteStock = Number(row.limite_stock ?? 0);
     const existing = map.get(productoId);
     if (existing) {
       existing.integraConVentas = Boolean(row.integra_con_ventas);
+      existing.limiteStock = limiteStock;
     } else if (row.integra_con_ventas) {
       map.set(productoId, {
         productoId,
@@ -85,6 +90,7 @@ export async function fetchInventarioProductoMap(
         tipoProducto: "COMPRADO",
         activoCatalogo: true,
         integraConVentas: true,
+        limiteStock,
       });
     }
   }
@@ -105,6 +111,7 @@ export async function fetchInventarioBodegaSucursalMap(
       producto_global_id,
       cantidad_disponible,
       integra_con_ventas,
+      limite_stock,
       productos_globales (
         id,
         tipo_producto,
@@ -129,6 +136,7 @@ export async function fetchInventarioBodegaSucursalMap(
       tipoProducto: product?.tipo_producto === "PREPARADO" ? "PREPARADO" : "COMPRADO",
       activoCatalogo: product?.activo ?? true,
       integraConVentas: Boolean(row.integra_con_ventas),
+      limiteStock: Number(row.limite_stock ?? 0),
     });
   }
 
@@ -146,5 +154,6 @@ export function mergeInventarioInfo(
     tipoProducto: "COMPRADO",
     activoCatalogo: true,
     integraConVentas: false,
+    limiteStock: 0,
   };
 }

@@ -5,7 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useMenuTree, type MenuNode, type MenuScope } from "@/hooks/useMenuTree";
-import { formatearStockVisible } from "@/lib/inventarioProductos";
+import { formatearStockVisible, stockEnRojo } from "@/lib/inventarioProductos";
 
 interface MenuNavigatorProps {
   onSelectProduct?: (node: MenuNode) => void;
@@ -14,6 +14,8 @@ interface MenuNavigatorProps {
   renderNodeAction?: (node: MenuNode) => ReactNode;
   /** Stock de nevera cuando el producto integra ventas; null = no mostrar. */
   getProductStock?: (node: MenuNode) => number | null;
+  /** Límite de la sucursal; stock menor al límite se muestra en rojo. */
+  getProductStockLimit?: (node: MenuNode) => number;
   trayMode?: boolean;
   trayNodes?: MenuNode[];
   nodesOverride?: MenuNode[] | null;
@@ -74,6 +76,7 @@ const NodeCard = ({
   onClick,
   nodeAction,
   stock,
+  stockLimit = 0,
   trayMode = false,
   hidePrices = false,
 }: {
@@ -81,6 +84,7 @@ const NodeCard = ({
   onClick: () => void;
   nodeAction?: ReactNode;
   stock?: number | null;
+  stockLimit?: number;
   trayMode?: boolean;
   hidePrices?: boolean;
 }) => {
@@ -130,7 +134,7 @@ const NodeCard = ({
               <span
                 className={cn(
                   "rounded-lg border px-2 py-0.5 text-[11px] font-bold tabular-nums md:text-xs",
-                  stock! <= 0
+                  stockEnRojo(stock!, stockLimit)
                     ? "border-rose-200 bg-rose-50 text-rose-700"
                     : "border-emerald-200 bg-emerald-50 text-emerald-800",
                 )}
@@ -221,6 +225,7 @@ const MenuNavigator = ({
   menuScope = "TABLE",
   renderNodeAction,
   getProductStock,
+  getProductStockLimit,
   trayMode = false,
   trayNodes,
   nodesOverride,
@@ -614,6 +619,7 @@ const MenuNavigator = ({
               trayMode={trayMode}
               hidePrices={hidePrices}
               stock={node.node_type === "product" ? (getProductStock?.(node) ?? null) : null}
+              stockLimit={node.node_type === "product" ? (getProductStockLimit?.(node) ?? 0) : 0}
               onClick={() => {
                 if (disabled) return;
                 if (!node.is_active && !renderNodeAction?.(node)) return;

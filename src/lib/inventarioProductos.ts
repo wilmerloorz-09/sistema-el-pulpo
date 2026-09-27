@@ -129,6 +129,11 @@ export function stockVisibleParaOrden(params: {
   return Number.isFinite(qty) ? Math.max(0, qty) : 0;
 }
 
+/** Rojo en órdenes: sin stock, o stock menor al límite de la sucursal. */
+export function stockEnRojo(stock: number, limite = 0): boolean {
+  return stock <= 0 || stock < Number(limite || 0);
+}
+
 export function formatearStockVisible(qty: number): string {
   if (!Number.isFinite(qty)) return "0";
   if (Number.isInteger(qty)) return String(qty);
