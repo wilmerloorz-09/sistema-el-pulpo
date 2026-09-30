@@ -612,11 +612,6 @@ export default function ShiftSummary({
               <DialogTitle className="">Cerrar Caja</DialogTitle>
             </DialogHeader>
             <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain">
-              <p className="text-xs text-muted-foreground">
-                Si la cantidad que tienes en caja de una moneda o billete no coincide con la del sistema,
-                escríbela en <span className="font-semibold">Contado</span>. Si la dejas vacía, se toma la del sistema.
-              </p>
-
               <div className="overflow-x-auto rounded-xl border border-border/70">
                 <table className="w-full min-w-[480px] text-sm">
                   <thead>
