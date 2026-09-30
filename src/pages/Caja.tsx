@@ -341,9 +341,19 @@ const Caja = () => {
   const summaryReadOnly = cajaPanelReadOnly || !summaryIsOwnCaja;
   const canAnnulSelectedOpening = canAnnulOpening && summaryCashierId !== ALL_CASHIERS;
 
+  const prevUserCajaIsOpenRef = useRef<boolean | null>(null);
   useEffect(() => {
     if (!shiftGateQuery.isFetched) return;
-    if (userCajaIsOpen) return;
+    const wasOpen = prevUserCajaIsOpenRef.current;
+    prevUserCajaIsOpenRef.current = userCajaIsOpen;
+    if (userCajaIsOpen) {
+      if (wasOpen !== true && user?.id) {
+        setCompletedFilters((prev) =>
+          prev.cashierName === ALL_CASHIERS ? { ...prev, cashierName: user.id } : prev,
+        );
+      }
+      return;
+    }
     setCompletedFilters((prev) => {
       if (prev.cashierName === ALL_CASHIERS) return prev;
       if (user?.id && prev.cashierName !== user.id) return prev;
