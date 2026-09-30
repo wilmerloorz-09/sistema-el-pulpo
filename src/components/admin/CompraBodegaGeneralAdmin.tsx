@@ -48,7 +48,6 @@ type LineaCompra = {
   key: string;
   productoGlobalId: string;
   cantidad: string;
-  precioUnitario: string;
 };
 
 type ProductoSearchComboboxProps = {
@@ -146,7 +145,6 @@ const newLinea = (): LineaCompra => ({
   key: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
   productoGlobalId: "",
   cantidad: "",
-  precioUnitario: "",
 });
 
 const CompraBodegaGeneralAdmin = () => {
@@ -187,14 +185,6 @@ const CompraBodegaGeneralAdmin = () => {
     },
   });
 
-  const total = useMemo(() => {
-    return lineas.reduce((acc, linea) => {
-      const cantidad = normalizarCantidadInventario(linea.cantidad);
-      const precio = Number(String(linea.precioUnitario).replace(",", ".")) || 0;
-      return acc + cantidad * Math.max(0, precio);
-    }, 0);
-  }, [lineas]);
-
   const productosUsados = useMemo(
     () => new Set(lineas.map((l) => l.productoGlobalId).filter(Boolean)),
     [lineas],
@@ -220,16 +210,13 @@ const CompraBodegaGeneralAdmin = () => {
         .map((linea) => ({
           producto_global_id: linea.productoGlobalId,
           cantidad: normalizarCantidadInventario(linea.cantidad),
-          precio_unitario: Number(String(linea.precioUnitario).replace(",", ".")) || 0,
+          precio_unitario: 0,
         }))
         .filter((row) => row.producto_global_id);
 
       if (detalle.length === 0) throw new Error("Agrega al menos un producto");
       if (detalle.some((row) => row.cantidad <= 0)) {
         throw new Error("Cada producto debe tener cantidad mayor a 0");
-      }
-      if (detalle.some((row) => row.precio_unitario < 0)) {
-        throw new Error("El precio unitario no puede ser negativo");
       }
 
       const ids = detalle.map((d) => d.producto_global_id);
@@ -351,14 +338,10 @@ const CompraBodegaGeneralAdmin = () => {
 
         <div className="space-y-3">
           {lineas.map((linea, index) => {
-            const cantidad = normalizarCantidadInventario(linea.cantidad);
-            const precio = Number(String(linea.precioUnitario).replace(",", ".")) || 0;
-            const subtotal = cantidad * Math.max(0, precio);
-
             return (
               <div
                 key={linea.key}
-                className="grid gap-2 rounded-xl border border-border/70 bg-muted/10 p-3 sm:grid-cols-[minmax(0,1.4fr)_6.5rem_7rem_7rem_auto]"
+                className="grid gap-2 rounded-xl border border-border/70 bg-muted/10 p-3 sm:grid-cols-[minmax(0,1fr)_6.5rem_auto]"
               >
                 <div className="space-y-1.5">
                   <Label className="text-[10px] uppercase text-muted-foreground">
@@ -400,36 +383,6 @@ const CompraBodegaGeneralAdmin = () => {
                   />
                 </div>
 
-                <div className="space-y-1.5">
-                  <Label className="text-[10px] uppercase text-muted-foreground">P. unitario</Label>
-                  <Input
-                    type="number"
-                    min={0}
-                    step="0.0001"
-                    inputMode="decimal"
-                    value={linea.precioUnitario}
-                    onChange={(e) =>
-                      setLineas((prev) =>
-                        prev.map((row) =>
-                          row.key === linea.key ? { ...row, precioUnitario: e.target.value } : row,
-                        ),
-                      )
-                    }
-                    className="h-10 rounded-xl tabular-nums"
-                    placeholder="0.00"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label className="text-[10px] uppercase text-muted-foreground">Subtotal</Label>
-                  <Input
-                    readOnly
-                    tabIndex={-1}
-                    value={`$${subtotal.toFixed(2)}`}
-                    className="h-10 rounded-xl bg-muted/40 tabular-nums text-foreground"
-                  />
-                </div>
-
                 <div className="flex items-end">
                   <Button
                     type="button"
@@ -445,11 +398,6 @@ const CompraBodegaGeneralAdmin = () => {
               </div>
             );
           })}
-        </div>
-
-        <div className="flex items-center justify-between rounded-xl border border-teal-200 bg-teal-50/60 px-3 py-2 text-sm text-teal-900">
-          <span className="font-semibold">Total compra</span>
-          <span className="font-bold tabular-nums">${total.toFixed(2)}</span>
         </div>
       </div>
 
