@@ -69,7 +69,7 @@ export default function CierreCajaConteoTabla({ filas, edicion }: CierreCajaCont
               return (
                 <tr key={fila.key} className={cn("border-b border-white/70", seccion.rowClass)}>
                   <td className="px-1.5 py-0.5 text-right tabular-nums">${fila.value.toFixed(2)}</td>
-                  <td className="px-1 py-0.5 text-right tabular-nums text-muted-foreground">{fila.qtySystem}</td>
+                  <td className="px-1 py-0.5 text-right tabular-nums text-slate-300">{fila.qtySystem}</td>
                   <td className="px-1 py-0.5">
                     {edicion ? (
                       <Input
@@ -96,7 +96,7 @@ export default function CierreCajaConteoTabla({ filas, edicion }: CierreCajaCont
                       </div>
                     )}
                   </td>
-                  <td className="px-1 py-0.5 text-right tabular-nums text-muted-foreground">
+                  <td className="px-1 py-0.5 text-right tabular-nums text-slate-300">
                     ${(fila.value * fila.qtySystem).toFixed(2)}
                   </td>
                   <td
@@ -115,7 +115,7 @@ export default function CierreCajaConteoTabla({ filas, edicion }: CierreCajaCont
         <tfoot>
           <tr className="border-t border-border/70 bg-muted/30 font-bold">
             <td className="px-1.5 py-1" colSpan={3}>Total</td>
-            <td className="px-1 py-1 text-right tabular-nums text-muted-foreground">${totalSistema.toFixed(2)}</td>
+            <td className="px-1 py-1 text-right tabular-nums text-slate-300">${totalSistema.toFixed(2)}</td>
             <td className="px-1.5 py-1 text-right tabular-nums">${totalContado.toFixed(2)}</td>
           </tr>
           <tr
