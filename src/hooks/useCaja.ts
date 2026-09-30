@@ -1452,14 +1452,31 @@ export function useCaja(params?: {
       // y dejar la pantalla de cobro sin monedas/billetes hasta recargar.
       const { data: denomRows, error: denomsError } = await supabase
         .from("cash_shift_denoms")
-        .select("id, denomination_id, qty_initial, qty_current")
+        .select("id, denomination_id, qty_initial, qty_current, opening_id")
         .eq("shift_id", shiftData.id)
         .eq("cashier_id", user.id);
       if (denomsError) throw denomsError;
-      const denoms = denomRows ?? [];
+
+      const { data: openingHistoryData } = await supabase.rpc("list_cash_register_openings" as any, { 
+        p_shift_id: shiftData.id 
+      });
+
+      const openingHistory = mapCashRegisterOpeningRows(openingHistoryData as any[])
+        .filter((row) => row.cashier_id === user.id);
+
+      // Un cajero que cerró y reabrió su caja tiene filas de cada apertura en el mismo turno.
+      const currentOpening =
+        openingHistory.find((entry) => entry.status === "abierta")
+        ?? openingHistory
+          .filter((entry) => entry.status !== "anulada")
+          .sort((a, b) => new Date(b.opened_at).getTime() - new Date(a.opened_at).getTime())[0]
+        ?? null;
+      const denoms = (denomRows ?? []).filter(
+        (row: any) => !currentOpening || !row.opening_id || row.opening_id === currentOpening.id,
+      );
 
       const allDenoms = denomsQuery.data ?? [];
-      const enriched: ShiftDenom[] = (denoms ?? []).map((d: any) => {
+      const enriched: ShiftDenom[] = denoms.map(({ opening_id: _openingId, ...d }: any) => {
         const denom = allDenoms.find((ad) => ad.id === d.denomination_id);
         if (!denom) {
           console.warn(`Denomination ${d.denomination_id} not found in global list for shift ${shiftData.id}`);
@@ -1473,13 +1490,6 @@ export function useCaja(params?: {
           image_url: denom?.image_url ?? d.image_url ?? null,
         };
       });
-
-      const { data: openingHistoryData } = await supabase.rpc("list_cash_register_openings" as any, { 
-        p_shift_id: shiftData.id 
-      });
-
-      const openingHistory = mapCashRegisterOpeningRows(openingHistoryData as any[])
-        .filter((row) => row.cashier_id === user.id);
 
       // Guardia de consistencia: si el usuario tiene su caja abierta en este
       // turno, SIEMPRE deben existir denominaciones (la apertura las crea).
