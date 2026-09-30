@@ -91,6 +91,7 @@ const MovimientoSucursalANeveraAdmin = () => {
         .from("productos_globales" as any)
         .select("id, nombre_principal, codigo")
         .eq("activo", true)
+        .eq("tipo_producto", "COMPRADO")
         .order("nombre_principal");
       if (qError) throw qError;
       const stock = stockQuery.data ?? {};

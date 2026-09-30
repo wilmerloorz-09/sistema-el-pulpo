@@ -46,9 +46,11 @@ async function fetchBodegaGeneralProductoMap(): Promise<Map<string, InventarioPr
 export function filtrarArbolPorProducto(
   nodes: MenuNode[],
   incluirProductoGlobal: (productoGlobalId: string) => boolean,
+  resolveProductoId: (node: MenuNode) => string | null = resolveProductoGlobalId,
 ): MenuNode[] {
   const productosVisibles = nodes.filter((node) => {
-    const productoGlobalId = resolveProductoGlobalId(node);
+    if (node.node_type !== "product") return false;
+    const productoGlobalId = resolveProductoId(node);
     return Boolean(productoGlobalId && incluirProductoGlobal(productoGlobalId));
   });
 

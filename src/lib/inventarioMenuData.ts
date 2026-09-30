@@ -27,6 +27,16 @@ export function resolveMenuNodeProductId(node: {
   return node.id;
 }
 
+/** IDs de productos globales de tipo COMPRADO (los PREPARADO no se manejan en inventario). */
+export async function fetchProductosGlobalesCompradosIds(): Promise<Set<string>> {
+  const { data, error } = await supabase
+    .from("productos_globales" as any)
+    .select("id")
+    .eq("tipo_producto", "COMPRADO");
+  if (error) throw error;
+  return new Set(((data as unknown as { id: string }[]) ?? []).map((row) => row.id));
+}
+
 export async function fetchInventarioProductoMap(
   branchId: string,
 ): Promise<Map<string, InventarioProductoInfo>> {

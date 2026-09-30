@@ -1,11 +1,13 @@
-import type { ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import MenuNavigator from "@/components/order/MenuNavigator";
-import type { MenuNode } from "@/hooks/useMenuTree";
+import { filtrarArbolPorProducto } from "@/components/admin/BodegaGeneralArbolPanel";
+import { fetchMenuTreeNodes, getMenuTreeQueryKey, type MenuNode } from "@/hooks/useMenuTree";
 import type { InventarioProductoInfo } from "@/lib/inventarioMenuData";
 import {
   fetchInventarioBodegaSucursalMap,
   fetchInventarioProductoMap,
+  fetchProductosGlobalesCompradosIds,
   mergeInventarioInfo,
   resolveMenuNodeProductId,
 } from "@/lib/inventarioMenuData";
@@ -36,6 +38,30 @@ const InventarioArbolPanel = ({
     },
   });
 
+  const menuQuery = useQuery({
+    queryKey: getMenuTreeQueryKey({ branchId, menuScope: "TABLE", includeInactive: true }),
+    queryFn: () =>
+      fetchMenuTreeNodes({ branchId: branchId!, menuScope: "TABLE", includeInactive: true }),
+    enabled: Boolean(branchId),
+    staleTime: 60_000,
+  });
+
+  const compradosQuery = useQuery({
+    queryKey: ["productos-globales-comprados-ids"],
+    queryFn: fetchProductosGlobalesCompradosIds,
+    staleTime: 60_000,
+  });
+
+  const nodosComprados = useMemo(() => {
+    if (!menuQuery.data || !compradosQuery.data) return null;
+    const comprados = compradosQuery.data;
+    return filtrarArbolPorProducto(
+      menuQuery.data,
+      (productoId) => comprados.has(productoId),
+      resolveMenuNodeProductId,
+    );
+  }, [menuQuery.data, compradosQuery.data]);
+
   const inventarioMap = inventarioQuery.data ?? new Map();
 
   const handleRenderNodeAction = (node: MenuNode) => {
@@ -54,6 +80,8 @@ const InventarioArbolPanel = ({
         menuScope="TABLE"
         hidePrices
         includeInactive
+        nodesOverride={nodosComprados ?? []}
+        forceLoading={!nodosComprados}
         renderNodeAction={handleRenderNodeAction}
       />
     </div>
