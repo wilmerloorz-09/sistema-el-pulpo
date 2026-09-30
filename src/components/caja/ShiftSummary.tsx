@@ -177,8 +177,7 @@ export default function ShiftSummary({
     return {
       key,
       denominationId: denomination.denomination_id,
-      label: denomination.label,
-      tipo: denomination.denomination_type === "coin" ? "Moneda" : denomination.denomination_type === "bill" ? "Billete" : "—",
+      isBill: denomination.denomination_type === "bill",
       value,
       qtySystem,
       qtyCounted,
@@ -187,6 +186,22 @@ export default function ShiftSummary({
       differs: qtyCounted !== qtySystem,
     };
   });
+  const closingSections = [
+    {
+      key: "coin",
+      title: "Monedas",
+      headerClass: "bg-gradient-to-r from-slate-300 via-slate-100 to-slate-300 text-slate-700",
+      rowClass: "bg-slate-100/80",
+      rows: closingRows.filter((row) => !row.isBill),
+    },
+    {
+      key: "bill",
+      title: "Billetes",
+      headerClass: "bg-emerald-200 text-emerald-900",
+      rowClass: "bg-emerald-50",
+      rows: closingRows.filter((row) => row.isBill),
+    },
+  ].filter((section) => section.rows.length > 0);
   const closingTotalSystem = closingRows.reduce((sum, row) => sum + row.subtotalSystem, 0);
   const closingTotalCounted = closingRows.reduce((sum, row) => sum + row.subtotalCounted, 0);
   const closingDifference = Math.round((closingTotalCounted - closingTotalSystem) * 100) / 100;
@@ -603,11 +618,9 @@ export default function ShiftSummary({
               </p>
 
               <div className="overflow-x-auto rounded-xl border border-border/70">
-                <table className="w-full min-w-[640px] text-sm">
+                <table className="w-full min-w-[480px] text-sm">
                   <thead>
                     <tr className="border-b border-border/70 bg-muted/40 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
-                      <th className="px-3 py-2 text-left">Denominación</th>
-                      <th className="px-3 py-2 text-left">Tipo</th>
                       <th className="px-3 py-2 text-right">Valor</th>
                       <th className="px-3 py-2 text-right">Cantidad</th>
                       <th className="px-3 py-2 text-center">Contado</th>
@@ -615,48 +628,53 @@ export default function ShiftSummary({
                       <th className="px-3 py-2 text-right">Subtotal contado</th>
                     </tr>
                   </thead>
-                  <tbody>
-                    {closingRows.map((row) => (
-                      <tr key={row.key} className="border-b border-border/50 last:border-b-0">
-                        <td className="px-3 py-1.5">{row.label}</td>
-                        <td className="px-3 py-1.5">{row.tipo}</td>
-                        <td className="px-3 py-1.5 text-right tabular-nums">${row.value.toFixed(2)}</td>
-                        <td className="px-3 py-1.5 text-right tabular-nums">{row.qtySystem}</td>
-                        <td className="px-3 py-1.5">
-                          <Input
-                            type="text"
-                            inputMode="numeric"
-                            pattern="[0-9]*"
-                            value={countedDraft[row.key] ?? ""}
-                            placeholder={String(row.qtySystem)}
-                            onKeyDown={bloquearTeclaNoEntera}
-                            onChange={(e) =>
-                              setCountedDraft((prev) => ({
-                                ...prev,
-                                [row.key]: soloDigitosCantidad(e.target.value),
-                              }))
-                            }
-                            className={cn(
-                              "mx-auto h-8 w-20 rounded-lg text-right tabular-nums",
-                              row.differs && "border-amber-400 bg-amber-50 font-semibold",
-                            )}
-                          />
-                        </td>
-                        <td className="px-3 py-1.5 text-right tabular-nums">${row.subtotalSystem.toFixed(2)}</td>
-                        <td
-                          className={cn(
-                            "px-3 py-1.5 text-right tabular-nums",
-                            row.differs && "font-semibold text-amber-700",
-                          )}
-                        >
-                          ${row.subtotalCounted.toFixed(2)}
+                  {closingSections.map((section) => (
+                    <tbody key={section.key}>
+                      <tr className={section.headerClass}>
+                        <td className="px-3 py-1.5 text-xs font-bold uppercase tracking-wide" colSpan={5}>
+                          {section.title}
                         </td>
                       </tr>
-                    ))}
-                  </tbody>
+                      {section.rows.map((row) => (
+                        <tr key={row.key} className={cn("border-b border-white/70", section.rowClass)}>
+                          <td className="px-3 py-1.5 text-right tabular-nums">${row.value.toFixed(2)}</td>
+                          <td className="px-3 py-1.5 text-right tabular-nums">{row.qtySystem}</td>
+                          <td className="px-3 py-1.5">
+                            <Input
+                              type="text"
+                              inputMode="numeric"
+                              pattern="[0-9]*"
+                              value={countedDraft[row.key] ?? ""}
+                              placeholder={String(row.qtySystem)}
+                              onKeyDown={bloquearTeclaNoEntera}
+                              onChange={(e) =>
+                                setCountedDraft((prev) => ({
+                                  ...prev,
+                                  [row.key]: soloDigitosCantidad(e.target.value),
+                                }))
+                              }
+                              className={cn(
+                                "mx-auto h-8 w-20 rounded-lg bg-white text-right tabular-nums",
+                                row.differs && "border-amber-400 bg-amber-50 font-semibold",
+                              )}
+                            />
+                          </td>
+                          <td className="px-3 py-1.5 text-right tabular-nums">${row.subtotalSystem.toFixed(2)}</td>
+                          <td
+                            className={cn(
+                              "px-3 py-1.5 text-right tabular-nums",
+                              row.differs && "font-semibold text-amber-700",
+                            )}
+                          >
+                            ${row.subtotalCounted.toFixed(2)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  ))}
                   <tfoot>
                     <tr className="border-t border-border/70 bg-muted/30 font-bold">
-                      <td className="px-3 py-2" colSpan={5}>Total</td>
+                      <td className="px-3 py-2" colSpan={3}>Total</td>
                       <td className="px-3 py-2 text-right tabular-nums">${closingTotalSystem.toFixed(2)}</td>
                       <td className="px-3 py-2 text-right tabular-nums">${closingTotalCounted.toFixed(2)}</td>
                     </tr>
