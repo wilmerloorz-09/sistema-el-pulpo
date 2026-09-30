@@ -1,7 +1,8 @@
-import type { ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import MenuNavigator from "@/components/order/MenuNavigator";
-import type { MenuNode } from "@/hooks/useMenuTree";
+import { useBranch } from "@/contexts/BranchContext";
+import { fetchMenuTreeNodes, getMenuTreeQueryKey, type MenuNode } from "@/hooks/useMenuTree";
 import type { InventarioProductoInfo } from "@/lib/inventarioMenuData";
 import { mergeInventarioInfo } from "@/lib/inventarioMenuData";
 import { supabase } from "@/integrations/supabase/client";
@@ -41,13 +42,61 @@ async function fetchBodegaGeneralProductoMap(): Promise<Map<string, InventarioPr
   return map;
 }
 
+/** Solo productos COMPRADO; categorías sin productos comprados debajo se ocultan. */
+function filtrarArbolComprados(
+  nodes: MenuNode[],
+  inventarioMap: Map<string, InventarioProductoInfo>,
+): MenuNode[] {
+  const productosVisibles = nodes.filter((node) => {
+    if (node.node_type !== "product") return false;
+    const productoGlobalId = resolveProductoGlobalId(node);
+    return Boolean(productoGlobalId && inventarioMap.get(productoGlobalId)?.tipoProducto === "COMPRADO");
+  });
+
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const categoriasVisibles = new Set<string>();
+  for (const producto of productosVisibles) {
+    let parentId = producto.parent_id;
+    while (parentId && !categoriasVisibles.has(parentId)) {
+      categoriasVisibles.add(parentId);
+      parentId = byId.get(parentId)?.parent_id ?? null;
+    }
+  }
+
+  const productoIds = new Set(productosVisibles.map((node) => node.id));
+  return nodes.filter((node) => productoIds.has(node.id) || categoriasVisibles.has(node.id));
+}
+
 const BodegaGeneralArbolPanel = ({ renderNodeAction }: BodegaGeneralArbolPanelProps) => {
+  const { activeBranchId } = useBranch();
+
   const inventarioQuery = useQuery({
     queryKey: ["inventario-bodega-general-map"],
     queryFn: fetchBodegaGeneralProductoMap,
   });
 
+  const menuQuery = useQuery({
+    queryKey: getMenuTreeQueryKey({
+      branchId: activeBranchId,
+      menuScope: "TABLE",
+      includeInactive: true,
+    }),
+    queryFn: () =>
+      fetchMenuTreeNodes({
+        branchId: activeBranchId!,
+        menuScope: "TABLE",
+        includeInactive: true,
+      }),
+    enabled: !!activeBranchId,
+    staleTime: 60_000,
+  });
+
   const inventarioMap = inventarioQuery.data ?? new Map();
+
+  const nodosComprados = useMemo(() => {
+    if (!menuQuery.data || !inventarioQuery.data) return null;
+    return filtrarArbolComprados(menuQuery.data, inventarioQuery.data);
+  }, [menuQuery.data, inventarioQuery.data]);
 
   const handleRenderNodeAction = (node: MenuNode) => {
     const productoGlobalId = resolveProductoGlobalId(node);
@@ -65,6 +114,8 @@ const BodegaGeneralArbolPanel = ({ renderNodeAction }: BodegaGeneralArbolPanelPr
         menuScope="TABLE"
         hidePrices
         includeInactive
+        nodesOverride={nodosComprados ?? []}
+        forceLoading={!nodosComprados}
         renderNodeAction={handleRenderNodeAction}
       />
     </div>
