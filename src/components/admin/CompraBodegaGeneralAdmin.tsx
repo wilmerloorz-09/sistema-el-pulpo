@@ -173,12 +173,13 @@ const CompraBodegaGeneralAdmin = () => {
   });
 
   const productosQuery = useQuery({
-    queryKey: ["productos-globales-compra"],
+    queryKey: ["productos-globales-compra", "COMPRADO"],
     queryFn: async (): Promise<ProductoOption[]> => {
       const { data, error: qError } = await supabase
         .from("productos_globales" as any)
         .select("id, nombre_principal, codigo")
         .eq("activo", true)
+        .eq("tipo_producto", "COMPRADO")
         .order("nombre_principal");
       if (qError) throw qError;
       return (data as ProductoOption[]) ?? [];
