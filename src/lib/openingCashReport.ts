@@ -155,6 +155,62 @@ async function fetchOpeningDenomSnapshot(params: {
     .sort((a, b) => a.display_order - b.display_order || a.value - b.value);
 }
 
+export type ClosedOpeningCountRow = {
+  key: string;
+  value: number;
+  isBill: boolean;
+  qtySystem: number;
+  qtyCounted: number;
+};
+
+/** Conteo guardado al cerrar; los cierres anteriores al conteo usan la cantidad del sistema como contada. */
+export async function fetchClosedOpeningCount(params: {
+  openingId: string;
+  shiftId: string;
+  cashierId: string;
+}): Promise<ClosedOpeningCountRow[]> {
+  const { data: conteos, error } = await (supabase.from("conteos_cierre_caja" as any) as any)
+    .select("denominacion_id, cantidad_sistema, cantidad_contada, denominacion_valor, denominacion_tipo")
+    .eq("apertura_id", params.openingId);
+  if (error) throw error;
+
+  if ((conteos ?? []).length > 0) {
+    const rows = conteos as Array<{
+      denominacion_id: string;
+      cantidad_sistema: number;
+      cantidad_contada: number;
+      denominacion_valor: number;
+      denominacion_tipo: string | null;
+    }>;
+    const { data: catalog } = await supabase
+      .from("denominations")
+      .select("id, display_order")
+      .in("id", rows.map((row) => row.denominacion_id));
+    const orderById = Object.fromEntries((catalog ?? []).map((d) => [d.id, Number(d.display_order ?? 999)]));
+
+    return rows
+      .map((row) => ({
+        key: row.denominacion_id,
+        value: Number(row.denominacion_valor ?? 0),
+        isBill: row.denominacion_tipo === "bill",
+        qtySystem: Number(row.cantidad_sistema ?? 0),
+        qtyCounted: Number(row.cantidad_contada ?? 0),
+        order: orderById[row.denominacion_id] ?? 999,
+      }))
+      .sort((a, b) => a.order - b.order || a.value - b.value)
+      .map(({ order: _order, ...row }) => row);
+  }
+
+  const snapshot = await fetchOpeningDenomSnapshot(params);
+  return snapshot.map((row, index) => ({
+    key: `${row.label}-${index}`,
+    value: row.value,
+    isBill: row.denomination_type === "bill",
+    qtySystem: row.qty_current,
+    qtyCounted: row.qty_current,
+  }));
+}
+
 export async function fetchPaymentsForOpeningWindow(params: {
   cashierId: string;
   openedAt: string;

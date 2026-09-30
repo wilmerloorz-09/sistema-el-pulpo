@@ -9,10 +9,8 @@ import type {
 } from "@/hooks/useCaja";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { cn } from "@/lib/utils";
-import { bloquearTeclaNoEntera, soloDigitosCantidad } from "@/lib/inventarioProductos";
+import CierreCajaConteoTabla from "@/components/caja/CierreCajaConteoTabla";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import {
   AlertDialog,
@@ -181,30 +179,8 @@ export default function ShiftSummary({
       value,
       qtySystem,
       qtyCounted,
-      subtotalSystem: value * qtySystem,
-      subtotalCounted: value * qtyCounted,
-      differs: qtyCounted !== qtySystem,
     };
   });
-  const closingSections = [
-    {
-      key: "coin",
-      title: "Monedas",
-      headerClass: "bg-gradient-to-r from-slate-300 via-slate-100 to-slate-300 text-slate-700",
-      rowClass: "bg-slate-100/80",
-      rows: closingRows.filter((row) => !row.isBill),
-    },
-    {
-      key: "bill",
-      title: "Billetes",
-      headerClass: "bg-emerald-200 text-emerald-900",
-      rowClass: "bg-emerald-50",
-      rows: closingRows.filter((row) => row.isBill),
-    },
-  ].filter((section) => section.rows.length > 0);
-  const closingTotalSystem = closingRows.reduce((sum, row) => sum + row.subtotalSystem, 0);
-  const closingTotalCounted = closingRows.reduce((sum, row) => sum + row.subtotalCounted, 0);
-  const closingDifference = Math.round((closingTotalCounted - closingTotalSystem) * 100) / 100;
 
   const handleCloseCash = async () => {
     try {
@@ -612,81 +588,13 @@ export default function ShiftSummary({
               <DialogTitle className="text-base sm:text-lg">Cerrar Caja</DialogTitle>
             </DialogHeader>
             <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain sm:space-y-3">
-              <div className="overflow-hidden rounded-lg border border-border/70">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-b border-border/70 bg-muted/40 text-[10px] font-bold uppercase text-muted-foreground">
-                      <th className="px-1.5 py-1 text-right">Valor</th>
-                      <th className="px-1 py-1 text-right">Cant.</th>
-                      <th className="px-1 py-1 text-center">Contado</th>
-                      <th className="px-1 py-1 text-right">Subt.</th>
-                      <th className="px-1.5 py-1 text-right">Subt. cont.</th>
-                    </tr>
-                  </thead>
-                  {closingSections.map((section) => (
-                    <tbody key={section.key}>
-                      <tr className={section.headerClass}>
-                        <td className="px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide" colSpan={5}>
-                          {section.title}
-                        </td>
-                      </tr>
-                      {section.rows.map((row) => (
-                        <tr key={row.key} className={cn("border-b border-white/70", section.rowClass)}>
-                          <td className="px-1.5 py-0.5 text-right tabular-nums">${row.value.toFixed(2)}</td>
-                          <td className="px-1 py-0.5 text-right tabular-nums">{row.qtySystem}</td>
-                          <td className="px-1 py-0.5">
-                            <Input
-                              type="text"
-                              inputMode="numeric"
-                              pattern="[0-9]*"
-                              value={countedDraft[row.key] ?? ""}
-                              placeholder={String(row.qtySystem)}
-                              onKeyDown={bloquearTeclaNoEntera}
-                              onChange={(e) =>
-                                setCountedDraft((prev) => ({
-                                  ...prev,
-                                  [row.key]: soloDigitosCantidad(e.target.value),
-                                }))
-                              }
-                              className={cn(
-                                "mx-auto h-7 w-12 rounded-md bg-white px-1.5 py-0 text-right tabular-nums",
-                                row.differs && "border-amber-400 bg-amber-50 font-semibold",
-                              )}
-                            />
-                          </td>
-                          <td className="px-1 py-0.5 text-right tabular-nums">${row.subtotalSystem.toFixed(2)}</td>
-                          <td
-                            className={cn(
-                              "px-1.5 py-0.5 text-right tabular-nums",
-                              row.differs && "font-semibold text-amber-700",
-                            )}
-                          >
-                            ${row.subtotalCounted.toFixed(2)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  ))}
-                  <tfoot>
-                    <tr className="border-t border-border/70 bg-muted/30 font-bold">
-                      <td className="px-1.5 py-1" colSpan={3}>Total</td>
-                      <td className="px-1 py-1 text-right tabular-nums">${closingTotalSystem.toFixed(2)}</td>
-                      <td className="px-1.5 py-1 text-right tabular-nums">${closingTotalCounted.toFixed(2)}</td>
-                    </tr>
-                    <tr
-                      className={cn(
-                        "font-bold",
-                        closingDifference === 0 ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700",
-                      )}
-                    >
-                      <td className="px-1.5 py-1" colSpan={3}>Diferencia</td>
-                      <td className="px-1.5 py-1 text-right tabular-nums" colSpan={2}>
-                        {closingDifference > 0 ? "+" : ""}${closingDifference.toFixed(2)}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
+              <CierreCajaConteoTabla
+                filas={closingRows}
+                edicion={{
+                  borrador: countedDraft,
+                  onChange: (key, valor) => setCountedDraft((prev) => ({ ...prev, [key]: valor })),
+                }}
+              />
 
               <Textarea
                 value={notes}

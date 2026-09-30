@@ -1,16 +1,15 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { format, startOfDay, endOfDay, subDays } from "date-fns";
-import { toast } from "sonner";
-import { FileText, Loader2, Lock, Printer, Search } from "lucide-react";
+import { Eye, FileText, Loader2, Lock, Search } from "lucide-react";
 import { useBranch } from "@/contexts/BranchContext";
 import { hasPermission } from "@/lib/permissions";
 import {
   listClosedCashOpenings,
   listShiftsForBranchInRange,
-  openClosedOpeningCashReport,
   type ClosedOpeningListRow,
 } from "@/lib/openingCashReport";
+import CierreCajaDetalleDialog from "@/components/caja/CierreCajaDetalleDialog";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -67,7 +66,7 @@ const CierresCaja = () => {
   const [hasta, setHasta] = useState(() => toLocalInputValue(endOfDay(now)));
   const [shiftId, setShiftId] = useState<string>("ALL");
   const [cashierId, setCashierId] = useState<string>("ALL");
-  const [printingId, setPrintingId] = useState<string | null>(null);
+  const [aperturaDetalle, setAperturaDetalle] = useState<ClosedOpeningListRow | null>(null);
 
   const desdeIso = useMemo(() => new Date(desde).toISOString(), [desde]);
   const hastaIso = useMemo(() => new Date(hasta).toISOString(), [hasta]);
@@ -119,26 +118,6 @@ const CierresCaja = () => {
       .sort((a, b) => a.label.localeCompare(b.label, "es"));
   }, [cashiersQuery.data]);
 
-  const handleReprint = async (row: ClosedOpeningListRow) => {
-    if (!activeBranchId) return;
-    setPrintingId(row.id);
-    const toastId = `cierre-${row.id}`;
-    toast.loading("Generando reporte de cierre...", { id: toastId });
-    try {
-      await openClosedOpeningCashReport({
-        openingId: row.id,
-        branchId: activeBranchId,
-        branchName: activeBranch?.name ?? "Sucursal",
-      });
-      toast.success("Reporte listo", { id: toastId });
-    } catch (error: any) {
-      console.error(error);
-      toast.error(error?.message || "No se pudo generar el reporte", { id: toastId });
-    } finally {
-      setPrintingId(null);
-    }
-  };
-
   if (!canAccessAdmin) {
     return (
       <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center p-4">
@@ -172,7 +151,7 @@ const CierresCaja = () => {
           Cierres de caja
         </h1>
         <p className="mt-1 text-sm text-slate-500">
-          Reimprime reportes de cajas ya cerradas (aunque el turno siga abierto) · {activeBranch?.name}
+          Consulta el conteo de cajas ya cerradas (aunque el turno siga abierto) · {activeBranch?.name}
         </p>
       </div>
 
@@ -303,15 +282,10 @@ const CierresCaja = () => {
                         size="sm"
                         variant="outline"
                         className="h-7 rounded-md gap-1 px-2 text-[11px]"
-                        disabled={printingId === row.id}
-                        onClick={() => handleReprint(row)}
+                        onClick={() => setAperturaDetalle(row)}
                       >
-                        {printingId === row.id ? (
-                          <Loader2 className="h-3 w-3 animate-spin" />
-                        ) : (
-                          <Printer className="h-3 w-3" />
-                        )}
-                        Ver reporte
+                        <Eye className="h-3 w-3" />
+                        Ver cierre
                       </Button>
                     </td>
                   </tr>
@@ -321,6 +295,8 @@ const CierresCaja = () => {
           </div>
         )}
       </Card>
+
+      <CierreCajaDetalleDialog apertura={aperturaDetalle} onClose={() => setAperturaDetalle(null)} />
     </div>
   );
 };
