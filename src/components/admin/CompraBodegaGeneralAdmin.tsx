@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, ChevronsUpDown, Loader2, Plus, ShoppingCart, Trash2 } from "lucide-react";
+import { Check, ChevronsUpDown, ListTree, Loader2, Plus, ShoppingCart, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useBranch } from "@/contexts/BranchContext";
@@ -31,6 +31,7 @@ import {
   soloDigitosCantidad,
 } from "@/lib/inventarioProductos";
 import { cn } from "@/lib/utils";
+import CompraProductoArbolDialog from "@/components/admin/CompraProductoArbolDialog";
 
 type ProveedorOption = {
   id: string;
@@ -191,6 +192,19 @@ const CompraBodegaGeneralAdmin = () => {
     [lineas],
   );
 
+  const productosPermitidos = useMemo(
+    () => new Set((productosQuery.data ?? []).map((p) => p.id)),
+    [productosQuery.data],
+  );
+
+  const [arbolLineaKey, setArbolLineaKey] = useState<string | null>(null);
+  const arbolLinea = lineas.find((l) => l.key === arbolLineaKey) ?? null;
+
+  const setProductoLinea = (lineaKey: string, productoGlobalId: string) =>
+    setLineas((prev) =>
+      prev.map((row) => (row.key === lineaKey ? { ...row, productoGlobalId } : row)),
+    );
+
   const resetForm = () => {
     setProveedorId("");
     setNumeroComprobante("");
@@ -342,7 +356,7 @@ const CompraBodegaGeneralAdmin = () => {
             return (
               <div
                 key={linea.key}
-                className="grid gap-2 rounded-xl border border-border/70 bg-muted/10 p-3 sm:grid-cols-[minmax(0,1fr)_6.5rem_auto]"
+                className="grid gap-2 rounded-xl border border-border/70 bg-muted/10 p-3 sm:grid-cols-[minmax(0,1fr)_auto_6.5rem_auto]"
               >
                 <div className="space-y-1.5">
                   <Label className="text-[10px] uppercase text-muted-foreground">
@@ -352,14 +366,22 @@ const CompraBodegaGeneralAdmin = () => {
                     productos={productosQuery.data ?? []}
                     value={linea.productoGlobalId}
                     usedIds={productosUsados}
-                    onChange={(productoGlobalId) =>
-                      setLineas((prev) =>
-                        prev.map((row) =>
-                          row.key === linea.key ? { ...row, productoGlobalId } : row,
-                        ),
-                      )
-                    }
+                    onChange={(productoGlobalId) => setProductoLinea(linea.key, productoGlobalId)}
                   />
+                </div>
+
+                <div className="flex items-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="h-10 w-10 rounded-xl"
+                    title="Seleccionar desde el menú"
+                    aria-label="Seleccionar producto desde el menú"
+                    onClick={() => setArbolLineaKey(linea.key)}
+                  >
+                    <ListTree className="h-4 w-4" />
+                  </Button>
                 </div>
 
                 <div className="space-y-1.5">
@@ -431,6 +453,19 @@ const CompraBodegaGeneralAdmin = () => {
           Registrar compra
         </Button>
       </div>
+
+      <CompraProductoArbolDialog
+        open={arbolLinea != null}
+        onOpenChange={(open) => {
+          if (!open) setArbolLineaKey(null);
+        }}
+        allowedIds={productosPermitidos}
+        usedIds={productosUsados}
+        currentId={arbolLinea?.productoGlobalId ?? ""}
+        onSelect={(productoGlobalId) => {
+          if (arbolLineaKey) setProductoLinea(arbolLineaKey, productoGlobalId);
+        }}
+      />
     </div>
   );
 };

@@ -12,7 +12,7 @@ type BodegaGeneralArbolPanelProps = {
   renderNodeAction: (node: MenuNode, info: InventarioProductoInfo) => ReactNode;
 };
 
-function resolveProductoGlobalId(node: MenuNode): string | null {
+export function resolveProductoGlobalId(node: MenuNode): string | null {
   if (node.node_type !== "product") return null;
   const globalId = node.producto_global_id?.trim();
   return globalId || null;
@@ -42,15 +42,14 @@ async function fetchBodegaGeneralProductoMap(): Promise<Map<string, InventarioPr
   return map;
 }
 
-/** Solo productos COMPRADO; categorías sin productos comprados debajo se ocultan. */
-function filtrarArbolComprados(
+/** Deja los productos que cumplen el filtro; categorías sin productos visibles debajo se ocultan. */
+export function filtrarArbolPorProducto(
   nodes: MenuNode[],
-  inventarioMap: Map<string, InventarioProductoInfo>,
+  incluirProductoGlobal: (productoGlobalId: string) => boolean,
 ): MenuNode[] {
   const productosVisibles = nodes.filter((node) => {
-    if (node.node_type !== "product") return false;
     const productoGlobalId = resolveProductoGlobalId(node);
-    return Boolean(productoGlobalId && inventarioMap.get(productoGlobalId)?.tipoProducto === "COMPRADO");
+    return Boolean(productoGlobalId && incluirProductoGlobal(productoGlobalId));
   });
 
   const byId = new Map(nodes.map((node) => [node.id, node]));
@@ -67,7 +66,8 @@ function filtrarArbolComprados(
   return nodes.filter((node) => productoIds.has(node.id) || categoriasVisibles.has(node.id));
 }
 
-const BodegaGeneralArbolPanel = ({ renderNodeAction }: BodegaGeneralArbolPanelProps) => {
+/** Árbol de menú de la sucursal activa filtrado a productos COMPRADO (bodega general). */
+export function useArbolProductosComprados() {
   const { activeBranchId } = useBranch();
 
   const inventarioQuery = useQuery({
@@ -91,12 +91,23 @@ const BodegaGeneralArbolPanel = ({ renderNodeAction }: BodegaGeneralArbolPanelPr
     staleTime: 60_000,
   });
 
-  const inventarioMap = inventarioQuery.data ?? new Map();
-
   const nodosComprados = useMemo(() => {
     if (!menuQuery.data || !inventarioQuery.data) return null;
-    return filtrarArbolComprados(menuQuery.data, inventarioQuery.data);
+    const inventario = inventarioQuery.data;
+    return filtrarArbolPorProducto(
+      menuQuery.data,
+      (productoGlobalId) => inventario.get(productoGlobalId)?.tipoProducto === "COMPRADO",
+    );
   }, [menuQuery.data, inventarioQuery.data]);
+
+  return {
+    nodosComprados,
+    inventarioMap: (inventarioQuery.data ?? new Map()) as Map<string, InventarioProductoInfo>,
+  };
+}
+
+const BodegaGeneralArbolPanel = ({ renderNodeAction }: BodegaGeneralArbolPanelProps) => {
+  const { nodosComprados, inventarioMap } = useArbolProductosComprados();
 
   const handleRenderNodeAction = (node: MenuNode) => {
     const productoGlobalId = resolveProductoGlobalId(node);
