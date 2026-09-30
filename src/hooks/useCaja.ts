@@ -118,6 +118,18 @@ export interface ShiftDenom {
   qty_current: number;
 }
 
+/** Conteo de cierre por denominación: lo que dice el sistema y lo que contó el cajero. */
+export interface CashClosingCount {
+  denomination_id: string;
+  qty_system: number;
+  qty_counted: number;
+}
+
+export interface CloseCashRegisterInput {
+  notes?: string;
+  counts?: CashClosingCount[];
+}
+
 export interface CashShift {
   id: string;
   branch_id: string;
@@ -3644,7 +3656,7 @@ export function useCaja(params?: {
   });
 
   const closeCashRegister = useMutation({
-    mutationFn: async (notes?: string) => {
+    mutationFn: async ({ notes, counts }: CloseCashRegisterInput = {}) => {
       if (!user) throw new Error("No user");
       const shift = shiftQuery.data;
       if (!shift) throw new Error("No hay turno abierto");
@@ -3660,6 +3672,7 @@ export function useCaja(params?: {
         p_cashier_id: user.id,
         p_branch_id: activeBranchId,
         p_notes: notes ?? null,
+        p_counts: counts && counts.length > 0 ? counts : null,
       });
       if (error) throw error;
       return {

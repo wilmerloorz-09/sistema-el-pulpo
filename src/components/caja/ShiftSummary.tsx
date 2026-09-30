@@ -1,9 +1,18 @@
 import { useState } from "react";
 import type { CajaCashierDenomGroup } from "@/lib/cajaSummaryScope";
-import type { CashRegisterMovement, CashRegisterMovementDetail, CashShift, ShiftDenom } from "@/hooks/useCaja";
+import type {
+  CashRegisterMovement,
+  CashRegisterMovementDetail,
+  CashShift,
+  CloseCashRegisterInput,
+  ShiftDenom,
+} from "@/hooks/useCaja";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
+import { bloquearTeclaNoEntera, soloDigitosCantidad } from "@/lib/inventarioProductos";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import {
   AlertDialog,
@@ -29,7 +38,7 @@ interface Props {
   transferCashChangeTotal?: number;
   movements?: CashRegisterMovement[];
   movementsLoading?: boolean;
-  onClose: (notes?: string) => Promise<void> | void;
+  onClose: (input: CloseCashRegisterInput) => Promise<void> | void;
   onAnnulOpen?: (reason: string) => Promise<void>;
   onRegisterMovement?: (payload: {
     type: "entrada" | "salida" | "cambio_denominacion";
@@ -130,6 +139,7 @@ export default function ShiftSummary({
   const [showCloseWarning, setShowCloseWarning] = useState(false);
   const [closeWarning, setCloseWarning] = useState({ title: "", description: "" });
   const [notes, setNotes] = useState("");
+  const [countedDraft, setCountedDraft] = useState<Record<string, string>>({});
   const [annulReason, setAnnulReason] = useState("");
 
   const sortedDenoms = sortDenoms(shift.denoms);
@@ -158,11 +168,44 @@ export default function ShiftSummary({
   const remainingReasonChars = Math.max(0, 10 - trimmedAnnulReason.length);
   const canConfirmAnnul = trimmedAnnulReason.length >= 10 && !currentOpeningHasSales && !annulling;
 
+  const closingRows = sortedDenoms.map((denomination) => {
+    const key = denomination.denomination_id || denomination.id;
+    const raw = countedDraft[key] ?? "";
+    const qtySystem = Number(denomination.qty_current ?? 0);
+    const qtyCounted = raw === "" ? qtySystem : Number.parseInt(raw, 10);
+    const value = Number(denomination.value ?? 0);
+    return {
+      key,
+      denominationId: denomination.denomination_id,
+      label: denomination.label,
+      tipo: denomination.denomination_type === "coin" ? "Moneda" : denomination.denomination_type === "bill" ? "Billete" : "—",
+      value,
+      qtySystem,
+      qtyCounted,
+      subtotalSystem: value * qtySystem,
+      subtotalCounted: value * qtyCounted,
+      differs: qtyCounted !== qtySystem,
+    };
+  });
+  const closingTotalSystem = closingRows.reduce((sum, row) => sum + row.subtotalSystem, 0);
+  const closingTotalCounted = closingRows.reduce((sum, row) => sum + row.subtotalCounted, 0);
+  const closingDifference = Math.round((closingTotalCounted - closingTotalSystem) * 100) / 100;
+
   const handleCloseCash = async () => {
     try {
-      await onClose(notes || undefined);
+      await onClose({
+        notes: notes || undefined,
+        counts: closingRows
+          .filter((row) => Boolean(row.denominationId))
+          .map((row) => ({
+            denomination_id: row.denominationId,
+            qty_system: row.qtySystem,
+            qty_counted: row.qtyCounted,
+          })),
+      });
       setShowClose(false);
       setNotes("");
+      setCountedDraft({});
     } catch (error: any) {
       const rawMessage = String(error?.message ?? "").trim();
       const isLastCajaBlock = rawMessage.startsWith(
@@ -237,7 +280,10 @@ export default function ShiftSummary({
               type="button"
               size="sm"
               className="h-7 shrink-0 rounded-full border-0 bg-[#0f766e] px-2.5 text-[11px] font-semibold text-white shadow-none hover:translate-y-0 hover:bg-[#115e59] sm:h-11 sm:px-6 sm:text-sm"
-              onClick={() => setShowClose(true)}
+              onClick={() => {
+                setCountedDraft({});
+                setShowClose(true);
+              }}
             >
               <WalletCards className="h-3 w-3 sm:h-4 sm:w-4" />
               Cerrar caja
@@ -546,27 +592,103 @@ export default function ShiftSummary({
 
       {!readOnly && (
         <Dialog open={showClose} onOpenChange={setShowClose}>
-          <DialogContent className="flex max-h-dialog-safe w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] flex-col gap-3 overflow-hidden p-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))] sm:max-w-md sm:p-6 sm:pb-6">
+          <DialogContent className="flex max-h-dialog-safe w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] flex-col gap-3 overflow-hidden p-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))] sm:max-w-4xl sm:p-6 sm:pb-6">
             <DialogHeader className="shrink-0 pr-8">
               <DialogTitle className="">Cerrar Caja</DialogTitle>
             </DialogHeader>
             <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-xl bg-muted/50 p-3 text-center">
-                  <p className="text-xs text-muted-foreground">Apertura</p>
-                  <p className=" text-lg font-bold text-foreground">${totalInitial.toFixed(2)}</p>
-                </div>
-                <div className="rounded-xl bg-accent/10 p-3 text-center">
-                  <p className="text-xs text-muted-foreground">En caja</p>
-                  <p className=" text-lg font-bold text-accent">${totalCurrent.toFixed(2)}</p>
-                </div>
+              <p className="text-xs text-muted-foreground">
+                Si la cantidad que tienes en caja de una moneda o billete no coincide con la del sistema,
+                escríbela en <span className="font-semibold">Contado</span>. Si la dejas vacía, se toma la del sistema.
+              </p>
+
+              <div className="overflow-x-auto rounded-xl border border-border/70">
+                <table className="w-full min-w-[640px] text-sm">
+                  <thead>
+                    <tr className="border-b border-border/70 bg-muted/40 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+                      <th className="px-3 py-2 text-left">Denominación</th>
+                      <th className="px-3 py-2 text-left">Tipo</th>
+                      <th className="px-3 py-2 text-right">Valor</th>
+                      <th className="px-3 py-2 text-right">Cantidad</th>
+                      <th className="px-3 py-2 text-center">Contado</th>
+                      <th className="px-3 py-2 text-right">Subtotal</th>
+                      <th className="px-3 py-2 text-right">Subtotal contado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {closingRows.map((row) => (
+                      <tr key={row.key} className="border-b border-border/50 last:border-b-0">
+                        <td className="px-3 py-1.5">{row.label}</td>
+                        <td className="px-3 py-1.5">{row.tipo}</td>
+                        <td className="px-3 py-1.5 text-right tabular-nums">${row.value.toFixed(2)}</td>
+                        <td className="px-3 py-1.5 text-right tabular-nums">{row.qtySystem}</td>
+                        <td className="px-3 py-1.5">
+                          <Input
+                            type="text"
+                            inputMode="numeric"
+                            pattern="[0-9]*"
+                            value={countedDraft[row.key] ?? ""}
+                            placeholder={String(row.qtySystem)}
+                            onKeyDown={bloquearTeclaNoEntera}
+                            onChange={(e) =>
+                              setCountedDraft((prev) => ({
+                                ...prev,
+                                [row.key]: soloDigitosCantidad(e.target.value),
+                              }))
+                            }
+                            className={cn(
+                              "mx-auto h-8 w-20 rounded-lg text-right tabular-nums",
+                              row.differs && "border-amber-400 bg-amber-50 font-semibold",
+                            )}
+                          />
+                        </td>
+                        <td className="px-3 py-1.5 text-right tabular-nums">${row.subtotalSystem.toFixed(2)}</td>
+                        <td
+                          className={cn(
+                            "px-3 py-1.5 text-right tabular-nums",
+                            row.differs && "font-semibold text-amber-700",
+                          )}
+                        >
+                          ${row.subtotalCounted.toFixed(2)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t border-border/70 bg-muted/30 font-bold">
+                      <td className="px-3 py-2" colSpan={5}>Total</td>
+                      <td className="px-3 py-2 text-right tabular-nums">${closingTotalSystem.toFixed(2)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">${closingTotalCounted.toFixed(2)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
               </div>
 
-              <div className="rounded-xl bg-primary/10 p-3 text-center">
-                <p className="text-xs text-muted-foreground">Diferencia</p>
-                <p className=" text-xl font-bold text-primary">
-                  ${(totalCurrent - totalInitial).toFixed(2)}
-                </p>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                <div className="rounded-xl bg-muted/50 p-3 text-center">
+                  <p className="text-xs text-muted-foreground">Total sistema</p>
+                  <p className="text-lg font-bold text-foreground">${closingTotalSystem.toFixed(2)}</p>
+                </div>
+                <div className="rounded-xl bg-accent/10 p-3 text-center">
+                  <p className="text-xs text-muted-foreground">Total contado</p>
+                  <p className="text-lg font-bold text-accent">${closingTotalCounted.toFixed(2)}</p>
+                </div>
+                <div
+                  className={cn(
+                    "rounded-xl p-3 text-center",
+                    closingDifference === 0 ? "bg-emerald-50" : "bg-rose-50",
+                  )}
+                >
+                  <p className="text-xs text-muted-foreground">Diferencia</p>
+                  <p
+                    className={cn(
+                      "text-lg font-bold",
+                      closingDifference === 0 ? "text-emerald-700" : "text-rose-700",
+                    )}
+                  >
+                    {closingDifference > 0 ? "+" : ""}${closingDifference.toFixed(2)}
+                  </p>
+                </div>
               </div>
 
               <div>
@@ -590,7 +712,7 @@ export default function ShiftSummary({
                 className="w-full gap-2 rounded-xl sm:w-auto"
               >
                 {closing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Lock className="h-4 w-4" />}
-                Confirmar cierre de caja
+                Procesar cierre de caja
               </Button>
             </DialogFooter>
           </DialogContent>
