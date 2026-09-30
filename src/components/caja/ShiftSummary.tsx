@@ -607,34 +607,43 @@ export default function ShiftSummary({
 
       {!readOnly && (
         <Dialog open={showClose} onOpenChange={setShowClose}>
-          <DialogContent className="flex max-h-dialog-safe w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] flex-col gap-3 overflow-hidden p-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))] sm:max-w-4xl sm:p-6 sm:pb-6">
+          <DialogContent className="flex max-h-dialog-safe w-[calc(100vw-0.5rem)] max-w-[calc(100vw-0.5rem)] flex-col gap-2 overflow-hidden p-3 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] sm:max-w-2xl sm:gap-3 sm:p-5 sm:pb-5">
             <DialogHeader className="shrink-0 pr-8">
-              <DialogTitle className="">Cerrar Caja</DialogTitle>
+              <DialogTitle className="text-base sm:text-lg">Cerrar Caja</DialogTitle>
             </DialogHeader>
-            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain">
-              <div className="overflow-x-auto rounded-xl border border-border/70">
-                <table className="w-full min-w-[480px] text-sm">
+            <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain sm:space-y-3">
+              <div className="overflow-hidden rounded-lg border border-border/70">
+                <table className="w-full text-xs sm:text-sm">
                   <thead>
-                    <tr className="border-b border-border/70 bg-muted/40 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
-                      <th className="px-3 py-2 text-right">Valor</th>
-                      <th className="px-3 py-2 text-right">Cantidad</th>
-                      <th className="px-3 py-2 text-center">Contado</th>
-                      <th className="px-3 py-2 text-right">Subtotal</th>
-                      <th className="px-3 py-2 text-right">Subtotal contado</th>
+                    <tr className="border-b border-border/70 bg-muted/40 text-[10px] font-bold uppercase text-muted-foreground sm:text-[11px] sm:tracking-wide">
+                      <th className="px-1.5 py-1.5 text-right sm:px-3">Valor</th>
+                      <th className="px-1.5 py-1.5 text-right sm:px-3">
+                        <span className="sm:hidden">Cant.</span>
+                        <span className="hidden sm:inline">Cantidad</span>
+                      </th>
+                      <th className="px-1 py-1.5 text-center sm:px-3">Contado</th>
+                      <th className="px-1.5 py-1.5 text-right sm:px-3">
+                        <span className="sm:hidden">Subt.</span>
+                        <span className="hidden sm:inline">Subtotal</span>
+                      </th>
+                      <th className="px-1.5 py-1.5 text-right sm:px-3">
+                        <span className="sm:hidden">Subt. cont.</span>
+                        <span className="hidden sm:inline">Subtotal contado</span>
+                      </th>
                     </tr>
                   </thead>
                   {closingSections.map((section) => (
                     <tbody key={section.key}>
                       <tr className={section.headerClass}>
-                        <td className="px-3 py-1.5 text-xs font-bold uppercase tracking-wide" colSpan={5}>
+                        <td className="px-1.5 py-1 text-[10px] font-bold uppercase tracking-wide sm:px-3 sm:text-xs" colSpan={5}>
                           {section.title}
                         </td>
                       </tr>
                       {section.rows.map((row) => (
                         <tr key={row.key} className={cn("border-b border-white/70", section.rowClass)}>
-                          <td className="px-3 py-1.5 text-right tabular-nums">${row.value.toFixed(2)}</td>
-                          <td className="px-3 py-1.5 text-right tabular-nums">{row.qtySystem}</td>
-                          <td className="px-3 py-1.5">
+                          <td className="px-1.5 py-0.5 text-right tabular-nums sm:px-3 sm:py-1">${row.value.toFixed(2)}</td>
+                          <td className="px-1.5 py-0.5 text-right tabular-nums sm:px-3 sm:py-1">{row.qtySystem}</td>
+                          <td className="px-1 py-0.5 sm:px-3 sm:py-1">
                             <Input
                               type="text"
                               inputMode="numeric"
@@ -649,15 +658,15 @@ export default function ShiftSummary({
                                 }))
                               }
                               className={cn(
-                                "mx-auto h-8 w-20 rounded-lg bg-white text-right tabular-nums",
+                                "mx-auto h-7 w-14 rounded-md bg-white px-1.5 py-0 text-right tabular-nums sm:w-16",
                                 row.differs && "border-amber-400 bg-amber-50 font-semibold",
                               )}
                             />
                           </td>
-                          <td className="px-3 py-1.5 text-right tabular-nums">${row.subtotalSystem.toFixed(2)}</td>
+                          <td className="px-1.5 py-0.5 text-right tabular-nums sm:px-3 sm:py-1">${row.subtotalSystem.toFixed(2)}</td>
                           <td
                             className={cn(
-                              "px-3 py-1.5 text-right tabular-nums",
+                              "px-1.5 py-0.5 text-right tabular-nums sm:px-3 sm:py-1",
                               row.differs && "font-semibold text-amber-700",
                             )}
                           >
@@ -669,60 +678,41 @@ export default function ShiftSummary({
                   ))}
                   <tfoot>
                     <tr className="border-t border-border/70 bg-muted/30 font-bold">
-                      <td className="px-3 py-2" colSpan={3}>Total</td>
-                      <td className="px-3 py-2 text-right tabular-nums">${closingTotalSystem.toFixed(2)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">${closingTotalCounted.toFixed(2)}</td>
+                      <td className="px-1.5 py-1.5 sm:px-3" colSpan={3}>Total</td>
+                      <td className="px-1.5 py-1.5 text-right tabular-nums sm:px-3">${closingTotalSystem.toFixed(2)}</td>
+                      <td className="px-1.5 py-1.5 text-right tabular-nums sm:px-3">${closingTotalCounted.toFixed(2)}</td>
+                    </tr>
+                    <tr
+                      className={cn(
+                        "font-bold",
+                        closingDifference === 0 ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700",
+                      )}
+                    >
+                      <td className="px-1.5 py-1.5 sm:px-3" colSpan={3}>Diferencia</td>
+                      <td className="px-1.5 py-1.5 text-right tabular-nums sm:px-3" colSpan={2}>
+                        {closingDifference > 0 ? "+" : ""}${closingDifference.toFixed(2)}
+                      </td>
                     </tr>
                   </tfoot>
                 </table>
               </div>
 
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                <div className="rounded-xl bg-muted/50 p-3 text-center">
-                  <p className="text-xs text-muted-foreground">Total sistema</p>
-                  <p className="text-lg font-bold text-foreground">${closingTotalSystem.toFixed(2)}</p>
-                </div>
-                <div className="rounded-xl bg-accent/10 p-3 text-center">
-                  <p className="text-xs text-muted-foreground">Total contado</p>
-                  <p className="text-lg font-bold text-accent">${closingTotalCounted.toFixed(2)}</p>
-                </div>
-                <div
-                  className={cn(
-                    "rounded-xl p-3 text-center",
-                    closingDifference === 0 ? "bg-emerald-50" : "bg-rose-50",
-                  )}
-                >
-                  <p className="text-xs text-muted-foreground">Diferencia</p>
-                  <p
-                    className={cn(
-                      "text-lg font-bold",
-                      closingDifference === 0 ? "text-emerald-700" : "text-rose-700",
-                    )}
-                  >
-                    {closingDifference > 0 ? "+" : ""}${closingDifference.toFixed(2)}
-                  </p>
-                </div>
-              </div>
-
-              <div>
-                <p className="mb-1.5 text-sm font-medium text-foreground">Notas (opcional)</p>
-                <Textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Observaciones de la caja..."
-                  className="resize-none rounded-xl"
-                  rows={3}
-                />
-              </div>
+              <Textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Notas (opcional)"
+                className="min-h-0 resize-none rounded-lg text-sm"
+                rows={2}
+              />
             </div>
-            <DialogFooter className="footer-safe-bottom shrink-0 flex-col gap-2 border-t border-border/60 pt-3 sm:flex-row sm:pb-0">
-              <Button variant="outline" onClick={() => setShowClose(false)} className="w-full rounded-xl sm:w-auto">
+            <DialogFooter className="footer-safe-bottom shrink-0 flex-row gap-2 border-t border-border/60 pt-2 sm:pb-0 sm:pt-3">
+              <Button variant="outline" onClick={() => setShowClose(false)} className="rounded-xl px-3 sm:px-4">
                 Cancelar
               </Button>
               <Button
                 onClick={handleCloseCash}
                 disabled={closing}
-                className="w-full gap-2 rounded-xl sm:w-auto"
+                className="flex-1 gap-2 rounded-xl px-3 sm:flex-none sm:px-4"
               >
                 {closing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Lock className="h-4 w-4" />}
                 Procesar cierre de caja
