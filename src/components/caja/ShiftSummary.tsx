@@ -607,43 +607,34 @@ export default function ShiftSummary({
 
       {!readOnly && (
         <Dialog open={showClose} onOpenChange={setShowClose}>
-          <DialogContent className="flex max-h-dialog-safe w-[calc(100vw-0.5rem)] max-w-[calc(100vw-0.5rem)] flex-col gap-2 overflow-hidden p-3 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] sm:max-w-2xl sm:gap-3 sm:p-5 sm:pb-5">
+          <DialogContent className="flex max-h-dialog-safe w-[calc(100vw-0.5rem)] max-w-[calc(100vw-0.5rem)] flex-col gap-2 overflow-hidden p-3 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] sm:max-w-md sm:gap-3 sm:p-5 sm:pb-5">
             <DialogHeader className="shrink-0 pr-8">
               <DialogTitle className="text-base sm:text-lg">Cerrar Caja</DialogTitle>
             </DialogHeader>
             <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain sm:space-y-3">
               <div className="overflow-hidden rounded-lg border border-border/70">
-                <table className="w-full text-xs sm:text-sm">
+                <table className="w-full text-xs">
                   <thead>
-                    <tr className="border-b border-border/70 bg-muted/40 text-[10px] font-bold uppercase text-muted-foreground sm:text-[11px] sm:tracking-wide">
-                      <th className="px-1.5 py-1.5 text-right sm:px-3">Valor</th>
-                      <th className="px-1.5 py-1.5 text-right sm:px-3">
-                        <span className="sm:hidden">Cant.</span>
-                        <span className="hidden sm:inline">Cantidad</span>
-                      </th>
-                      <th className="px-1 py-1.5 text-center sm:px-3">Contado</th>
-                      <th className="px-1.5 py-1.5 text-right sm:px-3">
-                        <span className="sm:hidden">Subt.</span>
-                        <span className="hidden sm:inline">Subtotal</span>
-                      </th>
-                      <th className="px-1.5 py-1.5 text-right sm:px-3">
-                        <span className="sm:hidden">Subt. cont.</span>
-                        <span className="hidden sm:inline">Subtotal contado</span>
-                      </th>
+                    <tr className="border-b border-border/70 bg-muted/40 text-[10px] font-bold uppercase text-muted-foreground">
+                      <th className="px-1.5 py-1 text-right">Valor</th>
+                      <th className="px-1 py-1 text-right">Cant.</th>
+                      <th className="px-1 py-1 text-center">Contado</th>
+                      <th className="px-1 py-1 text-right">Subt.</th>
+                      <th className="px-1.5 py-1 text-right">Subt. cont.</th>
                     </tr>
                   </thead>
                   {closingSections.map((section) => (
                     <tbody key={section.key}>
                       <tr className={section.headerClass}>
-                        <td className="px-1.5 py-1 text-[10px] font-bold uppercase tracking-wide sm:px-3 sm:text-xs" colSpan={5}>
+                        <td className="px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide" colSpan={5}>
                           {section.title}
                         </td>
                       </tr>
                       {section.rows.map((row) => (
                         <tr key={row.key} className={cn("border-b border-white/70", section.rowClass)}>
-                          <td className="px-1.5 py-0.5 text-right tabular-nums sm:px-3 sm:py-1">${row.value.toFixed(2)}</td>
-                          <td className="px-1.5 py-0.5 text-right tabular-nums sm:px-3 sm:py-1">{row.qtySystem}</td>
-                          <td className="px-1 py-0.5 sm:px-3 sm:py-1">
+                          <td className="px-1.5 py-0.5 text-right tabular-nums">${row.value.toFixed(2)}</td>
+                          <td className="px-1 py-0.5 text-right tabular-nums">{row.qtySystem}</td>
+                          <td className="px-1 py-0.5">
                             <Input
                               type="text"
                               inputMode="numeric"
@@ -658,15 +649,15 @@ export default function ShiftSummary({
                                 }))
                               }
                               className={cn(
-                                "mx-auto h-7 w-14 rounded-md bg-white px-1.5 py-0 text-right tabular-nums sm:w-16",
+                                "mx-auto h-7 w-12 rounded-md bg-white px-1.5 py-0 text-right tabular-nums",
                                 row.differs && "border-amber-400 bg-amber-50 font-semibold",
                               )}
                             />
                           </td>
-                          <td className="px-1.5 py-0.5 text-right tabular-nums sm:px-3 sm:py-1">${row.subtotalSystem.toFixed(2)}</td>
+                          <td className="px-1 py-0.5 text-right tabular-nums">${row.subtotalSystem.toFixed(2)}</td>
                           <td
                             className={cn(
-                              "px-1.5 py-0.5 text-right tabular-nums sm:px-3 sm:py-1",
+                              "px-1.5 py-0.5 text-right tabular-nums",
                               row.differs && "font-semibold text-amber-700",
                             )}
                           >
@@ -678,9 +669,9 @@ export default function ShiftSummary({
                   ))}
                   <tfoot>
                     <tr className="border-t border-border/70 bg-muted/30 font-bold">
-                      <td className="px-1.5 py-1.5 sm:px-3" colSpan={3}>Total</td>
-                      <td className="px-1.5 py-1.5 text-right tabular-nums sm:px-3">${closingTotalSystem.toFixed(2)}</td>
-                      <td className="px-1.5 py-1.5 text-right tabular-nums sm:px-3">${closingTotalCounted.toFixed(2)}</td>
+                      <td className="px-1.5 py-1" colSpan={3}>Total</td>
+                      <td className="px-1 py-1 text-right tabular-nums">${closingTotalSystem.toFixed(2)}</td>
+                      <td className="px-1.5 py-1 text-right tabular-nums">${closingTotalCounted.toFixed(2)}</td>
                     </tr>
                     <tr
                       className={cn(
@@ -688,8 +679,8 @@ export default function ShiftSummary({
                         closingDifference === 0 ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700",
                       )}
                     >
-                      <td className="px-1.5 py-1.5 sm:px-3" colSpan={3}>Diferencia</td>
-                      <td className="px-1.5 py-1.5 text-right tabular-nums sm:px-3" colSpan={2}>
+                      <td className="px-1.5 py-1" colSpan={3}>Diferencia</td>
+                      <td className="px-1.5 py-1 text-right tabular-nums" colSpan={2}>
                         {closingDifference > 0 ? "+" : ""}${closingDifference.toFixed(2)}
                       </td>
                     </tr>
