@@ -760,15 +760,12 @@ export default function CompletedPaymentsList({
               const normalizedStatus = (payment.status?.toString() || "").toUpperCase();
               const isVoidedOrReversed = normalizedStatus === "REVERSED" || normalizedStatus === "VOIDED";
               const blockedByClosedOpening = payment.payment_opening_status === "cerrada" || payment.payment_opening_status === "anulada";
-              const blockedByPriorOrderVoid = payment.order_has_voided_payments && !isVoidedOrReversed;
-              const blockedByState = payment.reversal_requested || blockedByClosedOpening || blockedByPriorOrderVoid;
-              const voidButtonTitle = blockedByPriorOrderVoid
-                ? "Esta orden ya tuvo una anulación de pago"
-                : payment.reversal_requested
-                  ? "La anulación está pendiente"
-                  : blockedByClosedOpening
-                    ? "No se puede anular un pago de una caja cerrada"
-                    : "Anular pago";
+              const blockedByState = payment.reversal_requested || blockedByClosedOpening;
+              const voidButtonTitle = payment.reversal_requested
+                ? "La anulación está pendiente"
+                : blockedByClosedOpening
+                  ? "No se puede anular un pago de una caja cerrada"
+                  : "Anular pago";
               const itemsLabel = `${payment.items.length} ${payment.items.length === 1 ? "item" : "items"}`;
               const groupCash =           cashAggregateByGroupId.get(payment.paymentGroupId) ?? {
                 receivedAmount: getReceivedAmount(payment),
