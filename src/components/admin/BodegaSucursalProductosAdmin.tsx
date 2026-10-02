@@ -40,35 +40,11 @@ const BodegaSucursalProductosAdmin = () => {
       if (!activeBranchId) throw new Error("Sucursal no seleccionada");
       setSavingIntegraProductoId(productoId);
 
-      const { data: existing, error: readError } = await supabase
-        .from("inventario_bodega_sucursal" as any)
-        .select("id, cantidad_disponible")
-        .eq("producto_global_id", productoId)
-        .eq("sucursal_id", activeBranchId)
-        .maybeSingle();
-      if (readError) throw readError;
-
-      if (existing?.id) {
-        const { error } = await supabase
-          .from("inventario_bodega_sucursal" as any)
-          .update({
-            integra_con_ventas: integraConVentas,
-            actualizado_en: new Date().toISOString(),
-          } as any)
-          .eq("id", existing.id);
-        if (error) throw error;
-        return;
-      }
-
-      const { error } = await supabase
-        .from("inventario_bodega_sucursal" as any)
-        .insert({
-          producto_global_id: productoId,
-          sucursal_id: activeBranchId,
-          cantidad_disponible: 0,
-          integra_con_ventas: integraConVentas,
-          activo: true,
-        } as any);
+      const { error } = await supabase.rpc("actualizar_integra_ventas_bodega_sucursal" as any, {
+        p_producto_global_id: productoId,
+        p_sucursal_id: activeBranchId,
+        p_integra_con_ventas: integraConVentas,
+      } as any);
       if (error) throw error;
     },
     onSuccess: () => {
