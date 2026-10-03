@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { TipoProducto } from "@/lib/inventarioProductos";
+import { resolverSucursalInventario } from "@/lib/inventarioSucursal";
 
 export type InventarioProductoInfo = {
   productoId: string;
@@ -41,6 +42,7 @@ export async function fetchInventarioProductoMap(
   branchId: string,
 ): Promise<Map<string, InventarioProductoInfo>> {
   const map = new Map<string, InventarioProductoInfo>();
+  const inventarioSucursalId = await resolverSucursalInventario(branchId);
 
   const { data: inventoryRows, error: invError } = await supabase
     .from("inventario_productos")
@@ -56,7 +58,7 @@ export async function fetchInventarioProductoMap(
         is_active
       )
     `)
-    .eq("sucursal_id", branchId);
+    .eq("sucursal_id", inventarioSucursalId);
   if (invError) throw invError;
 
   for (const row of inventoryRows ?? []) {
@@ -82,7 +84,7 @@ export async function fetchInventarioProductoMap(
   const { data: bodegaRows, error: bodegaError } = await supabase
     .from("inventario_bodega_sucursal" as any)
     .select("producto_global_id, integra_con_ventas")
-    .eq("sucursal_id", branchId);
+    .eq("sucursal_id", inventarioSucursalId);
   if (bodegaError) throw bodegaError;
 
   for (const row of (bodegaRows as any[]) ?? []) {
@@ -112,6 +114,7 @@ export async function fetchInventarioBodegaSucursalMap(
   branchId: string,
 ): Promise<Map<string, InventarioProductoInfo>> {
   const map = new Map<string, InventarioProductoInfo>();
+  const inventarioSucursalId = await resolverSucursalInventario(branchId);
 
   const { data: inventoryRows, error: invError } = await supabase
     .from("inventario_bodega_sucursal" as any)
@@ -126,7 +129,7 @@ export async function fetchInventarioBodegaSucursalMap(
         activo
       )
     `)
-    .eq("sucursal_id", branchId);
+    .eq("sucursal_id", inventarioSucursalId);
   if (invError) throw invError;
 
   for (const row of (inventoryRows as any[]) ?? []) {

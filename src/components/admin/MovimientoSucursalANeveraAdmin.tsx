@@ -14,6 +14,7 @@ import ProductoGlobalSearchCombobox, {
 } from "@/components/admin/ProductoGlobalSearchCombobox";
 import { cn } from "@/lib/utils";
 import { bloquearTeclaNoEntera } from "@/lib/inventarioProductos";
+import { resolverSucursalInventario } from "@/lib/inventarioSucursal";
 
 type LineaTraslado = {
   key: string;
@@ -45,10 +46,11 @@ function parseCantidadEntera(raw: string): number {
 }
 
 async function fetchStockMap(sucursalId: string): Promise<Record<string, number>> {
+  const inventarioSucursalId = await resolverSucursalInventario(sucursalId);
   const { data, error } = await supabase
     .from("inventario_bodega_sucursal" as any)
     .select("producto_global_id, cantidad_disponible")
-    .eq("sucursal_id", sucursalId);
+    .eq("sucursal_id", inventarioSucursalId);
   if (error) throw error;
 
   const map: Record<string, number> = {};

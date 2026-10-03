@@ -8,6 +8,7 @@ import { canManage, canOperate } from "@/lib/permissions";
 import InventarioArbolPanel from "@/components/admin/InventarioArbolPanel";
 import InventarioMovimientoDialog from "@/components/admin/InventarioMovimientoDialog";
 import { BodegaSucursalProductosNodeMeta } from "@/components/admin/inventarioNodeMeta";
+import { resolverSucursalInventario } from "@/lib/inventarioSucursal";
 
 const NeveraProductosAdmin = () => {
   const { activeBranchId, activeBranch, isGlobalAdmin, permissions } = useBranch();
@@ -36,12 +37,13 @@ const NeveraProductosAdmin = () => {
     }) => {
       if (!activeBranchId) throw new Error("Sucursal no seleccionada");
       setSavingLimiteProductoId(productoId);
+      const inventarioSucursalId = await resolverSucursalInventario(activeBranchId);
 
       const { data, error: readError } = await supabase
         .from("inventario_productos")
         .select("id")
         .eq("producto_id", productoId)
-        .eq("sucursal_id", activeBranchId)
+        .eq("sucursal_id", inventarioSucursalId)
         .maybeSingle();
       if (readError) throw readError;
 
@@ -58,7 +60,7 @@ const NeveraProductosAdmin = () => {
         .from("inventario_productos")
         .insert({
           producto_id: productoId,
-          sucursal_id: activeBranchId,
+          sucursal_id: inventarioSucursalId,
           cantidad_disponible: 0,
           limite_stock: limiteStock,
           activo: true,

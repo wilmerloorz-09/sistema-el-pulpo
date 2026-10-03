@@ -21,6 +21,7 @@ import ProductoGlobalSearchCombobox, {
 } from "@/components/admin/ProductoGlobalSearchCombobox";
 import { cn } from "@/lib/utils";
 import { bloquearTeclaNoEntera } from "@/lib/inventarioProductos";
+import { cargarMapaInventarioSucursal, nombreGrupoInventario } from "@/lib/inventarioSucursal";
 
 type LineaTraslado = {
   key: string;
@@ -92,10 +93,31 @@ const MovimientoASucursalAdmin = () => {
   const [lineas, setLineas] = useState<LineaTraslado[]>([newLinea()]);
   const [error, setError] = useState<string | null>(null);
 
-  const sucursalesActivas = useMemo(
-    () => branches.filter((b) => b.is_active),
-    [branches],
-  );
+  const mapaInventarioQuery = useQuery({
+    queryKey: ["mapa-inventario-sucursal"],
+    queryFn: cargarMapaInventarioSucursal,
+    staleTime: Infinity,
+  });
+
+  // Las sucursales que comparten inventario se muestran como un solo destino.
+  const sucursalesActivas = useMemo(() => {
+    const activas = branches.filter((b) => b.is_active);
+    const mapa = mapaInventarioQuery.data;
+    const grupos = new Map<string, typeof activas>();
+    for (const b of activas) {
+      const inventarioId = mapa?.get(b.id) ?? b.id;
+      grupos.set(inventarioId, [...(grupos.get(inventarioId) ?? []), b]);
+    }
+    return [...grupos.entries()].map(([inventarioId, miembros]) => {
+      const ordenados = [...miembros].sort((a, b) =>
+        a.id === inventarioId ? -1 : b.id === inventarioId ? 1 : a.name.localeCompare(b.name, "es"),
+      );
+      return {
+        id: ordenados[0].id === inventarioId ? inventarioId : ordenados[0].id,
+        name: nombreGrupoInventario(ordenados.map((b) => b.name)),
+      };
+    });
+  }, [branches, mapaInventarioQuery.data]);
 
   const stockQuery = useQuery({
     queryKey: ["inventario-bodega-general-stock-traslado"],

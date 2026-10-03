@@ -7,6 +7,7 @@ import {
   etiquetaTipoMovimientoInventario,
   type TipoMovimientoInventario,
 } from "@/lib/inventarioProductos";
+import { sucursalesQueCompartenInventario } from "@/lib/inventarioSucursal";
 import { cn } from "@/lib/utils";
 
 type MovimientoHistorialRow = {
@@ -45,6 +46,7 @@ const InventarioMovimientosHistorial = ({
     enabled: Boolean(sucursalId),
     queryFn: async (): Promise<MovimientoHistorialRow[]> => {
       if (!sucursalId) return [];
+      const sucursalIds = await sucursalesQueCompartenInventario(sucursalId);
 
       const { data, error } = await supabase
         .from("movimientos_inventario")
@@ -59,7 +61,7 @@ const InventarioMovimientosHistorial = ({
           creado_en,
           products ( description )
         `)
-        .eq("sucursal_id", sucursalId)
+        .in("sucursal_id", sucursalIds)
         .order("creado_en", { ascending: false })
         .limit(100);
 
