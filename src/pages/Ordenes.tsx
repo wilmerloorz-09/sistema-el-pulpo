@@ -845,6 +845,8 @@ const OrdenesContent = () => {
     || Boolean(shiftGateQuery.data?.isSupervisor);
 
   const openTableIdForCreate = searchParams.get("openTable");
+  /** Mesa libre recien tocada: `orderId` aun es el UUID optimista y la orden real todavia no existe en BD. */
+  const isOpeningFreeTable = Boolean(openTableIdForCreate) && isMesasListOrigin(searchParams.get("origin"));
 
   useEffect(() => {
     const mesasOriginTag = searchParams.get("origin");
@@ -1320,7 +1322,8 @@ const OrdenesContent = () => {
           : isTakeoutOrder
             ? fetchTakeoutSiblingOrders(order!.branch_id)
             : fetchSiblingOrders(order!.table_id!, order!.branch_id, order!.id),
-    enabled: isBranchSiblingOrder ? !!order?.branch_id : !!order?.table_id,
+    // Con el UUID optimista, fetchSiblingOrders purgaria la orden real recien creada (keep = id optimista).
+    enabled: isBranchSiblingOrder ? !!order?.branch_id : !!order?.table_id && !isOpeningFreeTable,
     staleTime: isBranchSiblingOrder ? 0 : 8_000,
     refetchOnMount: isBranchSiblingOrder ? "always" : true,
     gcTime: 2 * 60_000,
@@ -2644,6 +2647,10 @@ const OrdenesContent = () => {
         throw new Error("No se pudo crear la nueva orden");
       }
 
+      /** create_additional_dine_in_order devuelve el borrador vacio existente de la mesa si lo hay. */
+      const reusedEmptyTableOrder =
+        !isBranchSiblingOrder && mergedTableOrders.some((sibling) => sibling.id === newOrderId);
+
       if (isExpressOrder) {
         qc.setQueryData(
           ["express-orders", order.branch_id],
@@ -2695,7 +2702,7 @@ const OrdenesContent = () => {
             },
           ].sort(compareSiblingOrderTabs),
         );
-      } else if (order.table_id) {
+      } else if (order.table_id && !reusedEmptyTableOrder) {
         qc.setQueryData(
           ["table-orders", order.table_id],
           [
@@ -2713,7 +2720,7 @@ const OrdenesContent = () => {
           ].sort(compareSiblingOrderTabs),
         );
       }
-      if (!isTakeoutOrder && !isExtraOrder) {
+      if (!isTakeoutOrder && !isExtraOrder && !reusedEmptyTableOrder) {
         const newSibling: SiblingOrder = {
           id: newOrderId,
           order_number: null,
@@ -5052,7 +5059,7 @@ const OrdenesContent = () => {
             }
           })();
         }}
-        adding={addItem.isPending}
+        adding={addItem.isPending || isOpeningFreeTable}
       />
 
       <Dialog open={!!takeoutCajaPreview} onOpenChange={(open) => !open && setTakeoutCajaPreview(null)}>

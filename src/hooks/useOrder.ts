@@ -1198,6 +1198,13 @@ export function useOrder(orderId: string | null) {
       });
     },
     onError: (err: any, _, context) => {
+      if (/orden no encontrada/i.test(String(err?.message ?? ""))) {
+        // La fila ya no existe en BD: no restaurar la copia en caché (Ordenes vuelve al listado con order=null).
+        qc.setQueryData(getOrderQueryKey(orderId), null);
+        qc.invalidateQueries({ queryKey: ["tables-with-status"] });
+        toast.error("Esta orden ya no existe. Vuelve a abrirla desde el listado.");
+        return;
+      }
       if (context?.previousOrder) {
         qc.setQueryData(getOrderQueryKey(orderId), context.previousOrder);
       }
@@ -1537,12 +1544,23 @@ export function useOrder(orderId: string | null) {
       if (error) throw error;
       return String(data);
     },
-    onSuccess: () => {
+    onSuccess: (newOrderId) => {
+      const tableId = query.data?.table_id;
+      const cachedTableOrders = tableId
+        ? ((qc.getQueryData(["table-orders", tableId]) as SiblingOrder[] | undefined) ?? [])
+        : [];
+      const reusedEmptyOrder = [...cachedTableOrders, ...(query.data?.siblings ?? [])].some(
+        (sibling) => sibling.id === newOrderId,
+      );
       invalidateOrderOperationalCaches(qc, {
         branchId: query.data?.branch_id,
         orderId,
       });
-      toast.success("Nueva orden creada en la mesa");
+      toast.success(
+        reusedEmptyOrder
+          ? "Ya habia una orden vacia en esta mesa. Te llevamos a ella."
+          : "Nueva orden creada en la mesa",
+      );
     },
     onError: (err: any) => toast.error(err.message),
   });
