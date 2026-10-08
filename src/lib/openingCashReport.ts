@@ -48,6 +48,7 @@ export async function listClosedCashOpenings(params: {
   hastaIso: string;
   shiftId?: string | null;
   cashierId?: string | null;
+  aprobacionEstado?: ClosedOpeningListRow["aprobacion_estado"] | null;
   limit?: number;
 }): Promise<ClosedOpeningListRow[]> {
   const { data, error } = await supabase.rpc("list_closed_cash_register_openings" as any, {
@@ -57,6 +58,7 @@ export async function listClosedCashOpenings(params: {
     p_shift_id: params.shiftId ?? null,
     p_cashier_id: params.cashierId ?? null,
     p_limit: params.limit ?? 150,
+    p_aprobacion_estado: params.aprobacionEstado ?? null,
   } as any);
 
   if (error) throw error;

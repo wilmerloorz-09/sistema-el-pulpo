@@ -67,6 +67,7 @@ const CierresCaja = () => {
   const [hasta, setHasta] = useState(() => toLocalInputValue(endOfDay(now)));
   const [shiftId, setShiftId] = useState<string>("ALL");
   const [cashierId, setCashierId] = useState<string>("ALL");
+  const [aprobacionEstado, setAprobacionEstado] = useState<"ALL" | ClosedOpeningListRow["aprobacion_estado"]>("ALL");
   const [aperturaDetalle, setAperturaDetalle] = useState<ClosedOpeningListRow | null>(null);
   const [modoDetalle, setModoDetalle] = useState<CierreCajaDialogModo>("ver");
 
@@ -89,7 +90,7 @@ const CierresCaja = () => {
   });
 
   const openingsQuery = useQuery({
-    queryKey: ["cierres-caja-openings", activeBranchId, desdeIso, hastaIso, shiftId, cashierId],
+    queryKey: ["cierres-caja-openings", activeBranchId, desdeIso, hastaIso, shiftId, cashierId, aprobacionEstado],
     enabled: Boolean(activeBranchId) && canAccessAdmin,
     queryFn: () => listClosedCashOpenings({
       branchId: activeBranchId!,
@@ -97,6 +98,7 @@ const CierresCaja = () => {
       hastaIso,
       shiftId: shiftId === "ALL" ? null : shiftId,
       cashierId: cashierId === "ALL" ? null : cashierId,
+      aprobacionEstado: aprobacionEstado === "ALL" ? null : aprobacionEstado,
     }),
   });
 
@@ -167,7 +169,7 @@ const CierresCaja = () => {
           <Search className="h-4 w-4 text-emerald-600" />
           <p className="text-sm font-semibold text-foreground">Filtros</p>
         </div>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground">Desde</Label>
             <Input
@@ -215,6 +217,22 @@ const CierresCaja = () => {
                     {c.label}
                   </SelectItem>
                 ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">Estado</Label>
+            <Select
+              value={aprobacionEstado}
+              onValueChange={(value) => setAprobacionEstado(value as typeof aprobacionEstado)}
+            >
+              <SelectTrigger className="h-10 rounded-xl text-xs">
+                <SelectValue placeholder="Todos" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL" className="text-xs">Todos los estados</SelectItem>
+                <SelectItem value="PENDIENTE" className="text-xs">Pendiente de aprobación</SelectItem>
+                <SelectItem value="APROBADO" className="text-xs">Aprobado</SelectItem>
               </SelectContent>
             </Select>
           </div>
