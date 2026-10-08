@@ -28,6 +28,9 @@ export type ClosedOpeningListRow = {
   shift_number: number | null;
   shift_code: string | null;
   shift_opened_at: string;
+  aprobacion_estado: "PENDIENTE" | "APROBADO";
+  aprobado_por_nombre: string | null;
+  aprobado_en: string | null;
 };
 
 function mapPaymentStatus(raw: string | null | undefined, notes: string | null | undefined): string {
@@ -74,7 +77,21 @@ export async function listClosedCashOpenings(params: {
     shift_number: row.shift_number ?? null,
     shift_code: row.shift_code ?? null,
     shift_opened_at: String(row.shift_opened_at ?? row.opened_at),
+    aprobacion_estado: row.aprobacion_estado === "APROBADO" ? "APROBADO" : "PENDIENTE",
+    aprobado_por_nombre: row.aprobado_por_nombre ?? null,
+    aprobado_en: row.aprobado_en ?? null,
   }));
+}
+
+export async function aprobarCierreCaja(params: {
+  openingId: string;
+  counts: Array<{ denomination_id: string; qty_system: number; qty_counted: number }>;
+}): Promise<void> {
+  const { error } = await supabase.rpc("aprobar_cierre_caja" as any, {
+    p_apertura_id: params.openingId,
+    p_conteos: params.counts,
+  } as any);
+  if (error) throw error;
 }
 
 export async function listShiftsForBranchInRange(params: {
@@ -105,7 +122,7 @@ async function fetchOpeningDenomSnapshot(params: {
   shiftId: string;
   openingId: string;
   cashierId: string;
-}): Promise<CashShiftSnapshot["denoms"]> {
+}): Promise<Array<CashShiftSnapshot["denoms"][number] & { denomination_id: string }>> {
   const { data: denomRows, error } = await (supabase.from("cash_shift_denoms") as any)
     .select("denomination_id, qty_initial, qty_current, opening_id, cashier_id")
     .eq("shift_id", params.shiftId);
@@ -143,6 +160,7 @@ async function fetchOpeningDenomSnapshot(params: {
     .map((row) => {
       const meta = byId[row.denomination_id];
       return {
+        denomination_id: row.denomination_id,
         label: meta?.label ?? "N/D",
         value: Number(meta?.value ?? 0),
         display_order: Number(meta?.display_order ?? 999),
@@ -157,6 +175,7 @@ async function fetchOpeningDenomSnapshot(params: {
 
 export type ClosedOpeningCountRow = {
   key: string;
+  denominationId: string;
   value: number;
   isBill: boolean;
   qtySystem: number;
@@ -191,6 +210,7 @@ export async function fetchClosedOpeningCount(params: {
     return rows
       .map((row) => ({
         key: row.denominacion_id,
+        denominationId: row.denominacion_id,
         value: Number(row.denominacion_valor ?? 0),
         isBill: row.denominacion_tipo === "bill",
         qtySystem: Number(row.cantidad_sistema ?? 0),
@@ -203,7 +223,8 @@ export async function fetchClosedOpeningCount(params: {
 
   const snapshot = await fetchOpeningDenomSnapshot(params);
   return snapshot.map((row, index) => ({
-    key: `${row.label}-${index}`,
+    key: `${row.denomination_id}-${index}`,
+    denominationId: row.denomination_id,
     value: row.value,
     isBill: row.denomination_type === "bill",
     qtySystem: row.qty_current,

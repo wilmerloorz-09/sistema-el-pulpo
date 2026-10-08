@@ -1,15 +1,15 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { format, startOfDay, endOfDay, subDays } from "date-fns";
-import { Eye, FileText, Loader2, Lock, Search } from "lucide-react";
+import { CheckCircle2, Eye, FileText, Loader2, Lock, Search } from "lucide-react";
 import { useBranch } from "@/contexts/BranchContext";
-import { hasPermission } from "@/lib/permissions";
+import { canManage, hasPermission } from "@/lib/permissions";
 import {
   listClosedCashOpenings,
   listShiftsForBranchInRange,
   type ClosedOpeningListRow,
 } from "@/lib/openingCashReport";
-import CierreCajaDetalleDialog from "@/components/caja/CierreCajaDetalleDialog";
+import CierreCajaDetalleDialog, { type CierreCajaDialogModo } from "@/components/caja/CierreCajaDetalleDialog";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -60,6 +60,7 @@ const CierresCaja = () => {
     Boolean(isGlobalAdmin)
     || hasPermission(permissions, "admin_sucursal", "VIEW")
     || hasPermission(permissions, "admin_global", "VIEW");
+  const canApprove = Boolean(isGlobalAdmin) || canManage(permissions, "admin_global");
 
   const now = new Date();
   const [desde, setDesde] = useState(() => toLocalInputValue(startOfDay(subDays(now, 7))));
@@ -67,6 +68,12 @@ const CierresCaja = () => {
   const [shiftId, setShiftId] = useState<string>("ALL");
   const [cashierId, setCashierId] = useState<string>("ALL");
   const [aperturaDetalle, setAperturaDetalle] = useState<ClosedOpeningListRow | null>(null);
+  const [modoDetalle, setModoDetalle] = useState<CierreCajaDialogModo>("ver");
+
+  const abrirDetalle = (row: ClosedOpeningListRow, modo: CierreCajaDialogModo) => {
+    setModoDetalle(modo);
+    setAperturaDetalle(row);
+  };
 
   const desdeIso = useMemo(() => new Date(desde).toISOString(), [desde]);
   const hastaIso = useMemo(() => new Date(hasta).toISOString(), [hasta]);
@@ -249,6 +256,7 @@ const CierresCaja = () => {
                   <th className="whitespace-nowrap px-2.5 py-2 font-semibold">Cajero</th>
                   <th className="whitespace-nowrap px-2.5 py-2 font-semibold text-right">Inicial</th>
                   <th className="whitespace-nowrap px-2.5 py-2 font-semibold text-right">Monto final</th>
+                  <th className="whitespace-nowrap px-2.5 py-2 font-semibold text-center">Estado</th>
                   <th className="whitespace-nowrap px-2.5 py-2 font-semibold text-right">Acción</th>
                 </tr>
               </thead>
@@ -276,17 +284,54 @@ const CierresCaja = () => {
                     <td className="whitespace-nowrap px-2.5 py-2 text-right tabular-nums font-medium text-slate-800">
                       {formatMoney(row.final_total)}
                     </td>
+                    <td className="whitespace-nowrap px-2.5 py-2 text-center">
+                      {row.aprobacion_estado === "APROBADO" ? (
+                        <span
+                          className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 ring-1 ring-emerald-200"
+                          title={
+                            row.aprobado_por_nombre
+                              ? `Aprobado por ${row.aprobado_por_nombre}${row.aprobado_en ? ` · ${formatDateTime(row.aprobado_en)}` : ""}`
+                              : "Aprobado"
+                          }
+                        >
+                          Aprobado
+                        </span>
+                      ) : (
+                        <span className="inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 ring-1 ring-amber-200">
+                          Pendiente
+                        </span>
+                      )}
+                    </td>
                     <td className="whitespace-nowrap px-2.5 py-2 text-right">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="h-7 rounded-md gap-1 px-2 text-[11px]"
-                        onClick={() => setAperturaDetalle(row)}
-                      >
-                        <Eye className="h-3 w-3" />
-                        Ver cierre
-                      </Button>
+                      <div className="inline-flex gap-1.5">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-7 rounded-md gap-1 px-2 text-[11px]"
+                          onClick={() => abrirDetalle(row, "ver")}
+                        >
+                          <Eye className="h-3 w-3" />
+                          Ver
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-7 rounded-md gap-1 bg-emerald-600 px-2 text-[11px] text-white hover:bg-emerald-700"
+                          disabled={!canApprove || row.aprobacion_estado === "APROBADO"}
+                          title={
+                            row.aprobacion_estado === "APROBADO"
+                              ? "Este cierre ya fue aprobado"
+                              : !canApprove
+                                ? "Solo el administrador general puede aprobar"
+                                : undefined
+                          }
+                          onClick={() => abrirDetalle(row, "aprobar")}
+                        >
+                          <CheckCircle2 className="h-3 w-3" />
+                          Aprobar
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -296,7 +341,11 @@ const CierresCaja = () => {
         )}
       </Card>
 
-      <CierreCajaDetalleDialog apertura={aperturaDetalle} onClose={() => setAperturaDetalle(null)} />
+      <CierreCajaDetalleDialog
+        apertura={aperturaDetalle}
+        modo={modoDetalle}
+        onClose={() => setAperturaDetalle(null)}
+      />
     </div>
   );
 };
