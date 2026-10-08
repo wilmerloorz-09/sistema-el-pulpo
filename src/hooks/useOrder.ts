@@ -1104,6 +1104,12 @@ export function useOrder(orderId: string | null) {
     retry: false,
   });
 
+  /** Agregar/quitar/cambiar cantidad mueve la nevera en el servidor: refrescar el stock mostrado. */
+  const invalidateInventarioStock = () => {
+    const branchId = query.data?.branch_id;
+    if (branchId) void qc.invalidateQueries({ queryKey: ["inventario-producto-map", branchId] });
+  };
+
   const addItem = useMutation({
     mutationFn: async (params: AddOrderItemParams) => {
       const isTrayOrder = query.data?.is_tray_order === true;
@@ -1208,12 +1214,13 @@ export function useOrder(orderId: string | null) {
       if (context?.previousOrder) {
         qc.setQueryData(getOrderQueryKey(orderId), context.previousOrder);
       }
-      toast.error(err.message);
+      toast.error(formatearMensajeStockInventario(err.message));
     },
     onSettled: () => {
       // No await: el botón "Enviar" no debe esperar el refetch completo de la orden.
       // onSuccess ya reemplazó el id temp- por el real; el detalle se sincroniza en background.
       void qc.refetchQueries({ queryKey: getOrderQueryKey(orderId) });
+      invalidateInventarioStock();
       invalidateOrderOperationalCaches(qc, {
         branchId: query.data?.branch_id,
         orderId,
@@ -1251,6 +1258,7 @@ export function useOrder(orderId: string | null) {
         branchId: query.data?.branch_id,
         orderId,
       });
+      invalidateInventarioStock();
     },
   });
 
@@ -1294,13 +1302,14 @@ export function useOrder(orderId: string | null) {
       if (context?.previousOrder) {
         qc.setQueryData(getOrderQueryKey(orderId), context.previousOrder);
       }
-      toast.error(err.message);
+      toast.error(formatearMensajeStockInventario(err.message));
     },
     onSettled: () => {
       invalidateOrderOperationalCaches(qc, {
         branchId: query.data?.branch_id,
         orderId,
       });
+      invalidateInventarioStock();
     },
   });
 
@@ -1583,6 +1592,7 @@ export function useOrder(orderId: string | null) {
         branchId: query.data?.branch_id,
         orderId,
       });
+      invalidateInventarioStock();
     },
     onError: (err: any) => toast.error(err.message),
   });

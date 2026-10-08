@@ -1580,6 +1580,7 @@ const OrdenesContent = () => {
         includeTables: true,
         includeCompletedPayments: true,
       });
+      void qc.invalidateQueries({ queryKey: ["inventario-producto-map", order.branch_id] });
       setConfirmDeleteCajaOrderOpen(false);
 
       if (order.table_id) {
