@@ -18,6 +18,8 @@ interface MenuNavigatorProps {
   getProductStockLimit?: (node: MenuNode) => number;
   /** Productos que no se pueden seleccionar (ej. stock en 0). */
   isProductBlocked?: (node: MenuNode) => boolean;
+  /** Bloqueado solo en apariencia: el toque llega a onSelectProduct para reconfirmar (ej. stock con el servidor). */
+  allowBlockedClick?: boolean;
   trayMode?: boolean;
   trayNodes?: MenuNode[];
   nodesOverride?: MenuNode[] | null;
@@ -80,6 +82,7 @@ const NodeCard = ({
   stock,
   stockLimit = 0,
   blocked = false,
+  blockedClickable = false,
   trayMode = false,
   hidePrices = false,
 }: {
@@ -89,11 +92,12 @@ const NodeCard = ({
   stock?: number | null;
   stockLimit?: number;
   blocked?: boolean;
+  blockedClickable?: boolean;
   trayMode?: boolean;
   hidePrices?: boolean;
 }) => {
   const isProduct = node.node_type === "product";
-  const isDisabledNode = blocked || (!node.is_active && !nodeAction);
+  const isDisabledNode = (blocked && !blockedClickable) || (!node.is_active && !nodeAction);
   const showsManualPrice = trayMode || node.price == null;
   const showStock = isProduct && stock != null;
 
@@ -104,7 +108,7 @@ const NodeCard = ({
         tabIndex={isDisabledNode ? -1 : 0}
         aria-disabled={isDisabledNode || undefined}
         onClick={() => {
-          if (blocked) return;
+          if (blocked && !blockedClickable) return;
           onClick();
         }}
         onKeyDown={(event) => {
@@ -235,6 +239,7 @@ const MenuNavigator = ({
   getProductStock,
   getProductStockLimit,
   isProductBlocked,
+  allowBlockedClick = false,
   trayMode = false,
   trayNodes,
   nodesOverride,
@@ -630,6 +635,7 @@ const MenuNavigator = ({
               stock={node.node_type === "product" ? (getProductStock?.(node) ?? null) : null}
               stockLimit={node.node_type === "product" ? (getProductStockLimit?.(node) ?? 0) : 0}
               blocked={node.node_type === "product" && Boolean(isProductBlocked?.(node))}
+              blockedClickable={allowBlockedClick}
               onClick={() => {
                 if (disabled) return;
                 if (!node.is_active && !renderNodeAction?.(node)) return;

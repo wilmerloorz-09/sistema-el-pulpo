@@ -24,7 +24,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { useAuxiliaryCashAssignment } from "@/hooks/useAuxiliaryCash";
 import { useTablesWithStatus } from "@/hooks/useTablesWithStatus";
-import { invalidateOperationalOrderQueries } from "@/lib/queryEgress";
+import { invalidateOperationalOrderQueries, useOperationalOrdersRealtime } from "@/lib/queryEgress";
 import MenuNavigator from "@/components/order/MenuNavigator";
 import FrequentProductCards from "@/components/order/FrequentProductCards";
 import type { FrequentProductContext } from "@/hooks/useFrequentProducts";
@@ -61,8 +61,10 @@ import { canManage, canOperate } from "@/lib/permissions";
 import { fetchMenuTreeNodes, type MenuNode, type MenuScope } from "@/hooks/useMenuTree";
 import {
   fetchInventarioProductoMap,
+  fetchStockActualProducto,
   mergeInventarioInfo,
   resolveMenuNodeProductId,
+  type InventarioProductoInfo,
 } from "@/lib/inventarioMenuData";
 import { formatearMensajeStockInventario, productoBloqueadoPorStockInventario, stockVisibleParaOrden } from "@/lib/inventarioProductos";
 import { useCancellation } from "@/hooks/useCancellation";
@@ -839,6 +841,16 @@ const OrdenesContent = () => {
     refetchOnWindowFocus: false,
   });
 
+  // Otro dispositivo agregó o quitó productos: el aviso en tiempo real de order_items refresca el stock (sin sondeo).
+  useOperationalOrdersRealtime({
+    branchId: activeBranchId,
+    queryClient: qc,
+    channelPrefix: "orden-inventario-stock-rt",
+    enabled: Boolean(activeBranchId && orderId),
+    queryKeys: [["inventario-producto-map", activeBranchId]],
+    shiftId: shiftGateQuery.data?.shiftId ?? null,
+  });
+
   const canOperateMesasForOpen =
     canOperate(permissions, "mesas")
     || Boolean(shiftGateQuery.data?.canServeTables)
@@ -1037,6 +1049,8 @@ const OrdenesContent = () => {
   });
 
   const [selectedProduct, setSelectedProduct] = useState<SelectedProduct | null>(null);
+  const selectedProductRef = useRef<SelectedProduct | null>(null);
+  selectedProductRef.current = selectedProduct;
   const [selectedProductRootName, setSelectedProductRootName] = useState<string | null>(null);
   const [selectedProductModifiers, setSelectedProductModifiers] = useState<ProductModifierOption[]>([]);
   const [productLoadingShell, setProductLoadingShell] = useState<ReturnType<typeof buildProductLoadingShell> | null>(null);
@@ -2491,12 +2505,62 @@ const OrdenesContent = () => {
       toast.error("No puedes agregar items mientras exista al menos un item con anulacion pendiente.");
       return;
     }
+    const stockProductId = resolveMenuNodeProductId(node);
+    const branchIdForStock = activeBranchId;
+    const actualizarStockEnCache = (productoId: string, stockActual: number) => {
+      qc.setQueryData(
+        ["inventario-producto-map", branchIdForStock],
+        (prev: Map<string, InventarioProductoInfo> | undefined) => {
+          const current = prev?.get(productoId);
+          if (!prev || !current) return prev;
+          const next = new Map(prev);
+          next.set(productoId, { ...current, cantidadDisponible: stockActual });
+          return next;
+        },
+      );
+    };
+
+    // "Sin stock" en pantalla puede estar viejo (otro usuario devolvió unidades): confirmar antes de rechazar.
+    let stockYaVerificado = false;
     if (isNodeBlockedByInventory(node)) {
-      toast.error("Sin stock disponible en inventario para este producto.");
-      return;
+      let stockActual = 0;
+      if (stockProductId) {
+        setSelectingProductId(node.id);
+        try {
+          stockActual = await fetchStockActualProducto(branchIdForStock, stockProductId);
+        } catch {
+          // Sin red: mantener el bloqueo que muestra la pantalla.
+        } finally {
+          setSelectingProductId(null);
+        }
+      }
+      if (stockActual <= 0) {
+        toast.error(`No hay stock de "${node.name}".`);
+        return;
+      }
+      actualizarStockEnCache(stockProductId!, stockActual);
+      stockYaVerificado = true;
     }
 
     const selectSeq = ++productSelectSeqRef.current;
+
+    // El stock en pantalla puede estar viejo (otro usuario pudo tomar la última unidad): confirmar con el servidor.
+    const stockInfo = stockProductId ? inventarioMapQuery.data?.get(stockProductId) : undefined;
+    if (stockProductId && stockInfo?.integraConVentas && !stockYaVerificado) {
+      void fetchStockActualProducto(branchIdForStock, stockProductId)
+        .then((stockActual) => {
+          actualizarStockEnCache(stockProductId, stockActual);
+          if (stockActual > 0) return;
+          if (selectSeq !== productSelectSeqRef.current || !selectedProductRef.current) return;
+          setSelectedProduct(null);
+          setSelectedProductRootName(null);
+          setSelectedProductModifiers([]);
+          toast.error(`No hay stock de "${node.name}".`);
+        })
+        .catch(() => {
+          // Sin red: al confirmar, el servidor vuelve a validar el stock.
+        });
+    }
     const optimistic = buildOptimisticSelectedProduct(node, isTrayOrder, effectiveTrayType);
     if (!optimistic) {
       toast.error("Este producto aun no esta sincronizado con el catalogo operativo. Abre Admin > Arbol Menu y vuelve a guardarlo.");
@@ -3324,6 +3388,14 @@ const OrdenesContent = () => {
   };
 
   /** Elimina borradores del staging y de BD (qty 0 o papelera). */
+  /** El servidor rechazó el cambio de cantidad (p. ej. sin stock): volver a la línea anterior. */
+  const revertStagedDraftLine = (previous: (typeof stagedItems)[number]) => {
+    const restore = (items: typeof stagedItems) =>
+      items.map((i) => (i.id === previous.id ? previous : i));
+    setStagedItems(restore);
+    setKitchenBaselineItems(restore);
+  };
+
   const removeStagedDraftItems = (draftIds: string[]) => {
     if (draftIds.length === 0) return;
     const draftIdSet = new Set(draftIds);
@@ -3414,6 +3486,7 @@ const OrdenesContent = () => {
         getProductStock={getProductStock}
         getProductStockLimit={getProductStockLimit}
         isProductBlocked={isNodeBlockedByInventory}
+        allowBlockedClick
       />
     ) : null;
 
@@ -3530,6 +3603,7 @@ const OrdenesContent = () => {
         getProductStock={getProductStock}
         getProductStockLimit={getProductStockLimit}
         isProductBlocked={isNodeBlockedByInventory}
+        allowBlockedClick
         renderNodeAction={(node) =>
           selectingProductId === node.id ? (
             <div className="rounded-2xl border border-orange-200 bg-orange-50 px-3 py-2 text-center text-xs font-bold text-orange-700">
@@ -3750,7 +3824,10 @@ const OrdenesContent = () => {
                         }
                         setStagedItems(patchItem);
                         setKitchenBaselineItems(patchItem);
-                        updateQuantity.mutate({ itemId: id, quantity: fullQty, unit_price: price });
+                        updateQuantity.mutate(
+                          { itemId: id, quantity: fullQty, unit_price: price },
+                          { onError: () => revertStagedDraftLine(stagedItem) },
+                        );
                         return;
                       }
 
@@ -3949,7 +4026,10 @@ const OrdenesContent = () => {
                   );
                 setStagedItems(patchDraft);
                 setKitchenBaselineItems(patchDraft);
-                updateQuantity.mutate({ itemId: id, quantity: qty, unit_price: price });
+                updateQuantity.mutate(
+                  { itemId: id, quantity: qty, unit_price: price },
+                  { onError: () => revertStagedDraftLine(stagedItem) },
+                );
                 return;
               }
 

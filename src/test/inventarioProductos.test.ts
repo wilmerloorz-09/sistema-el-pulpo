@@ -58,6 +58,17 @@ describe("inventarioProductos", () => {
         'Stock insuficiente para "Coca Cola". Disponible: 1.000, solicitado: 2.000',
       ),
     ).toBe('Stock insuficiente para "Coca Cola". Disponible: 1, solicitado: 2');
+    expect(
+      formatearMensajeStockInventario('Stock insuficiente para "Coca Cola". Disponible: 9., solicitado: 12.'),
+    ).toBe('Stock insuficiente para "Coca Cola". Disponible: 9, solicitado: 12');
+    expect(
+      formatearMensajeStockInventario('Stock insuficiente para "Coca Cola 1 Litro". Disponible: 0., solicitado: 1.'),
+    ).toBe('No hay stock de "Coca Cola 1 Litro".');
+    expect(
+      formatearMensajeStockInventario(
+        'No se pudieron aplicar los cambios: Stock insuficiente para "Fanta". Disponible: 0.000, solicitado: 2.000. Intenta de nuevo.',
+      ),
+    ).toBe('No se pudieron aplicar los cambios: No hay stock de "Fanta". Intenta de nuevo.');
   });
 
   it("normaliza cantidad a entero sin negativos", () => {

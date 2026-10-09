@@ -16,6 +16,8 @@ interface Props {
   getProductStockLimit?: (node: MenuNode) => number;
   /** Productos que no se pueden seleccionar (ej. stock en 0). */
   isProductBlocked?: (node: MenuNode) => boolean;
+  /** Bloqueado solo en apariencia: el toque llega a onSelectProduct para reconfirmar (ej. stock con el servidor). */
+  allowBlockedClick?: boolean;
 }
 
 export default function FrequentProductCards({
@@ -25,6 +27,7 @@ export default function FrequentProductCards({
   getProductStock,
   getProductStockLimit,
   isProductBlocked,
+  allowBlockedClick = false,
 }: Props) {
   const { activeBranchId } = useBranch();
   const { products, isLoading } = useFrequentProducts(activeBranchId, context);
@@ -103,7 +106,8 @@ export default function FrequentProductCards({
               const node = row.menu_node;
               if (!node) return null;
               const stock = getProductStock?.(node) ?? null;
-              const cardDisabled = disabled || Boolean(isProductBlocked?.(node));
+              const blocked = Boolean(isProductBlocked?.(node));
+              const cardDisabled = disabled || (blocked && !allowBlockedClick);
 
               return (
                 <button
@@ -116,8 +120,9 @@ export default function FrequentProductCards({
                   }}
                   className={cn(
                     "flex h-[4.35rem] w-[4.65rem] flex-col items-center justify-center gap-0.5 rounded-xl border border-teal-300/80 bg-white px-0.5 py-1 text-center shadow-sm transition sm:h-[4.75rem] sm:w-[5rem] sm:gap-1 sm:rounded-[1rem] sm:px-1 sm:py-1.5",
-                    !cardDisabled && "hover:border-teal-400 hover:bg-teal-50/50 active:scale-[0.98]",
-                    cardDisabled && "cursor-not-allowed opacity-60",
+                    !cardDisabled && !blocked && "hover:border-teal-400 hover:bg-teal-50/50 active:scale-[0.98]",
+                    cardDisabled && "cursor-not-allowed",
+                    (cardDisabled || blocked) && "opacity-60",
                   )}
                 >
                   <div className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-teal-50 ring-1 ring-teal-200/70 sm:h-8 sm:w-8 sm:rounded-xl">

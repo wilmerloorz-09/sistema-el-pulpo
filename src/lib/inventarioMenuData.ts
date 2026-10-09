@@ -109,6 +109,19 @@ export async function fetchInventarioProductoMap(
   return map;
 }
 
+/** Stock actual de un producto en la nevera de la sucursal; 0 si no tiene fila de inventario. */
+export async function fetchStockActualProducto(branchId: string, productoId: string): Promise<number> {
+  const inventarioSucursalId = await resolverSucursalInventario(branchId);
+  const { data, error } = await supabase
+    .from("inventario_productos")
+    .select("cantidad_disponible")
+    .eq("sucursal_id", inventarioSucursalId)
+    .eq("producto_id", productoId)
+    .maybeSingle();
+  if (error) throw error;
+  return Number(data?.cantidad_disponible ?? 0);
+}
+
 /** Stock de bodega de sucursal (recibido desde bodega general), keyed por producto_global_id. */
 export async function fetchInventarioBodegaSucursalMap(
   branchId: string,

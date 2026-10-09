@@ -102,13 +102,18 @@ export function formatCantidadInventarioDisplay(value: number | string): string 
   return String(rounded);
 }
 
-/** Limpia "Disponible: 1.000, solicitado: 2.000" → "1" y "2" en mensajes de error de inventario. */
+/** Limpia "Disponible: 1.000, solicitado: 2.000" (o "0.") → "1" y "2"; sin stock → "No hay stock de ...". */
 export function formatearMensajeStockInventario(raw: string): string {
-  return String(raw ?? "").replace(
-    /(Disponible:|solicitado:)\s*(\d+(?:[.,]\d+)?)/gi,
-    (_match, label: string, num: string) =>
-      `${label} ${formatCantidadInventarioDisplay(num)}`,
-  );
+  return String(raw ?? "")
+    .replace(
+      /(Disponible:|solicitado:)\s*(\d+(?:[.,]\d*)?)/gi,
+      (_match, label: string, num: string) =>
+        `${label} ${formatCantidadInventarioDisplay(num)}`,
+    )
+    .replace(
+      /Stock insuficiente para "([^"]+)"\. Disponible: 0, solicitado: [\d.]+/i,
+      'No hay stock de "$1".',
+    );
 }
 
 /** Motivo enviado al RPC. Ingreso sin texto usa valor por defecto. */
