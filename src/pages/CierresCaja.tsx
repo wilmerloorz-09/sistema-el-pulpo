@@ -37,7 +37,8 @@ function formatDateTime(value: string) {
 }
 
 function formatMoney(value: number) {
-  return `$${Number(value ?? 0).toFixed(2)}`;
+  const amount = Number(value ?? 0);
+  return `${amount < 0 ? "-" : ""}$${Math.abs(amount).toFixed(2)}`;
 }
 
 function shiftLabel(row: {
@@ -269,11 +270,11 @@ const CierresCaja = () => {
               <thead className="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="whitespace-nowrap px-2.5 py-2 font-semibold">Apertura</th>
-                  <th className="whitespace-nowrap px-2.5 py-2 font-semibold">Cierre</th>
                   <th className="whitespace-nowrap px-2.5 py-2 font-semibold">Turno</th>
                   <th className="whitespace-nowrap px-2.5 py-2 font-semibold">Cajero</th>
                   <th className="whitespace-nowrap px-2.5 py-2 font-semibold text-right">Inicial</th>
                   <th className="whitespace-nowrap px-2.5 py-2 font-semibold text-right">Monto final</th>
+                  <th className="whitespace-nowrap px-2.5 py-2 font-semibold text-right">Diferencia</th>
                   <th className="whitespace-nowrap px-2.5 py-2 font-semibold text-center">Estado</th>
                   <th className="whitespace-nowrap px-2.5 py-2 font-semibold text-right">Acción</th>
                 </tr>
@@ -283,9 +284,6 @@ const CierresCaja = () => {
                   <tr key={row.id} className="border-t border-slate-100">
                     <td className="whitespace-nowrap px-2.5 py-2 tabular-nums text-slate-700">
                       {formatDateTime(row.opened_at)}
-                    </td>
-                    <td className="whitespace-nowrap px-2.5 py-2 tabular-nums text-slate-700">
-                      {formatDateTime(row.closed_at)}
                     </td>
                     <td className="max-w-[220px] truncate px-2.5 py-2 text-slate-600" title={shiftLabel(row)}>
                       {shiftLabel(row)}
@@ -301,6 +299,9 @@ const CierresCaja = () => {
                     </td>
                     <td className="whitespace-nowrap px-2.5 py-2 text-right tabular-nums font-medium text-slate-800">
                       {formatMoney(row.final_total)}
+                    </td>
+                    <td className="whitespace-nowrap px-2.5 py-2 text-right tabular-nums font-semibold text-slate-900">
+                      {formatMoney(row.final_total - row.initial_total)}
                     </td>
                     <td className="whitespace-nowrap px-2.5 py-2 text-center">
                       {row.aprobacion_estado === "APROBADO" ? (
