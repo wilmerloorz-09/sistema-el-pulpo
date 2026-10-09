@@ -31,6 +31,8 @@ export type ClosedOpeningListRow = {
   aprobacion_estado: "PENDIENTE" | "APROBADO";
   aprobado_por_nombre: string | null;
   aprobado_en: string | null;
+  /** Total contado aprobado por el administrador; null si no hubo aprobación con conteo. */
+  monto_aprobado: number | null;
 };
 
 function mapPaymentStatus(raw: string | null | undefined, notes: string | null | undefined): string {
@@ -82,6 +84,7 @@ export async function listClosedCashOpenings(params: {
     aprobacion_estado: row.aprobacion_estado === "APROBADO" ? "APROBADO" : "PENDIENTE",
     aprobado_por_nombre: row.aprobado_por_nombre ?? null,
     aprobado_en: row.aprobado_en ?? null,
+    monto_aprobado: row.monto_aprobado == null ? null : Number(row.monto_aprobado),
   }));
 }
 

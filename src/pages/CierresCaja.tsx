@@ -41,6 +41,10 @@ function formatMoney(value: number) {
   return `${amount < 0 ? "-" : ""}$${Math.abs(amount).toFixed(2)}`;
 }
 
+function montoFinal(row: ClosedOpeningListRow) {
+  return row.monto_aprobado ?? row.final_total;
+}
+
 function shiftLabel(row: {
   shift_number: number | null;
   shift_code: string | null;
@@ -297,11 +301,18 @@ const CierresCaja = () => {
                     <td className="whitespace-nowrap px-2.5 py-2 text-right tabular-nums font-medium text-slate-800">
                       {formatMoney(row.initial_total)}
                     </td>
-                    <td className="whitespace-nowrap px-2.5 py-2 text-right tabular-nums font-medium text-slate-800">
-                      {formatMoney(row.final_total)}
+                    <td
+                      className="whitespace-nowrap px-2.5 py-2 text-right tabular-nums font-medium text-slate-800"
+                      title={
+                        row.monto_aprobado != null
+                          ? `Monto aprobado · Sistema: ${formatMoney(row.final_total)}`
+                          : undefined
+                      }
+                    >
+                      {formatMoney(montoFinal(row))}
                     </td>
                     <td className="whitespace-nowrap px-2.5 py-2 text-right tabular-nums font-semibold text-slate-900">
-                      {formatMoney(row.final_total - row.initial_total)}
+                      {formatMoney(montoFinal(row) - row.initial_total)}
                     </td>
                     <td className="whitespace-nowrap px-2.5 py-2 text-center">
                       {row.aprobacion_estado === "APROBADO" ? (

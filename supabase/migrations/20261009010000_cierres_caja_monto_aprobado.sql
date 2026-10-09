@@ -1,10 +1,10 @@
--- Filtro por estado de aprobación en el listado de Cierres de caja.
+-- Cierres de caja: para cierres aprobados por un administrador, devolver el total contado aprobado.
 
 DROP FUNCTION IF EXISTS public.list_closed_cash_register_openings(uuid, timestamptz, timestamptz, uuid, uuid, integer);
 DROP FUNCTION IF EXISTS public.list_closed_cash_register_openings(uuid, timestamptz, timestamptz, uuid, uuid, integer, text);
 
 CREATE FUNCTION public.list_closed_cash_register_openings(p_branch_id uuid, p_desde timestamp with time zone, p_hasta timestamp with time zone, p_shift_id uuid DEFAULT NULL::uuid, p_cashier_id uuid DEFAULT NULL::uuid, p_limit integer DEFAULT 150, p_aprobacion_estado text DEFAULT NULL::text)
- RETURNS TABLE(id uuid, shift_id uuid, branch_id uuid, cashier_id uuid, cashier_name text, cashier_username text, opened_at timestamp with time zone, closed_at timestamp with time zone, initial_total numeric, final_total numeric, collected_total numeric, notes text, shift_number integer, shift_code text, shift_opened_at timestamp with time zone, shift_status text, aprobacion_estado text, aprobado_por_nombre text, aprobado_en timestamp with time zone)
+ RETURNS TABLE(id uuid, shift_id uuid, branch_id uuid, cashier_id uuid, cashier_name text, cashier_username text, opened_at timestamp with time zone, closed_at timestamp with time zone, initial_total numeric, final_total numeric, collected_total numeric, notes text, shift_number integer, shift_code text, shift_opened_at timestamp with time zone, shift_status text, aprobacion_estado text, aprobado_por_nombre text, aprobado_en timestamp with time zone, monto_aprobado numeric)
  LANGUAGE plpgsql
  SECURITY DEFINER
  SET search_path TO 'public'
@@ -158,7 +158,14 @@ BEGIN
       WHEN approver.id IS NULL THEN NULL
       ELSE COALESCE(NULLIF(TRIM(approver.full_name), ''), approver.alias, approver.username)::text
     END AS aprobado_por_nombre,
-    f.aprobado_en
+    f.aprobado_en,
+    CASE
+      WHEN f.aprobacion_estado = 'APROBADO' AND f.aprobado_por IS NOT NULL THEN (
+        SELECT SUM(c.cantidad_contada * c.denominacion_valor)
+        FROM public.conteos_cierre_caja c
+        WHERE c.apertura_id = f.id
+      )
+    END AS monto_aprobado
   FROM filtered f
   LEFT JOIN pay_totals pt ON pt.opening_id = f.id
   LEFT JOIN mov_totals mt ON mt.opening_id = f.id
