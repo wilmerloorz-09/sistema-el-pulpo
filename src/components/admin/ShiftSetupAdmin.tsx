@@ -47,13 +47,6 @@ import {
   Users,
   ReceiptText,
 } from "lucide-react";
-import {
-  openCashClosureReportWindow,
-  type CashShiftSnapshot,
-  type CompletedPayment,
-  type CashMovement,
-  type MethodSummaryEntry,
-} from "@/lib/cashReportUtils";
 import { toast } from "sonner";
 import { invalidateDispatchServirQueueBundleCache } from "@/lib/dispatchServirQueueBundle";
 import { isMissingColumnError } from "@/lib/supabaseSchemaCompat";
@@ -85,11 +78,6 @@ import {
   type DispatchAssignment,
   type DispatchConfig as DispatchConfigModel,
 } from "@/hooks/useDispatchConfig";
-import {
-  fetchCashRegisterMovementsForShift,
-  fetchCompletedPaymentsForShift,
-  fetchShiftSnapshot,
-} from "@/hooks/useCaja";
 
 /** Ocultar editor de anulacion sin autorizacion en Turno (reactivar cuando se retome). */
 const SHOW_SHIFT_CANCEL_POLICY_UI = false;
@@ -587,8 +575,6 @@ const ShiftSetupAdmin = () => {
   const [validatingCashierReplacePassword, setValidatingCashierReplacePassword] =
     useState(false);
   const [showStaleCleanupConfirm, setShowStaleCleanupConfirm] = useState(false);
-  const [isPrintingStaleReport, setIsPrintingStaleReport] = useState(false);
-
   const {
     config: dispatchConfig,
     assignments,
@@ -2572,76 +2558,6 @@ const ShiftSetupAdmin = () => {
     onError: (err: any) => showShiftSetupError(err, setWarningDialog),
   });
 
-  const triggerStaleShiftReport = async (
-    shiftId: string,
-    branchName: string,
-  ) => {
-    setIsPrintingStaleReport(true);
-    const reportToastId = "printing-stale-report";
-    toast.loading("Generando reporte de cierre...", { id: reportToastId });
-
-    try {
-      const [shift, payments, movements] = await Promise.all([
-        fetchShiftSnapshot(shiftId),
-        fetchCompletedPaymentsForShift(shiftId),
-        fetchCashRegisterMovementsForShift(shiftId),
-      ]);
-
-      const methodSummaryMap = new Map<
-        string,
-        { methodName: string; amount: number; paymentCount: number }
-      >();
-      for (const payment of payments) {
-        if (payment.status === "voided" || payment.status === "reversed") continue;
-        const current = methodSummaryMap.get(payment.method_name) ?? {
-          methodName: payment.method_name,
-          amount: 0,
-          paymentCount: 0,
-        };
-        current.amount += Number(payment.amount ?? 0);
-        current.paymentCount += 1;
-        methodSummaryMap.set(payment.method_name, current);
-      }
-
-      const methodSummary: MethodSummaryEntry[] = Array.from(
-        methodSummaryMap.values(),
-      )
-        .map((entry, index) => ({
-          methodId: `stale-method-${index}-${entry.methodName}`,
-          methodName: entry.methodName,
-          amount: entry.amount,
-          paymentCount: entry.paymentCount,
-        }))
-        .sort(
-          (left, right) =>
-            right.amount - left.amount ||
-            left.methodName.localeCompare(right.methodName),
-        );
-
-      openCashClosureReportWindow({
-        branchName,
-        shift,
-        completedPayments: payments,
-        methodSummary,
-        movements: movements as any,
-        closureNotes:
-          "Cierre automático de turno expirado (Limpieza inteligente)",
-        reportMode: "shift",
-      });
-
-      toast.success("Reporte de cierre generado correctamente", {
-        id: reportToastId,
-      });
-    } catch (err: any) {
-      console.error("Failed to generate stale shift report", err);
-      toast.error("Error al generar el reporte de cierre: " + err.message, {
-        id: reportToastId,
-      });
-    } finally {
-      setIsPrintingStaleReport(false);
-    }
-  };
-
   const closeShiftMutation = useMutation({
     mutationFn: async () => {
       if (!activeBranchId || !shiftQuery.data?.id)
@@ -2675,19 +2591,14 @@ const ShiftSetupAdmin = () => {
     },
     onSuccess: () => {
       const wasStale = isStale;
-      const closedShiftId = shiftQuery.data?.id;
-      const branchName = activeBranch?.name || "Sucursal";
 
       invalidateShiftState();
 
-      if (wasStale) {
-        toast.success("Turno expirado cerrado y depurado correctamente");
-        if (closedShiftId) {
-          triggerStaleShiftReport(closedShiftId, branchName);
-        }
-      } else {
-        toast.success("Turno cerrado correctamente");
-      }
+      toast.success(
+        wasStale
+          ? "Turno expirado cerrado y depurado correctamente"
+          : "Turno cerrado correctamente",
+      );
     },
     onError: (err: any) => showShiftSetupError(err, setWarningDialog),
   });
