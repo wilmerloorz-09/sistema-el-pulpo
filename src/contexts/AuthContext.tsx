@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { logBackgroundTaskError } from "@/lib/benignAsyncErrors";
 import { AUTH_SESSION_POLL_MS } from "@/lib/queryEgress";
 import { decideSingleSessionAction } from "@/lib/singleSession";
+import { limpiarSesionTurno } from "@/lib/sesionTurno";
 
 const PROFILE_SELECT =
   "id, full_name, first_name, last_name, username, alias, email, is_active, active_branch_id, is_protected_superadmin, avatar_url, current_app_session_id, current_app_session_started_at, current_app_session_device, current_app_secondary_session_id, current_app_secondary_session_started_at, current_app_secondary_session_device";
@@ -42,19 +43,12 @@ interface AuthContextType extends AuthState {
   refreshProfile: () => Promise<void>;
 }
 
-const SESSION_TIMEOUT_MS = 60 * 60 * 1000;
-const SESSION_ACTIVITY_STORAGE_KEY = "authSessionActivity";
+/** Clave del antiguo cierre por inactividad; se borra para no dejar basura en dispositivos. */
+const LEGACY_SESSION_ACTIVITY_STORAGE_KEY = "authSessionActivity";
 const OWNED_SESSION_STORAGE_KEY = "authOwnedSingleSession";
-const SESSION_ACTIVITY_WRITE_THROTTLE_MS = 15 * 1000;
-const SESSION_EXPIRY_CHECK_INTERVAL_MS = 2 * 60 * 1000;
 const SINGLE_SESSION_CHECK_INTERVAL_MS = AUTH_SESSION_POLL_MS;
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-type SessionActivity = {
-  userId: string;
-  lastActivityAt: number;
-};
 
 type OwnedSingleSession = {
   userId: string;
@@ -83,31 +77,6 @@ const resolveEdgeError = async (err: any): Promise<string> => {
   }
 
   return err.message || "Error de autenticacion";
-};
-
-const readStoredSessionActivity = (): SessionActivity | null => {
-  const raw = localStorage.getItem(SESSION_ACTIVITY_STORAGE_KEY);
-  if (!raw) return null;
-
-  try {
-    const parsed = JSON.parse(raw) as Partial<SessionActivity>;
-    if (typeof parsed.userId !== "string" || typeof parsed.lastActivityAt !== "number") {
-      return null;
-    }
-    return parsed as SessionActivity;
-  } catch {
-    return null;
-  }
-};
-
-const writeStoredSessionActivity = (userId: string, lastActivityAt: number) => {
-  localStorage.setItem(
-    SESSION_ACTIVITY_STORAGE_KEY,
-    JSON.stringify({
-      userId,
-      lastActivityAt,
-    }),
-  );
 };
 
 const generateClientSessionId = () =>
@@ -160,7 +129,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   });
   const expiringSessionRef = useRef(false);
   const validatingSingleSessionRef = useRef(false);
-  const lastWriteAtRef = useRef(0);
   const claimingSessionRef = useRef(false);
   const confirmedOwnedSessionRef = useRef<string | null>(null);
 
@@ -195,17 +163,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const clearSessionTracking = useCallback(() => {
-    localStorage.removeItem(SESSION_ACTIVITY_STORAGE_KEY);
+    localStorage.removeItem(LEGACY_SESSION_ACTIVITY_STORAGE_KEY);
+    limpiarSesionTurno();
   }, []);
 
   const clearOwnedSingleSession = useCallback(() => {
     localStorage.removeItem(OWNED_SESSION_STORAGE_KEY);
   }, []);
 
-  const touchSessionActivity = useCallback((userId: string) => {
-    writeStoredSessionActivity(userId, Date.now());
-  }, []);
-
+  // scope "local": cerrar solo este dispositivo. El scope global por defecto revoca
+  // las sesiones del mismo usuario en sus otros dispositivos.
   const signOut = useCallback(async () => {
     const ownedSession = readOwnedSingleSession();
     confirmedOwnedSessionRef.current = null;
@@ -219,20 +186,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } as any);
     }
 
-    await supabase.auth.signOut();
+    await supabase.auth.signOut({ scope: "local" });
   }, [clearOwnedSingleSession, clearSessionTracking]);
-
-  const expireSession = useCallback(async () => {
-    if (expiringSessionRef.current) return;
-    expiringSessionRef.current = true;
-
-    try {
-      await signOut();
-      toast.warning("Sesion cerrada por inactividad");
-    } finally {
-      expiringSessionRef.current = false;
-    }
-  }, [signOut]);
 
   const refreshProfile = useCallback(async () => {
     if (!state.user) return;
@@ -279,7 +234,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         } as any);
       }
 
-      await supabase.auth.signOut();
+      await supabase.auth.signOut({ scope: "local" });
       toast.error("Tu sesion fue cerrada porque se inicio sesion con este usuario en otro dispositivo.");
     } finally {
       expiringSessionRef.current = false;
@@ -459,80 +414,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     state.user?.id,
   ]);
 
-  useEffect(() => {
-    const userId = state.user?.id;
-    if (!userId) {
-      clearSessionTracking();
-      return;
-    }
-
-    const existingActivity = readStoredSessionActivity();
-    if (!existingActivity || existingActivity.userId !== userId) {
-      touchSessionActivity(userId);
-    }
-
-    const checkSessionAge = async () => {
-      try {
-        const activity = readStoredSessionActivity();
-
-        if (!activity || activity.userId !== userId) {
-          touchSessionActivity(userId);
-          return;
-        }
-
-        if (claimingSessionRef.current) return;
-
-        if (Date.now() - activity.lastActivityAt >= SESSION_TIMEOUT_MS) {
-          await expireSession();
-        }
-      } catch (error) {
-        logBackgroundTaskError("AuthContext.checkSessionAge", error);
-      }
-    };
-
-    const recordActivity = () => {
-      const now = Date.now();
-      if (now - lastWriteAtRef.current < SESSION_ACTIVITY_WRITE_THROTTLE_MS) return;
-      lastWriteAtRef.current = now;
-      touchSessionActivity(userId);
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
-        void checkSessionAge();
-      }
-    };
-
-    const handleFocus = () => {
-      void checkSessionAge();
-    };
-
-    window.addEventListener("pointerdown", recordActivity, { passive: true });
-    window.addEventListener("keydown", recordActivity);
-    window.addEventListener("touchstart", recordActivity, { passive: true });
-    window.addEventListener("focus", handleFocus);
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-
-    const intervalId = window.setInterval(() => {
-      void checkSessionAge();
-    }, SESSION_EXPIRY_CHECK_INTERVAL_MS);
-
-    void checkSessionAge();
-
-    return () => {
-      window.removeEventListener("pointerdown", recordActivity);
-      window.removeEventListener("keydown", recordActivity);
-      window.removeEventListener("touchstart", recordActivity);
-      window.removeEventListener("focus", handleFocus);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-      window.clearInterval(intervalId);
-    };
-  }, [clearSessionTracking, expireSession, state.user?.id, touchSessionActivity]);
-
   const signIn = useCallback(async (identifier: string, password: string, branchId?: string | null) => {
     const normalized = identifier.trim();
     const selectedBranchId = String(branchId ?? "").trim();
     claimingSessionRef.current = true;
+    clearSessionTracking();
 
     try {
       // JWT viejo en storage: invoke manda Authorization vencido (401) y un refresh
@@ -671,7 +557,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           );
         }
 
-        touchSessionActivity(userId);
         try {
           const ownedSession = readOwnedSingleSession();
           const reuseId = ownedSession?.userId === userId ? ownedSession.sessionId : undefined;
@@ -683,7 +568,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } finally {
       claimingSessionRef.current = false;
     }
-  }, [registerOwnedSingleSession, touchSessionActivity]);
+  }, [clearSessionTracking, registerOwnedSingleSession]);
 
   const value = useMemo(
     () => ({ ...state, signIn, signOut, refreshProfile }),

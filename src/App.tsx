@@ -20,6 +20,10 @@ import { initSyncListeners } from "@/services/SyncService";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { useAuxiliaryCashAssignment } from "@/hooks/useAuxiliaryCash";
 import { useOpenCashRegister } from "@/hooks/useOpenCashRegister";
+import { canManage } from "@/lib/permissions";
+import { logBackgroundTaskError } from "@/lib/benignAsyncErrors";
+import { guardarSesionTurno, leerSesionTurno, turnoDeSesionTerminado } from "@/lib/sesionTurno";
+import { toast as sonnerToast } from "sonner";
 import { Download, Share2, X, AlertTriangle } from "lucide-react";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import AppLayout from "@/components/AppLayout";
@@ -182,6 +186,54 @@ const CajaAutoOpener = () => {
   return null;
 };
 
+/** Operativos: la sesion dura lo que dura el turno. Los administradores no se cierran. */
+const CierreSesionPorTurno = () => {
+  const { user, signOut } = useAuth();
+  const { activeBranchId, permissions, isGlobalAdmin } = useBranch();
+  const shiftGateQuery = useBranchShiftGate();
+  const cerrandoRef = useRef(false);
+
+  const isBranchAdmin =
+    Boolean(isGlobalAdmin)
+    || canManage(permissions, "admin_sucursal")
+    || canManage(permissions, "admin_global");
+
+  const gate = shiftGateQuery.isPlaceholderData ? undefined : shiftGateQuery.data;
+  const userId = user?.id ?? null;
+
+  useEffect(() => {
+    if (isBranchAdmin || !gate || !userId || !activeBranchId || cerrandoRef.current) return;
+
+    const actual = {
+      userId,
+      branchId: activeBranchId,
+      shiftOpen: gate.shiftOpen,
+      shiftId: gate.shiftId,
+    };
+
+    if (turnoDeSesionTerminado(leerSesionTurno(), actual)) {
+      cerrandoRef.current = true;
+      void signOut()
+        .then(() => {
+          sonnerToast.info("Tu sesion se cerro porque el turno fue cerrado.");
+        })
+        .catch((error) => {
+          logBackgroundTaskError("CierreSesionPorTurno.signOut", error);
+        })
+        .finally(() => {
+          cerrandoRef.current = false;
+        });
+      return;
+    }
+
+    if (gate.shiftOpen && gate.shiftId) {
+      guardarSesionTurno({ userId, branchId: activeBranchId, shiftId: gate.shiftId });
+    }
+  }, [activeBranchId, gate, isBranchAdmin, signOut, userId]);
+
+  return null;
+};
+
 const AuthGate = ({ children }: { children: React.ReactNode }) => {
   const { user, loading } = useAuth();
 
@@ -265,6 +317,7 @@ const BranchGate = ({ children }: { children: React.ReactNode }) => {
   return (
     <>
       <CajaAutoOpener />
+      <CierreSesionPorTurno />
       {children}
     </>
   );
