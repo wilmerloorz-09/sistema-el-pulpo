@@ -43,6 +43,10 @@ import {
 import { useCuentasBancariasDestinoActivas } from "@/hooks/useCuentasBancariasDestino";
 import { useFeriadosBancariosActivos } from "@/hooks/useFeriadosBancarios";
 import {
+  MENSAJE_CAMARA_SIN_RESPUESTA,
+  useAvisoCamaraSinRespuesta,
+} from "@/hooks/useAvisoCamaraSinRespuesta";
+import {
   validarComprobanteContraCuentas,
   type ResultadoValidacionComprobante,
 } from "@/lib/validacionComprobanteTransferencia";
@@ -85,6 +89,9 @@ export default function TransferenciaPagoDialog({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const localPreviewRef = useRef<string | null>(null);
   const analisisRequestRef = useRef(0);
+  const { vigilar: vigilarCamara, cancelar: cancelarAvisoCamara } = useAvisoCamaraSinRespuesta(() => {
+    setErrorMensaje(MENSAJE_CAMARA_SIN_RESPUESTA);
+  });
 
   const revokeLocalPreview = () => {
     if (localPreviewRef.current) {
@@ -95,6 +102,7 @@ export default function TransferenciaPagoDialog({
 
   useEffect(() => {
     if (!open) {
+      cancelarAvisoCamara();
       setFotoAmpliada(false);
       return;
     }
@@ -115,7 +123,7 @@ export default function TransferenciaPagoDialog({
     revokeLocalPreview();
     setFotoArchivo(initialDatos?.fotoArchivo ?? null);
     setFotoVistaPreviaUrl(initialDatos?.fotoVistaPreviaUrl ?? null);
-  }, [open, initialDatos?.bancoId, initialDatos?.numeroTransferencia, initialDatos?.monto, initialDatos?.fotoArchivo, initialDatos?.fotoVistaPreviaUrl, initialDatos?.analisisIa, initialDatos?.motivoAceptacion, bancos]);
+  }, [open, initialDatos?.bancoId, initialDatos?.numeroTransferencia, initialDatos?.monto, initialDatos?.fotoArchivo, initialDatos?.fotoVistaPreviaUrl, initialDatos?.analisisIa, initialDatos?.motivoAceptacion, bancos, cancelarAvisoCamara]);
 
   useEffect(() => () => revokeLocalPreview(), []);
 
@@ -460,7 +468,11 @@ export default function TransferenciaPagoDialog({
                     variant="outline"
                     size="sm"
                     disabled={readOnly || analizandoFoto}
-                    onClick={() => fileInputRef.current?.click()}
+                    onClick={() => {
+                      setErrorMensaje(null);
+                      fileInputRef.current?.click();
+                      vigilarCamara();
+                    }}
                     className="h-11 gap-2 rounded-xl border-violet-300 bg-white font-semibold text-violet-800 hover:bg-violet-100"
                   >
                     <Camera className="h-4 w-4" />
@@ -505,6 +517,7 @@ export default function TransferenciaPagoDialog({
                   className="hidden"
                   disabled={readOnly}
                   onChange={(e) => {
+                    cancelarAvisoCamara();
                     handleFotoSeleccionada(e.target.files?.[0]);
                     e.target.value = "";
                   }}

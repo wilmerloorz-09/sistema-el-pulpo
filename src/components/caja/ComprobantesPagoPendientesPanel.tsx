@@ -4,6 +4,11 @@ import { Button } from "@/components/ui/button";
 import { getOrderRef } from "@/lib/orderPresentation";
 import type { ComprobantePagoPendienteLocal } from "@/lib/comprobantePagoPendienteLocal";
 import { useComprobantesPagoPendientes } from "@/hooks/useComprobantesPagoPendientes";
+import {
+  MENSAJE_CAMARA_SIN_RESPUESTA,
+  useAvisoCamaraSinRespuesta,
+} from "@/hooks/useAvisoCamaraSinRespuesta";
+import { toast } from "sonner";
 
 export default function ComprobantesPagoPendientesPanel({
   shiftId,
@@ -22,6 +27,9 @@ export default function ComprobantesPagoPendientesPanel({
   const [busyPagoId, setBusyPagoId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const targetRef = useRef<ComprobantePagoPendienteLocal | null>(null);
+  const { vigilar: vigilarCamara, cancelar: cancelarAvisoCamara } = useAvisoCamaraSinRespuesta(() => {
+    toast.error(MENSAJE_CAMARA_SIN_RESPUESTA, { duration: 10_000 });
+  });
 
   if (pendientes.length === 0) return null;
 
@@ -37,9 +45,11 @@ export default function ComprobantesPagoPendientesPanel({
   const handlePickFile = (pendiente: ComprobantePagoPendienteLocal) => {
     targetRef.current = pendiente;
     fileInputRef.current?.click();
+    vigilarCamara();
   };
 
   const handleFileChange = async (file: File | undefined) => {
+    cancelarAvisoCamara();
     const pendiente = targetRef.current;
     targetRef.current = null;
     if (!file || !pendiente) return;

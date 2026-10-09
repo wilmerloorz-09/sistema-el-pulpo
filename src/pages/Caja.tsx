@@ -41,6 +41,10 @@ import { Camera, CheckCircle2, CreditCard, History, Loader2, ReceiptText, Rotate
 import { cn, formatElapsedSince } from "@/lib/utils";
 import { canManage, canOperate } from "@/lib/permissions";
 import { prepareProofImage } from "@/lib/prepareProofImage";
+import {
+  MENSAJE_CAMARA_SIN_RESPUESTA,
+  useAvisoCamaraSinRespuesta,
+} from "@/hooks/useAvisoCamaraSinRespuesta";
 import { getOrderRef } from "@/lib/orderPresentation";
 import { getUserDisplayName } from "@/lib/userDisplay";
 import { 
@@ -100,6 +104,9 @@ const Caja = () => {
   } | null>(null);
   const [rechargeLoading, setRechargeLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const { vigilar: vigilarCamara, cancelar: cancelarAvisoCamara } = useAvisoCamaraSinRespuesta(() => {
+    setCaptureError(MENSAJE_CAMARA_SIN_RESPUESTA);
+  });
   const activeTabParam = searchParams.get("tab");
   const autoOpenOrderId = searchParams.get("order");
   const activeTab =
@@ -482,10 +489,12 @@ const Caja = () => {
 
     window.setTimeout(() => {
       fileInputRef.current?.click();
+      vigilarCamara();
     }, 60);
   };
 
   const handleSelectedPhoto = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    cancelarAvisoCamara();
     const file = event.target.files?.[0] ?? null;
     if (!file) return;
 
@@ -719,9 +728,16 @@ const Caja = () => {
                         </p>
                       </div>
                     ) : !selectedPhotoFile || !photoPreviewUrl ? (
-                      <p className="text-sm text-slate-600">
-                        Toca <span className="font-semibold text-slate-900">Tomar foto</span> para abrir la camara o escoger una imagen del dispositivo.
-                      </p>
+                      <div className="space-y-3">
+                        <p className="text-sm text-slate-600">
+                          Toca <span className="font-semibold text-slate-900">Tomar foto</span> para abrir la camara o escoger una imagen del dispositivo.
+                        </p>
+                        {captureError && (
+                          <div className="rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                            {captureError}
+                          </div>
+                        )}
+                      </div>
                     ) : (
                         <div className="space-y-4">
                           {uploadingCaptureRequestId === request.id && (
@@ -1090,9 +1106,16 @@ const Caja = () => {
                       {activeCaptureRequestId === request.id && (
                         <div className="mt-4 rounded-3xl border border-dashed border-orange-200 bg-orange-50/40 p-4">
                           {!selectedPhotoFile || !photoPreviewUrl ? (
-                            <p className="text-sm text-slate-600">
-                              Toca <span className="font-semibold text-slate-900">Tomar foto</span> para abrir la camara o escoger una imagen del dispositivo.
-                            </p>
+                            <div className="space-y-3">
+                              <p className="text-sm text-slate-600">
+                                Toca <span className="font-semibold text-slate-900">Tomar foto</span> para abrir la camara o escoger una imagen del dispositivo.
+                              </p>
+                              {captureError && (
+                                <div className="rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                                  {captureError}
+                                </div>
+                              )}
+                            </div>
                           ) : (
                             <div className="space-y-4">
                               <div className="flex h-[32rem] items-center justify-center overflow-hidden rounded-2xl border border-orange-100 bg-white p-4">
