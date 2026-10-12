@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Coins, Loader2, RotateCcw, Save, Shield } from "lucide-react";
+import { Coins, History, Loader2, RotateCcw, Save, Shield } from "lucide-react";
 import { toast } from "sonner";
 import { useBranch } from "@/contexts/BranchContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -10,6 +10,10 @@ import { NumericInput } from "@/components/ui/numeric-input";
 import { Switch } from "@/components/ui/switch";
 import DenominationVisual from "@/components/caja/DenominationVisual";
 import { cn } from "@/lib/utils";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { formatDateTime } from "@/lib/cashReportUtils";
+import { getUserDisplayName } from "@/lib/userDisplay";
 
 interface Denomination {
   id: string;
@@ -26,6 +30,45 @@ interface AuxiliaryDenomRow {
   qty: number;
   is_enabled: boolean;
 }
+
+type TipoAjuste = "AJUSTE" | "RESTABLECER";
+
+interface AjusteDetalleLinea {
+  denomination_id: string;
+  label: string;
+  tipo: "coin" | "bill";
+  valor: number;
+  qty_antes: number;
+  qty_despues: number;
+  habilitada_antes: boolean;
+  habilitada_despues: boolean;
+}
+
+interface AjusteCajaAuxiliar {
+  id: string;
+  tipo: TipoAjuste;
+  motivo: string;
+  detalle: AjusteDetalleLinea[];
+  total_antes: number;
+  total_despues: number;
+  created_at: string;
+  ajustado_por_nombre: string;
+}
+
+const MIN_MOTIVO = 3;
+
+const describirLinea = (linea: AjusteDetalleLinea) => {
+  const nombre = `$${Number(linea.valor).toFixed(2)} ${linea.tipo === "coin" ? "moneda" : "billete"}`;
+  const partes: string[] = [];
+  if (linea.qty_antes !== linea.qty_despues) {
+    const delta = linea.qty_despues - linea.qty_antes;
+    partes.push(`${linea.qty_antes} → ${linea.qty_despues} (${delta > 0 ? "+" : ""}${delta})`);
+  }
+  if (linea.habilitada_antes !== linea.habilitada_despues) {
+    partes.push(linea.habilitada_despues ? "habilitada" : "deshabilitada");
+  }
+  return `${nombre}: ${partes.join(", ")}`;
+};
 
 const AUXILIARY_TEMPLATE_NAME = "Caja auxiliar";
 
@@ -78,40 +121,32 @@ async function loadAuxiliaryTemplateRows(branchId: string): Promise<{
   };
 }
 
-async function upsertBranchStock(
+/** Devuelve el id del ajuste registrado, o null si no hubo cambios. */
+async function guardarAjusteCajaAuxiliar(
   branchId: string,
   denominations: Denomination[],
   rows: AuxiliaryDenomRow[],
-) {
+  motivo: string,
+  tipo: TipoAjuste,
+): Promise<string | null> {
   const byId = new Map(rows.map((item) => [item.denomination_id, item]));
-  const payload = denominations.map((item) => {
+  const conteos = denominations.map((item) => {
     const row = byId.get(item.id);
     return {
-      branch_id: branchId,
       denomination_id: item.id,
       qty: Math.max(0, Math.trunc(row?.qty ?? 0)),
       is_enabled: row ? row.is_enabled !== false : true,
-      updated_at: new Date().toISOString(),
     };
   });
 
-  const { error: ensureError } = await supabase.rpc("ensure_branch_auxiliary_cash" as any, {
+  const { data, error } = await supabase.rpc("guardar_ajuste_caja_auxiliar" as any, {
     p_branch_id: branchId,
+    p_conteos: conteos,
+    p_motivo: motivo,
+    p_tipo: tipo,
   } as any);
-  if (ensureError) throw ensureError;
-
-  const { error } = await supabase
-    .from("branch_auxiliary_cash_denoms" as any)
-    .upsert(payload, { onConflict: "branch_id,denomination_id" });
   if (error) throw error;
-
-  const { error: headerError } = await supabase
-    .from("branch_auxiliary_cash" as any)
-    .upsert({
-      branch_id: branchId,
-      updated_at: new Date().toISOString(),
-    });
-  if (headerError) throw headerError;
+  return (data as string | null) ?? null;
 }
 
 async function syncAuxiliaryTemplate(
@@ -159,6 +194,7 @@ export default function AuxiliaryCashTemplateCrud() {
   const canManageTemplates = isGlobalAdmin || permissions?.admin_sucursal === "MANAGE" || permissions?.admin_global === "MANAGE";
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [enabled, setEnabled] = useState<Record<string, boolean>>({});
+  const [motivo, setMotivo] = useState("");
 
   const denominationsQuery = useQuery({
     queryKey: ["admin-denominations"],
@@ -196,9 +232,48 @@ export default function AuxiliaryCashTemplateCrud() {
     },
   });
 
+  const historialQuery = useQuery({
+    queryKey: ["admin-ajustes-caja-auxiliar", activeBranchId],
+    enabled: !!activeBranchId && canManageTemplates,
+    queryFn: async (): Promise<AjusteCajaAuxiliar[]> => {
+      if (!activeBranchId) return [];
+      const { data, error } = await supabase
+        .from("ajustes_caja_auxiliar" as any)
+        .select(
+          "id, tipo, motivo, detalle, total_antes, total_despues, created_at, ajustado_por:profiles!ajustes_caja_auxiliar_ajustado_por_fkey(id, alias, username, email)",
+        )
+        .eq("branch_id", activeBranchId)
+        .order("created_at", { ascending: false })
+        .limit(30);
+      if (error) throw error;
+      return ((data ?? []) as any[]).map((item) => ({
+        id: String(item.id),
+        tipo: item.tipo as TipoAjuste,
+        motivo: String(item.motivo ?? ""),
+        detalle: Array.isArray(item.detalle) ? (item.detalle as AjusteDetalleLinea[]) : [],
+        total_antes: Number(item.total_antes ?? 0),
+        total_despues: Number(item.total_despues ?? 0),
+        created_at: String(item.created_at),
+        ajustado_por_nombre: getUserDisplayName(item.ajustado_por),
+      }));
+    },
+  });
+
   const denominations = denominationsQuery.data ?? [];
   const stockRows = stockQuery.data ?? [];
   const isLoading = denominationsQuery.isLoading || stockQuery.isLoading;
+  const historial = historialQuery.data ?? [];
+
+  const hayCambios = useMemo(() => {
+    const actual = new Map(stockRows.map((row) => [row.denomination_id, row]));
+    return denominations.some((item) => {
+      const row = actual.get(item.id);
+      const qtyActual = row?.qty ?? 0;
+      const habilitadaActual = row ? row.is_enabled !== false : true;
+      return (counts[item.id] ?? 0) !== qtyActual || (enabled[item.id] !== false) !== habilitadaActual;
+    });
+  }, [counts, denominations, enabled, stockRows]);
+  const motivoValido = motivo.trim().length >= MIN_MOTIVO;
 
   useEffect(() => {
     if (!denominations.length) return;
@@ -219,6 +294,7 @@ export default function AuxiliaryCashTemplateCrud() {
     qc.invalidateQueries({ queryKey: ["admin-branch-auxiliary-cash"] });
     qc.invalidateQueries({ queryKey: ["admin-auxiliary-cash-template"] });
     qc.invalidateQueries({ queryKey: ["auxiliary-cash-context"] });
+    qc.invalidateQueries({ queryKey: ["admin-ajustes-caja-auxiliar"] });
   };
 
   const saveMutation = useMutation({
@@ -235,14 +311,29 @@ export default function AuxiliaryCashTemplateCrud() {
       if (!rows.some((item) => item.is_enabled)) {
         throw new Error("Debes habilitar al menos una denominacion.");
       }
+      if (hayCambios && !motivoValido) {
+        throw new Error("Escribe el motivo del ajuste antes de guardar.");
+      }
 
       const { templateId } = await loadAuxiliaryTemplateRows(activeBranchId);
-      await upsertBranchStock(activeBranchId, denominations, rows);
+      const ajusteId = await guardarAjusteCajaAuxiliar(
+        activeBranchId,
+        denominations,
+        rows,
+        motivo.trim(),
+        "AJUSTE",
+      );
       await syncAuxiliaryTemplate(activeBranchId, denominations, counts, enabled, templateId);
+      return ajusteId;
     },
-    onSuccess: () => {
+    onSuccess: (ajusteId) => {
       invalidateAuxiliary();
-      toast.success("Caja auxiliar de la sucursal guardada");
+      setMotivo("");
+      toast.success(
+        ajusteId
+          ? "Caja auxiliar guardada y ajuste registrado en el historial"
+          : "Caja auxiliar guardada (sin cambios en las cantidades)",
+      );
     },
     onError: (error: any) => toast.error(error?.message ?? "No se pudo guardar la caja auxiliar"),
   });
@@ -265,13 +356,28 @@ export default function AuxiliaryCashTemplateCrud() {
         is_enabled: enabled[item.id] !== false,
       }));
 
-      await upsertBranchStock(activeBranchId, denominations, rows);
-      return rows;
+      if (!motivoValido) {
+        throw new Error("Escribe el motivo del ajuste (abajo, junto al total) antes de restablecer.");
+      }
+
+      const ajusteId = await guardarAjusteCajaAuxiliar(
+        activeBranchId,
+        denominations,
+        rows,
+        motivo.trim(),
+        "RESTABLECER",
+      );
+      return { rows, ajusteId };
     },
-    onSuccess: (rows) => {
+    onSuccess: ({ rows, ajusteId }) => {
       setCounts(buildCountsMap(denominations, rows));
       invalidateAuxiliary();
-      toast.success("Cantidades restablecidas a la plantilla");
+      setMotivo("");
+      toast.success(
+        ajusteId
+          ? "Cantidades restablecidas a la plantilla y registradas en el historial"
+          : "La caja auxiliar ya tenía las cantidades de la plantilla",
+      );
     },
     onError: (error: any) => toast.error(error?.message ?? "No se pudo restablecer la caja auxiliar"),
   });
@@ -389,20 +495,107 @@ export default function AuxiliaryCashTemplateCrud() {
           </div>
         )}
 
-        <div className="mt-5 flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mt-5 space-y-2 border-t border-border pt-4">
+          <Label htmlFor="motivo-ajuste-auxiliar">
+            Motivo del ajuste
+            <span className="ml-1 font-normal text-muted-foreground">
+              (obligatorio al cambiar cantidades o restablecer)
+            </span>
+          </Label>
+          <Textarea
+            id="motivo-ajuste-auxiliar"
+            value={motivo}
+            onChange={(event) => setMotivo(event.target.value)}
+            disabled={busy}
+            placeholder="Ej. Reposición de monedas desde caja principal"
+            className="min-h-20"
+          />
+          {hayCambios && !motivoValido ? (
+            <p className="text-xs font-medium text-amber-700">
+              Hay cambios sin guardar: escribe el motivo para poder guardarlos.
+            </p>
+          ) : null}
+        </div>
+
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="rounded-2xl bg-sky-50 px-4 py-3">
             <p className="text-xs text-muted-foreground">Total (habilitadas)</p>
             <p className="font-display text-2xl font-bold text-sky-700">${total.toFixed(2)}</p>
           </div>
           <Button
             onClick={() => saveMutation.mutate()}
-            disabled={busy || denominations.length === 0}
+            disabled={busy || denominations.length === 0 || (hayCambios && !motivoValido)}
             className="h-11 rounded-2xl"
           >
             {saveMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
             Guardar caja auxiliar
           </Button>
         </div>
+      </div>
+
+      <div className="rounded-[28px] border border-sky-200 bg-white/90 p-5 shadow-sm">
+        <div className="mb-4 flex items-start gap-3">
+          <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-sky-200 bg-sky-50 text-sky-700">
+            <History className="h-5 w-5" />
+          </div>
+          <div>
+            <h3 className="font-display text-lg font-black text-foreground">Historial de ajustes</h3>
+            <p className="text-sm text-muted-foreground">
+              Ajustes manuales hechos desde esta pantalla (últimos 30).
+            </p>
+          </div>
+        </div>
+
+        {historialQuery.isLoading ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : historialQuery.isError ? (
+          <p className="rounded-2xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
+            No se pudo cargar el historial de ajustes.
+          </p>
+        ) : historial.length === 0 ? (
+          <p className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-center text-sm text-muted-foreground">
+            Todavía no hay ajustes registrados.
+          </p>
+        ) : (
+          <ul className="space-y-3">
+            {historial.map((ajuste) => {
+              const diferencia = ajuste.total_despues - ajuste.total_antes;
+              return (
+                <li key={ajuste.id} className="rounded-2xl border border-border bg-card p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-foreground">
+                      {formatDateTime(ajuste.created_at)} · {ajuste.ajustado_por_nombre}
+                    </p>
+                    <span
+                      className={cn(
+                        "rounded-full px-2.5 py-0.5 text-xs font-bold",
+                        ajuste.tipo === "RESTABLECER"
+                          ? "bg-violet-100 text-violet-800"
+                          : "bg-sky-100 text-sky-800",
+                      )}
+                    >
+                      {ajuste.tipo === "RESTABLECER" ? "Restablecer" : "Ajuste"}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-sm text-muted-foreground">Motivo: {ajuste.motivo}</p>
+                  <ul className="mt-2 space-y-0.5 text-sm text-foreground">
+                    {ajuste.detalle.map((linea) => (
+                      <li key={linea.denomination_id}>{describirLinea(linea)}</li>
+                    ))}
+                  </ul>
+                  <p className="mt-2 text-sm font-semibold text-foreground">
+                    Total: ${ajuste.total_antes.toFixed(2)} → ${ajuste.total_despues.toFixed(2)}
+                    <span className={cn("ml-2", diferencia < 0 ? "text-destructive" : "text-emerald-700")}>
+                      ({diferencia >= 0 ? "+" : "-"}${Math.abs(diferencia).toFixed(2)})
+                    </span>
+                  </p>
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </div>
     </div>
   );
