@@ -1703,55 +1703,8 @@ export function useReportesEncebollado(filters: ReportesFilters) {
 
       const data: any[] = [];
       const productChunks = productIds.length > 0 ? chunkIds(productIds) : [];
-      for (const productChunk of productChunks) {
-        const chunkRows = await fetchAllReportRows((from, to) => {
-          let query = supabase
-            .from('order_items')
-            .select(`
-              id,
-              product_id,
-              quantity,
-              status,
-              cancelled_at,
-              description_snapshot,
-              order:orders!inner (
-                id,
-                branch_id,
-                status,
-                created_at,
-                order_type,
-                is_special,
-                cash_shift_id,
-                branch:branches ( id, name )
-              )
-            `)
-            .eq('order.status', 'PAID')
-            .is('cancelled_at', null)
-            .not('status', 'eq', 'CANCELLED')
-            .in('product_id', productChunk)
-            .gte('order.created_at', dateBounds.desde)
-            .lte('order.created_at', dateBounds.hasta);
 
-          if (branchId !== 'ALL') {
-            query = query.eq('order.branch_id', branchId);
-          } else if (branchScopeIds && branchScopeIds.length > 0) {
-            query = query.in('order.branch_id', branchScopeIds);
-          }
-          if (shiftId) query = query.eq('order.cash_shift_id', shiftId);
-          if (orderTypes && orderTypes.length > 0) {
-            const dbTypes = orderTypes.filter((t) => t !== 'SPECIAL');
-            if (dbTypes.length > 0) {
-              query = query.in('order.order_type', dbTypes);
-            }
-          }
-
-          return query.order('id', { ascending: true }).range(from, to);
-        });
-        data.push(...chunkRows);
-      }
-
-      // Ítems legacy sin product_id, pero con nombre en el snapshot.
-      const legacyRows = await fetchAllReportRows((from, to) => {
+      const buildEncebolladoItemsQuery = (from: number, to: number, productChunk: string[] | null) => {
         let query = supabase
           .from('order_items')
           .select(`
@@ -1760,6 +1713,7 @@ export function useReportesEncebollado(filters: ReportesFilters) {
             quantity,
             status,
             cancelled_at,
+            paid_at,
             description_snapshot,
             order:orders!inner (
               id,
@@ -1772,14 +1726,19 @@ export function useReportesEncebollado(filters: ReportesFilters) {
               branch:branches ( id, name )
             )
           `)
-          .eq('order.status', 'PAID')
+          // Mismo criterio que Productos Vendidos: todo lo no borrador,
+          // ítem no cancelado, luego se restan anulaciones parciales.
+          .neq('order.status', 'DRAFT')
           .is('cancelled_at', null)
           .not('status', 'eq', 'CANCELLED')
-          .is('product_id', null)
-          .ilike('description_snapshot', '%encebollad%')
           .gte('order.created_at', dateBounds.desde)
           .lte('order.created_at', dateBounds.hasta);
 
+        if (productChunk) {
+          query = query.in('product_id', productChunk);
+        } else {
+          query = query.is('product_id', null).ilike('description_snapshot', '%encebollad%');
+        }
         if (branchId !== 'ALL') {
           query = query.eq('order.branch_id', branchId);
         } else if (branchScopeIds && branchScopeIds.length > 0) {
@@ -1794,7 +1753,19 @@ export function useReportesEncebollado(filters: ReportesFilters) {
         }
 
         return query.order('id', { ascending: true }).range(from, to);
-      });
+      };
+
+      for (const productChunk of productChunks) {
+        const chunkRows = await fetchAllReportRows((from, to) =>
+          buildEncebolladoItemsQuery(from, to, productChunk),
+        );
+        data.push(...chunkRows);
+      }
+
+      // Ítems legacy sin product_id, pero con nombre en el snapshot.
+      const legacyRows = await fetchAllReportRows((from, to) =>
+        buildEncebolladoItemsQuery(from, to, null),
+      );
       data.push(...legacyRows);
 
       const items = data.filter((item: any) => {
@@ -1803,6 +1774,53 @@ export function useReportesEncebollado(filters: ReportesFilters) {
         return orderTypes.includes(effectiveType);
       });
 
+      // Restar anulaciones parciales aplicadas (igual que Productos Vendidos).
+      const itemIds = items.map((item: any) => item.id).filter(Boolean);
+      const cancelledQtyByItemId: Record<string, number> = {};
+      if (itemIds.length > 0) {
+        const itemCancellations: Array<{
+          order_item_id: string;
+          quantity_cancelled: number;
+          order_cancellation_id: string;
+        }> = [];
+        for (let index = 0; index < itemIds.length; index += 200) {
+          const chunk = itemIds.slice(index, index + 200);
+          const { data: cancelChunk, error: cancelItemsError } = await supabase
+            .from('order_item_cancellations')
+            .select('order_item_id, quantity_cancelled, order_cancellation_id')
+            .in('order_item_id', chunk);
+          if (cancelItemsError) throw cancelItemsError;
+          itemCancellations.push(...(cancelChunk ?? []));
+        }
+
+        const cancellationIds = Array.from(
+          new Set(itemCancellations.map((row) => row.order_cancellation_id).filter(Boolean)),
+        );
+        const appliedCancellationIds = new Set<string>();
+        if (cancellationIds.length > 0) {
+          for (let index = 0; index < cancellationIds.length; index += 200) {
+            const chunk = cancellationIds.slice(index, index + 200);
+            const { data: cancellationHeaders, error: cancelHeadersError } = await supabase
+              .from('order_cancellations')
+              .select('id, status')
+              .in('id', chunk)
+              .eq('status', 'APPLIED');
+            if (cancelHeadersError) throw cancelHeadersError;
+            for (const header of cancellationHeaders ?? []) {
+              if (header?.id) appliedCancellationIds.add(header.id);
+            }
+          }
+        }
+
+        for (const row of itemCancellations) {
+          if (!appliedCancellationIds.has(row.order_cancellation_id)) continue;
+          const itemId = String(row.order_item_id ?? '');
+          if (!itemId) continue;
+          cancelledQtyByItemId[itemId] =
+            (cancelledQtyByItemId[itemId] ?? 0) + Math.max(0, Number(row.quantity_cancelled ?? 0));
+        }
+      }
+
       const byBranch = new Map<string, {
         branchId: string;
         branchName: string;
@@ -1810,7 +1828,9 @@ export function useReportesEncebollado(filters: ReportesFilters) {
       }>();
 
       for (const item of items) {
-        const qty = Math.max(0, Math.trunc(Number(item.quantity || 0)));
+        const orderedQty = Math.max(0, Math.trunc(Number(item.quantity || 0)));
+        const cancelledQty = Math.max(0, Math.trunc(Number(cancelledQtyByItemId[item.id] ?? 0)));
+        const qty = Math.max(0, orderedQty - cancelledQty);
         if (qty <= 0) continue;
         const productId = item.product_id ? String(item.product_id) : '';
         const name = String(

@@ -108,7 +108,8 @@ export default function ReporteEncebollado({ filters }: ReporteEncebolladoProps)
           <div>
             <h2 className="font-display text-lg font-black text-foreground">Encebollados vendidos</h2>
             <p className="text-xs text-muted-foreground">
-              Cantidad de platos cobrados por sucursal y tamaño (pequeño, grande, JR, lleno, sin tamaño y solo líquido).
+              Mismo criterio que Productos Vendidos, agrupado por sucursal y tamaño
+              (pequeño, grande, JR, lleno, sin tamaño y solo líquido).
             </p>
           </div>
         </div>
