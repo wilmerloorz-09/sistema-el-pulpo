@@ -5,13 +5,14 @@ import { filterBranchesForAdminReports } from '@/lib/adminReportBranchScope';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
-import { Wallet, Soup, Users, Lock, AlertCircle } from 'lucide-react';
+import { Wallet, Soup, Users, Fish, Lock, AlertCircle } from 'lucide-react';
 
 // Componentes del Módulo
 import FiltrosPanel from '@/components/reportes/FiltrosPanel';
 import ReportePagos from '@/components/reportes/ReportePagos';
 import ReporteProductos from '@/components/reportes/ReporteProductos';
 import ReportePersonal from '@/components/reportes/ReportePersonal';
+import ReporteEncebollado from '@/components/reportes/ReporteEncebollado';
 import type { ReportesFilters } from '@/hooks/useReportesOnlineData';
 
 const Reportes = () => {
@@ -156,7 +157,7 @@ const Reportes = () => {
 
       {/* Tabs de Reportes */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-3 bg-muted/60 p-1 rounded-2xl print:hidden">
+        <TabsList className="grid w-full grid-cols-2 gap-1 bg-muted/60 p-1 rounded-2xl sm:grid-cols-4 print:hidden">
           <TabsTrigger value="payments" className="flex items-center gap-2 rounded-xl text-xs font-bold py-2.5">
             <Wallet className="h-4 w-4" />
             Pagos Realizados
@@ -164,6 +165,10 @@ const Reportes = () => {
           <TabsTrigger value="products" className="flex items-center gap-2 rounded-xl text-xs font-bold py-2.5">
             <Soup className="h-4 w-4" />
             Productos Vendidos
+          </TabsTrigger>
+          <TabsTrigger value="encebollado" className="flex items-center gap-2 rounded-xl text-xs font-bold py-2.5">
+            <Fish className="h-4 w-4" />
+            Encebollados
           </TabsTrigger>
           <TabsTrigger value="personal" className="flex items-center gap-2 rounded-xl text-xs font-bold py-2.5">
             <Users className="h-4 w-4" />
@@ -179,6 +184,11 @@ const Reportes = () => {
         {/* Contenido: Productos Vendidos */}
         <TabsContent value="products" className="mt-6 border-none p-0 outline-none">
           <ReporteProductos filters={filters} />
+        </TabsContent>
+
+        {/* Contenido: Encebollados por tamaño */}
+        <TabsContent value="encebollado" className="mt-6 border-none p-0 outline-none">
+          <ReporteEncebollado filters={filters} />
         </TabsContent>
 
         {/* Contenido: Personal por día */}

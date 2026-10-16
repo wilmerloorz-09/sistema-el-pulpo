@@ -74,6 +74,8 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
         if (prev === 'fecha') return 'dia';
         return 'dia';
       });
+    } else if (activeTab === 'encebollado') {
+      setSortBy('sucursal');
     } else {
       setSortBy((prev) => (
         ['fecha', 'orden', 'monto', 'cajero', 'creador', 'metodo'].includes(prev) ? prev : 'fecha'
@@ -273,7 +275,15 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
     setSelectedCategoryId('ALL');
     setSelectedOrderType('ALL');
     setRecordStatus('valid');
-    setSortBy(activeTab === 'products' ? 'cantidad' : activeTab === 'personal' ? 'dia' : 'fecha');
+    setSortBy(
+      activeTab === 'products'
+        ? 'cantidad'
+        : activeTab === 'personal'
+          ? 'dia'
+          : activeTab === 'encebollado'
+            ? 'sucursal'
+            : 'fecha',
+    );
     setSortDir('desc');
   };
 
@@ -330,6 +340,7 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
   const showProductFilters = activeTab === 'products' || activeTab === 'payments';
   const showPaymentFilters = activeTab === 'payments' || activeTab === 'products';
   const isPersonalTab = activeTab === 'personal';
+  const isEncebolladoTab = activeTab === 'encebollado';
   // En Personal: priorizar quienes ya estuvieron en turnos del rango; si no hay, todos los perfiles activos.
   const userFilterOptions =
     isPersonalTab && (filtersData?.shiftUsers?.length ?? 0) > 0
@@ -487,6 +498,7 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
         )}
 
         {/* Combo de Usuario / Creador */}
+        {!isEncebolladoTab && (
         <div className="space-y-1.5">
           <Label className="text-xs font-bold text-muted-foreground">
             {isPersonalTab ? 'Usuario del turno' : 'Usuario Creador de Orden'}
@@ -511,6 +523,7 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
             </SelectContent>
           </Select>
         </div>
+        )}
 
         {/* Categoría de producto (menú) */}
         {showProductFilters && (
@@ -667,6 +680,7 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
         )}
 
         {/* Ordenar por */}
+        {!isEncebolladoTab && (
         <div className="space-y-1.5">
           <Label className="text-xs font-bold text-muted-foreground">Ordenar por</Label>
           <Select value={sortBy} onValueChange={setSortBy}>
@@ -701,8 +715,10 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
             </SelectContent>
           </Select>
         </div>
+        )}
 
         {/* Dirección */}
+        {!isEncebolladoTab && (
         <div className="space-y-1.5">
           <Label className="text-xs font-bold text-muted-foreground">Dirección</Label>
           <Select value={sortDir} onValueChange={(v) => setSortDir(v as 'asc' | 'desc')}>
@@ -715,6 +731,7 @@ export default function FiltrosPanel({ branchId, onFilterChange, activeTab }: Fi
             </SelectContent>
           </Select>
         </div>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 mt-5 pt-4">

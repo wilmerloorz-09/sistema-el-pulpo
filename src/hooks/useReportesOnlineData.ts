@@ -1603,3 +1603,248 @@ export function useReportesPersonal(filters: ReportesFilters) {
     enabled: !!branchId,
   });
 }
+
+export type EncebolladoTamanoKey =
+  | 'pequeno'
+  | 'grande'
+  | 'jr'
+  | 'lleno'
+  | 'sin_tamano'
+  | 'solo_liquido';
+
+export const ENCEBOLLADO_TAMANO_LABELS: Record<EncebolladoTamanoKey, string> = {
+  pequeno: 'Pequeño',
+  grande: 'Grande',
+  jr: 'JR',
+  lleno: 'Lleno',
+  sin_tamano: 'Sin tamaño',
+  solo_liquido: 'Solo líquido',
+};
+
+export const ENCEBOLLADO_TAMANO_KEYS: EncebolladoTamanoKey[] = [
+  'pequeno',
+  'grande',
+  'jr',
+  'lleno',
+  'sin_tamano',
+  'solo_liquido',
+];
+
+function classifyEncebolladoTamano(productName: string): EncebolladoTamanoKey {
+  const name = String(productName ?? '');
+  if (/l[ií]quido/i.test(name)) return 'solo_liquido';
+  if (/peque/i.test(name)) return 'pequeno';
+  if (/grande/i.test(name)) return 'grande';
+  if (/\bJR\b/i.test(name)) return 'jr';
+  if (/lleno/i.test(name)) return 'lleno';
+  return 'sin_tamano';
+}
+
+function emptyEncebolladoCounts(): Record<EncebolladoTamanoKey, number> {
+  return {
+    pequeno: 0,
+    grande: 0,
+    jr: 0,
+    lleno: 0,
+    sin_tamano: 0,
+    solo_liquido: 0,
+  };
+}
+
+/** Platos de encebollado vendidos (órdenes pagadas) por sucursal y tamaño. */
+export function useReportesEncebollado(filters: ReportesFilters) {
+  const {
+    branchId,
+    branchScopeIds = null,
+    desde,
+    hasta,
+    shiftId,
+    orderTypes,
+  } = filters;
+
+  return useQuery({
+    queryKey: [
+      'reportes-encebollado',
+      branchId,
+      branchScopeIds,
+      desde,
+      hasta,
+      shiftId,
+      orderTypes,
+    ],
+    queryFn: async () => {
+      if (!branchId) {
+        return {
+          rows: [] as Array<{
+            branchId: string;
+            branchName: string;
+            counts: Record<EncebolladoTamanoKey, number>;
+            total: number;
+          }>,
+          totals: emptyEncebolladoCounts(),
+          grandTotal: 0,
+        };
+      }
+
+      const dateBounds = resolveReportesDateBounds(desde, hasta);
+
+      const encebolladoProducts = await fetchAllReportRows((from, to) =>
+        supabase
+          .from('products')
+          .select('id, description')
+          .ilike('description', '%encebollad%')
+          .order('id', { ascending: true })
+          .range(from, to),
+      );
+      const productIds = encebolladoProducts.map((p: any) => String(p.id)).filter(Boolean);
+      const productNameById = new Map<string, string>(
+        encebolladoProducts.map((p: any) => [String(p.id), String(p.description ?? '')]),
+      );
+
+      const data: any[] = [];
+      const productChunks = productIds.length > 0 ? chunkIds(productIds) : [];
+      for (const productChunk of productChunks) {
+        const chunkRows = await fetchAllReportRows((from, to) => {
+          let query = supabase
+            .from('order_items')
+            .select(`
+              id,
+              product_id,
+              quantity,
+              status,
+              cancelled_at,
+              description_snapshot,
+              order:orders!inner (
+                id,
+                branch_id,
+                status,
+                created_at,
+                order_type,
+                is_special,
+                cash_shift_id,
+                branch:branches ( id, name )
+              )
+            `)
+            .eq('order.status', 'PAID')
+            .is('cancelled_at', null)
+            .not('status', 'eq', 'CANCELLED')
+            .in('product_id', productChunk)
+            .gte('order.created_at', dateBounds.desde)
+            .lte('order.created_at', dateBounds.hasta);
+
+          if (branchId !== 'ALL') {
+            query = query.eq('order.branch_id', branchId);
+          } else if (branchScopeIds && branchScopeIds.length > 0) {
+            query = query.in('order.branch_id', branchScopeIds);
+          }
+          if (shiftId) query = query.eq('order.cash_shift_id', shiftId);
+          if (orderTypes && orderTypes.length > 0) {
+            const dbTypes = orderTypes.filter((t) => t !== 'SPECIAL');
+            if (dbTypes.length > 0) {
+              query = query.in('order.order_type', dbTypes);
+            }
+          }
+
+          return query.order('id', { ascending: true }).range(from, to);
+        });
+        data.push(...chunkRows);
+      }
+
+      // Ítems legacy sin product_id, pero con nombre en el snapshot.
+      const legacyRows = await fetchAllReportRows((from, to) => {
+        let query = supabase
+          .from('order_items')
+          .select(`
+            id,
+            product_id,
+            quantity,
+            status,
+            cancelled_at,
+            description_snapshot,
+            order:orders!inner (
+              id,
+              branch_id,
+              status,
+              created_at,
+              order_type,
+              is_special,
+              cash_shift_id,
+              branch:branches ( id, name )
+            )
+          `)
+          .eq('order.status', 'PAID')
+          .is('cancelled_at', null)
+          .not('status', 'eq', 'CANCELLED')
+          .is('product_id', null)
+          .ilike('description_snapshot', '%encebollad%')
+          .gte('order.created_at', dateBounds.desde)
+          .lte('order.created_at', dateBounds.hasta);
+
+        if (branchId !== 'ALL') {
+          query = query.eq('order.branch_id', branchId);
+        } else if (branchScopeIds && branchScopeIds.length > 0) {
+          query = query.in('order.branch_id', branchScopeIds);
+        }
+        if (shiftId) query = query.eq('order.cash_shift_id', shiftId);
+        if (orderTypes && orderTypes.length > 0) {
+          const dbTypes = orderTypes.filter((t) => t !== 'SPECIAL');
+          if (dbTypes.length > 0) {
+            query = query.in('order.order_type', dbTypes);
+          }
+        }
+
+        return query.order('id', { ascending: true }).range(from, to);
+      });
+      data.push(...legacyRows);
+
+      const items = data.filter((item: any) => {
+        if (!orderTypes || orderTypes.length === 0) return true;
+        const effectiveType = item.order?.is_special ? 'SPECIAL' : (item.order?.order_type || 'EXTRA');
+        return orderTypes.includes(effectiveType);
+      });
+
+      const byBranch = new Map<string, {
+        branchId: string;
+        branchName: string;
+        counts: Record<EncebolladoTamanoKey, number>;
+      }>();
+
+      for (const item of items) {
+        const qty = Math.max(0, Math.trunc(Number(item.quantity || 0)));
+        if (qty <= 0) continue;
+        const productId = item.product_id ? String(item.product_id) : '';
+        const name = String(
+          (productId && productNameById.get(productId)) || item.description_snapshot || '',
+        );
+        const tamano = classifyEncebolladoTamano(name);
+        const bId = String(item.order?.branch_id || item.order?.branch?.id || '');
+        if (!bId) continue;
+        const bName = String(item.order?.branch?.name || 'Sucursal');
+        let row = byBranch.get(bId);
+        if (!row) {
+          row = { branchId: bId, branchName: bName, counts: emptyEncebolladoCounts() };
+          byBranch.set(bId, row);
+        }
+        row.counts[tamano] += qty;
+      }
+
+      const rows = [...byBranch.values()]
+        .map((row) => ({
+          ...row,
+          total: ENCEBOLLADO_TAMANO_KEYS.reduce((sum, key) => sum + row.counts[key], 0),
+        }))
+        .sort((a, b) => compareText(a.branchName, b.branchName));
+
+      const totals = emptyEncebolladoCounts();
+      for (const row of rows) {
+        for (const key of ENCEBOLLADO_TAMANO_KEYS) {
+          totals[key] += row.counts[key];
+        }
+      }
+      const grandTotal = ENCEBOLLADO_TAMANO_KEYS.reduce((sum, key) => sum + totals[key], 0);
+
+      return { rows, totals, grandTotal };
+    },
+    enabled: !!branchId,
+  });
+}
