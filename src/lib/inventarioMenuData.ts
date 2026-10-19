@@ -80,31 +80,67 @@ export async function fetchInventarioProductoMap(
     });
   }
 
-  // Integra ventas se configura en bodega sucursal.
+  // Integra ventas se configura en bodega sucursal (no mezclar cantidad de bodega aquí:
+  // este mapa es stock de NEVERA para pantallas de inventario).
   const { data: bodegaRows, error: bodegaError } = await supabase
     .from("inventario_bodega_sucursal" as any)
-    .select("producto_global_id, integra_con_ventas, cantidad_disponible")
+    .select("producto_global_id, integra_con_ventas")
     .eq("sucursal_id", inventarioSucursalId);
   if (bodegaError) throw bodegaError;
-
-  const soloNevera = await esInventarioVentaSoloNevera(branchId);
 
   for (const row of (bodegaRows as any[]) ?? []) {
     const productoId = String(row.producto_global_id ?? "");
     if (!productoId) continue;
-    const stockBodega = Number(row.cantidad_disponible ?? 0);
     const existing = map.get(productoId);
     if (existing) {
       existing.integraConVentas = Boolean(row.integra_con_ventas);
-      // Fuera de P1: stock vendible = nevera + bodega sucursal.
-      if (!soloNevera && existing.integraConVentas) {
-        existing.cantidadDisponible = Number(existing.cantidadDisponible) + Math.max(0, stockBodega);
+    } else if (row.integra_con_ventas) {
+      map.set(productoId, {
+        productoId,
+        inventarioId: null,
+        cantidadDisponible: 0,
+        tipoProducto: "COMPRADO",
+        activoCatalogo: true,
+        integraConVentas: true,
+        limiteStock: 0,
+      });
+    }
+  }
+
+  return map;
+}
+
+/**
+ * Stock vendible para menú/órdenes.
+ * P1: solo nevera. Resto: nevera + bodega sucursal.
+ */
+export async function fetchInventarioStockVendibleMap(
+  branchId: string,
+): Promise<Map<string, InventarioProductoInfo>> {
+  const map = await fetchInventarioProductoMap(branchId);
+  if (await esInventarioVentaSoloNevera(branchId)) return map;
+
+  const inventarioSucursalId = await resolverSucursalInventario(branchId);
+  const { data: bodegaRows, error } = await supabase
+    .from("inventario_bodega_sucursal" as any)
+    .select("producto_global_id, cantidad_disponible, integra_con_ventas")
+    .eq("sucursal_id", inventarioSucursalId);
+  if (error) throw error;
+
+  for (const row of (bodegaRows as any[]) ?? []) {
+    const productoId = String(row.producto_global_id ?? "");
+    if (!productoId) continue;
+    const stockBodega = Math.max(0, Number(row.cantidad_disponible ?? 0));
+    const existing = map.get(productoId);
+    if (existing) {
+      if (existing.integraConVentas) {
+        existing.cantidadDisponible = Number(existing.cantidadDisponible) + stockBodega;
       }
     } else if (row.integra_con_ventas) {
       map.set(productoId, {
         productoId,
         inventarioId: null,
-        cantidadDisponible: soloNevera ? 0 : Math.max(0, stockBodega),
+        cantidadDisponible: stockBodega,
         tipoProducto: "COMPRADO",
         activoCatalogo: true,
         integraConVentas: true,

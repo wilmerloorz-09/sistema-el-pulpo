@@ -60,7 +60,7 @@ import type { OrderSummary } from "@/hooks/useOrdersByStatus";
 import { canManage, canOperate } from "@/lib/permissions";
 import { fetchMenuTreeNodes, type MenuNode, type MenuScope } from "@/hooks/useMenuTree";
 import {
-  fetchInventarioProductoMap,
+  fetchInventarioStockVendibleMap,
   fetchStockActualProducto,
   mergeInventarioInfo,
   resolveMenuNodeProductId,
@@ -834,7 +834,7 @@ const OrdenesContent = () => {
 
   const inventarioMapQuery = useQuery({
     queryKey: ["inventario-producto-map", activeBranchId],
-    queryFn: () => fetchInventarioProductoMap(activeBranchId!),
+    queryFn: () => fetchInventarioStockVendibleMap(activeBranchId!),
     enabled: Boolean(activeBranchId && orderId),
     staleTime: 60_000,
     gcTime: 5 * 60_000,

@@ -10,7 +10,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { canOperate, canView } from "@/lib/permissions";
 import type { MenuNode } from "@/hooks/useMenuTree";
 import {
-  fetchInventarioProductoMap,
+  fetchInventarioStockVendibleMap,
   mergeInventarioInfo,
   resolveMenuNodeProductId,
 } from "@/lib/inventarioMenuData";
@@ -24,7 +24,7 @@ const Productos = () => {
 
   const inventarioMapQuery = useQuery({
     queryKey: ["inventario-producto-map", activeBranchId],
-    queryFn: () => fetchInventarioProductoMap(activeBranchId!),
+    queryFn: () => fetchInventarioStockVendibleMap(activeBranchId!),
     enabled: Boolean(activeBranchId),
     staleTime: 60_000,
   });
