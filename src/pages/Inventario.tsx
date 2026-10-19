@@ -1,9 +1,16 @@
 import { Navigate } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
+import { isTemporarilyMenuRestrictedUser } from "@/lib/menuAccessRestrictions";
 import { canOperate, canView } from "@/lib/permissions";
 
 const Inventario = () => {
+  const { profile } = useAuth();
   const { isGlobalAdmin, permissions } = useBranch();
+
+  if (isTemporarilyMenuRestrictedUser(profile)) {
+    return <Navigate to="/mesas" replace />;
+  }
 
   const canBodegaGeneral =
     isGlobalAdmin

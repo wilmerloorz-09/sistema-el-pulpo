@@ -1,10 +1,12 @@
 import { useMemo, type ReactNode } from "react";
 import { BarChart3, ChefHat, CircleDollarSign, ConciergeBell, LayoutGrid, Package, PackagePlus, Settings, UtensilsCrossed, PlayCircle, ShoppingBag, Sparkles, Zap, Banknote, History, Users, Gift, Megaphone, Search, PowerOff, PackageCheck, ArrowLeftRight, FileText, HandCoins, Warehouse } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { useDispatchAccess } from "@/hooks/useDispatchAccess";
 import { useAuxiliaryCashAssignment } from "@/hooks/useAuxiliaryCash";
 import { canSeeCajaFinanceNav, isCajaFinanceNavPath } from "@/components/nav/cajaTerminalNav";
+import { isNavGroupBlockedForUser } from "@/lib/menuAccessRestrictions";
 import { canManage, canView, canOperate } from "@/lib/permissions";
 
 /** Ocultar sección PROMOCIONES del menú hasta habilitarla en producción. */
@@ -366,6 +368,7 @@ const NAV_ITEMS: AppNavItem[] = [
 ];
 
 export function useVisibleNavItems() {
+  const { profile } = useAuth();
   const { permissions, isGlobalAdmin, branches, activeBranch } = useBranch();
   const { hasAccess: hasDispatchAccess, fallbackVisible, isLoading: dispatchAccessLoading } = useDispatchAccess();
   const shiftGateQuery = useBranchShiftGate();
@@ -437,6 +440,11 @@ export function useVisibleNavItems() {
         !SHOW_PROMOCIONES_NAV
         && (item.to.startsWith("/promociones") || item.to.startsWith("/campanas"))
       ) {
+        return false;
+      }
+
+      // Restricción temporal: admin1 sin FINANZAS / INVENTARIO / ADMINISTRACIÓN.
+      if (isNavGroupBlockedForUser(item.group, profile)) {
         return false;
       }
 
@@ -577,6 +585,7 @@ export function useVisibleNavItems() {
     hasDispatchAccess,
     isGlobalAdmin,
     permissions,
+    profile,
     shiftGateQuery.data?.canAccessOrders,
     shiftGateQuery.data?.canEditOrders,
     shiftGateQuery.data?.canDispatchOrders,

@@ -1,36 +1,52 @@
 import { useMemo } from "react";
+import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { useDispatchAccess } from "@/hooks/useDispatchAccess";
 import { useVisibleNavItems } from "@/components/nav/useVisibleNavItems";
+import {
+  isPathBlockedForRestrictedUser,
+  isTemporarilyMenuRestrictedUser,
+  safeHomePathForRestrictedUser,
+} from "@/lib/menuAccessRestrictions";
 import { canView } from "@/lib/permissions";
 
 export function usePreferredHomePath() {
+  const { profile } = useAuth();
   const { branches, isGlobalAdmin, permissions } = useBranch();
   const shiftGateQuery = useBranchShiftGate();
   const dispatchAccess = useDispatchAccess();
   const { visibleItems } = useVisibleNavItems();
 
   return useMemo(() => {
-    const canAccessAdmin = isGlobalAdmin
+    const menuRestricted = isTemporarilyMenuRestrictedUser(profile);
+    const canAccessAdmin = !menuRestricted && (
+      isGlobalAdmin
       || canView(permissions, "admin_sucursal")
-      || canView(permissions, "admin_global");
-    const canAccessTurno = canAccessAdmin || canView(permissions, "turno");
+      || canView(permissions, "admin_global")
+    );
+    const canAccessTurno = !menuRestricted && (canAccessAdmin || canView(permissions, "turno"));
     const isGlobalAdminWithoutBranches = isGlobalAdmin && branches.length === 0;
     const gate = shiftGateQuery.data;
-    const hasSupervisorBypass = Boolean(gate?.isSupervisor);
+    const hasSupervisorBypass = Boolean(gate?.isSupervisor) || (isGlobalAdmin && !menuRestricted);
     const hasOperationalShift = Boolean(gate?.shiftOpen) && Boolean(gate?.userEnabled);
     const canAccessDispatch = hasSupervisorBypass
       || (Boolean(gate?.canDispatchOrders) && dispatchAccess.hasAccess);
 
     let preferredPath: string | null = null;
 
-    if (isGlobalAdminWithoutBranches) {
+    if (menuRestricted && isGlobalAdminWithoutBranches) {
+      preferredPath = safeHomePathForRestrictedUser([
+        visibleItems[0]?.to,
+        "/mesas",
+        "/ordenes",
+      ]);
+    } else if (isGlobalAdminWithoutBranches) {
       preferredPath = "/admin";
     } else if (!gate?.shiftOpen || !gate?.userEnabled) {
-      preferredPath = canAccessAdmin ? "/admin" : (canAccessTurno ? "/turno" : null);
+      preferredPath = canAccessAdmin ? "/admin" : (canAccessTurno ? "/turno" : (menuRestricted ? safeHomePathForRestrictedUser([visibleItems[0]?.to, "/mesas"]) : null));
     } else if (gate?.isCaptureDeviceOnly) {
-      preferredPath = "/caja";
+      preferredPath = menuRestricted ? safeHomePathForRestrictedUser(["/mesas", "/ordenes"]) : "/caja";
     } else if (!hasSupervisorBypass && gate?.canPackOrders) {
       preferredPath = "/empaquetador";
     } else if (hasSupervisorBypass || gate?.canServeTables) {
@@ -43,12 +59,26 @@ export function usePreferredHomePath() {
       preferredPath = "/despacho";
     } else if (hasSupervisorBypass || gate?.canManageProducts) {
       preferredPath = "/productos";
-    } else if (hasSupervisorBypass || gate?.canUseCaja) {
+    } else if ((hasSupervisorBypass || gate?.canUseCaja) && !menuRestricted) {
       preferredPath = "/caja";
     } else if (canAccessAdmin) {
       preferredPath = "/admin";
     } else if (canAccessTurno) {
       preferredPath = "/turno";
+    } else if (menuRestricted) {
+      preferredPath = safeHomePathForRestrictedUser([
+        visibleItems[0]?.to,
+        "/mesas",
+        "/ordenes",
+      ]);
+    }
+
+    if (preferredPath && isPathBlockedForRestrictedUser(preferredPath, profile)) {
+      preferredPath = safeHomePathForRestrictedUser([
+        visibleItems[0]?.to,
+        "/mesas",
+        "/ordenes",
+      ]);
     }
 
     return {
@@ -67,6 +97,7 @@ export function usePreferredHomePath() {
     dispatchAccess.hasAccess,
     isGlobalAdmin,
     permissions,
+    profile,
     shiftGateQuery.data,
     shiftGateQuery.isLoading,
     visibleItems,

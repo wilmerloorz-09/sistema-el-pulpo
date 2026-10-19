@@ -6,6 +6,11 @@ import { usePreferredHomePath } from "@/hooks/usePreferredHomePath";
 import { useVisibleNavItems } from "@/components/nav/useVisibleNavItems";
 import { useAuxiliaryCashAssignment } from "@/hooks/useAuxiliaryCash";
 import { Button } from "@/components/ui/button";
+import {
+  isPathBlockedForRestrictedUser,
+  isTemporarilyMenuRestrictedUser,
+  safeHomePathForRestrictedUser,
+} from "@/lib/menuAccessRestrictions";
 import { hasPermission, canManage, type AccessLevel } from "@/lib/permissions";
 
 interface Props {
@@ -76,13 +81,14 @@ const ProtectedRoute = ({
   requiredShiftRoles,
   blockedShiftRoles,
 }: Props) => {
-  const { user, loading, signOut } = useAuth();
+  const { user, profile, loading, signOut } = useAuth();
   const { permissions, allowedModules: currentModules, isGlobalAdmin, branches } = useBranch();
   const shiftGateQuery = useBranchShiftGate();
   const auxiliaryAssignmentQuery = useAuxiliaryCashAssignment();
   const location = useLocation();
   const { preferredPath, firstVisiblePath, canAccessAdmin: preferredCanAccessAdmin } = usePreferredHomePath();
   const { visibleItems } = useVisibleNavItems();
+  const menuRestricted = isTemporarilyMenuRestrictedUser(profile);
 
   if (loading) {
     return (
@@ -199,6 +205,15 @@ const ProtectedRoute = ({
     && !hasAnySystemShiftRole;
 
   const fallback = (() => {
+    if (menuRestricted) {
+      return safeHomePathForRestrictedUser([
+        preferredPath,
+        firstVisiblePath,
+        visibleItems[0]?.to,
+        "/mesas",
+        "/ordenes",
+      ]);
+    }
     if (isStaleShift && canAccessTurno) return "/turno";
     if (preferredPath && !preferredPath.startsWith("/inventario")) return preferredPath;
     if (firstVisiblePath && !firstVisiblePath.startsWith("/inventario")) return firstVisiblePath;
@@ -211,6 +226,24 @@ const ProtectedRoute = ({
     if (canAccessTurno) return "/turno";
     return "/admin";
   })();
+
+  if (isPathBlockedForRestrictedUser(location.pathname, profile)) {
+    if (fallback === location.pathname || fallback.startsWith(`${location.pathname}?`)) {
+      return (
+        <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center p-4">
+          <div className="w-full max-w-lg rounded-[28px] border border-orange-200 bg-white/90 p-6 text-center shadow-sm">
+            <h2 className="font-display text-xl font-black text-foreground">
+              Acceso restringido
+            </h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Tu usuario no tiene acceso a esta seccion por ahora.
+            </p>
+          </div>
+        </div>
+      );
+    }
+    return <Navigate to={fallback} replace />;
+  }
 
   if (isPersonnelOnlyOnShift) {
     return (

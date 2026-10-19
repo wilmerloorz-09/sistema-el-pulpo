@@ -21,6 +21,7 @@ import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { useAuxiliaryCashAssignment } from "@/hooks/useAuxiliaryCash";
 import { useOpenCashRegister } from "@/hooks/useOpenCashRegister";
 import { canManage } from "@/lib/permissions";
+import { isTemporarilyMenuRestrictedUser } from "@/lib/menuAccessRestrictions";
 import { logBackgroundTaskError } from "@/lib/benignAsyncErrors";
 import { guardarSesionTurno, leerSesionTurno, turnoDeSesionTerminado } from "@/lib/sesionTurno";
 import { toast as sonnerToast } from "sonner";
@@ -324,6 +325,7 @@ const BranchGate = ({ children }: { children: React.ReactNode }) => {
 };
 
 const HomeRedirect = () => {
+  const { profile } = useAuth();
   const { loading } = useBranch();
   const { preferredPath, firstVisiblePath, canAccessAdmin, isLoading } = usePreferredHomePath();
 
@@ -339,9 +341,13 @@ const HomeRedirect = () => {
       ? firstVisiblePath
       : null;
 
+  const fallbackHome = isTemporarilyMenuRestrictedUser(profile)
+    ? (safeFirstVisible ?? "/mesas")
+    : (canAccessAdmin ? "/admin" : "/turno");
+
   return (
     <Navigate
-      to={preferredPath ?? safeFirstVisible ?? (canAccessAdmin ? "/admin" : "/turno")}
+      to={preferredPath ?? safeFirstVisible ?? fallbackHome}
       replace
     />
   );
