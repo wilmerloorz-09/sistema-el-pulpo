@@ -16,6 +16,7 @@ import {
   validarMovimientoInventario,
   motivoMovimientoParaRpc,
 } from "@/lib/inventarioProductos";
+import { esSucursalVentaSoloNevera } from "@/lib/inventarioSucursal";
 
 describe("inventarioProductos", () => {
   it("marca DISPONIBLE solo con cantidad > 0", () => {
@@ -38,6 +39,14 @@ describe("inventarioProductos", () => {
     expect(productoBloqueadoPorStockInventario({ integraConVentas: false, cantidadDisponible: 0 })).toBe(false);
     expect(productoBloqueadoPorStockInventario({ integraConVentas: true, cantidadDisponible: 0 })).toBe(true);
     expect(productoBloqueadoPorStockInventario({ integraConVentas: true, cantidadDisponible: 2 })).toBe(false);
+  });
+
+  it("El Pulpo 1 es venta solo nevera; el resto usa waterfall", () => {
+    expect(esSucursalVentaSoloNevera("El Pulpo 1 - Mañana")).toBe(true);
+    expect(esSucursalVentaSoloNevera("El Pulpo 1 - Tarde")).toBe(true);
+    expect(esSucursalVentaSoloNevera("El Pulpo 2")).toBe(false);
+    expect(esSucursalVentaSoloNevera("El Pulpo 3")).toBe(false);
+    expect(esSucursalVentaSoloNevera("Local Principal (Chone)")).toBe(false);
   });
 
   it("muestra stock en órdenes solo si integra con ventas", () => {

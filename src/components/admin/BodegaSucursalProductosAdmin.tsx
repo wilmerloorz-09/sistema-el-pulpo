@@ -100,7 +100,8 @@ const BodegaSucursalProductosAdmin = () => {
         La cantidad se actualiza cuando bodega general envía productos a esta sucursal.
         {" "}
         <span className="font-semibold">Integra ventas</span> se guarda en bodega sucursal:
-        con <span className="font-semibold">Sí</span>, al vender se valida y descuenta stock de nevera.
+        con <span className="font-semibold">Sí</span>, al vender se valida y descuenta stock
+        (primero nevera; si se agota, bodega sucursal). En El Pulpo 1 solo nevera.
         Usa <span className="font-semibold">Ajustar</span> para ingreso, salida o ajuste manual.
         {!canEdit && !canAjustar ? " Modo solo lectura." : null}
       </p>

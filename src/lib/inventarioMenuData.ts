@@ -1,6 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { TipoProducto } from "@/lib/inventarioProductos";
-import { resolverSucursalInventario } from "@/lib/inventarioSucursal";
+import { esInventarioVentaSoloNevera, resolverSucursalInventario } from "@/lib/inventarioSucursal";
 
 export type InventarioProductoInfo = {
   productoId: string;
@@ -83,21 +83,28 @@ export async function fetchInventarioProductoMap(
   // Integra ventas se configura en bodega sucursal.
   const { data: bodegaRows, error: bodegaError } = await supabase
     .from("inventario_bodega_sucursal" as any)
-    .select("producto_global_id, integra_con_ventas")
+    .select("producto_global_id, integra_con_ventas, cantidad_disponible")
     .eq("sucursal_id", inventarioSucursalId);
   if (bodegaError) throw bodegaError;
+
+  const soloNevera = await esInventarioVentaSoloNevera(branchId);
 
   for (const row of (bodegaRows as any[]) ?? []) {
     const productoId = String(row.producto_global_id ?? "");
     if (!productoId) continue;
+    const stockBodega = Number(row.cantidad_disponible ?? 0);
     const existing = map.get(productoId);
     if (existing) {
       existing.integraConVentas = Boolean(row.integra_con_ventas);
+      // Fuera de P1: stock vendible = nevera + bodega sucursal.
+      if (!soloNevera && existing.integraConVentas) {
+        existing.cantidadDisponible = Number(existing.cantidadDisponible) + Math.max(0, stockBodega);
+      }
     } else if (row.integra_con_ventas) {
       map.set(productoId, {
         productoId,
         inventarioId: null,
-        cantidadDisponible: 0,
+        cantidadDisponible: soloNevera ? 0 : Math.max(0, stockBodega),
         tipoProducto: "COMPRADO",
         activoCatalogo: true,
         integraConVentas: true,
@@ -109,17 +116,33 @@ export async function fetchInventarioProductoMap(
   return map;
 }
 
-/** Stock actual de un producto en la nevera de la sucursal; 0 si no tiene fila de inventario. */
+/**
+ * Stock vendible actual del producto en la sucursal.
+ * P1: solo nevera. Resto: nevera + bodega sucursal.
+ */
 export async function fetchStockActualProducto(branchId: string, productoId: string): Promise<number> {
   const inventarioSucursalId = await resolverSucursalInventario(branchId);
-  const { data, error } = await supabase
-    .from("inventario_productos")
+  const [{ data: nevera, error: neveraError }, soloNevera] = await Promise.all([
+    supabase
+      .from("inventario_productos")
+      .select("cantidad_disponible")
+      .eq("sucursal_id", inventarioSucursalId)
+      .eq("producto_id", productoId)
+      .maybeSingle(),
+    esInventarioVentaSoloNevera(branchId),
+  ]);
+  if (neveraError) throw neveraError;
+  const stockNevera = Number(nevera?.cantidad_disponible ?? 0);
+  if (soloNevera) return stockNevera;
+
+  const { data: bodega, error: bodegaError } = await supabase
+    .from("inventario_bodega_sucursal" as any)
     .select("cantidad_disponible")
     .eq("sucursal_id", inventarioSucursalId)
-    .eq("producto_id", productoId)
+    .eq("producto_global_id", productoId)
     .maybeSingle();
-  if (error) throw error;
-  return Number(data?.cantidad_disponible ?? 0);
+  if (bodegaError) throw bodegaError;
+  return stockNevera + Math.max(0, Number((bodega as any)?.cantidad_disponible ?? 0));
 }
 
 /** Stock de bodega de sucursal (recibido desde bodega general), keyed por producto_global_id. */
