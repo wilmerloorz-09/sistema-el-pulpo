@@ -1,5 +1,5 @@
 import { useMemo, type ReactNode } from "react";
-import { BarChart3, ChefHat, CircleDollarSign, ConciergeBell, LayoutGrid, Package, PackagePlus, Settings, UtensilsCrossed, PlayCircle, ShoppingBag, Sparkles, Zap, Banknote, History, Users, Gift, Megaphone, Search, PowerOff, PackageCheck, ArrowLeftRight, FileText, HandCoins, Warehouse } from "lucide-react";
+import { BarChart3, ChefHat, CircleDollarSign, ConciergeBell, LayoutGrid, Package, PackagePlus, Settings, UtensilsCrossed, PlayCircle, ShoppingBag, Sparkles, Zap, Banknote, History, Users, Gift, Megaphone, Search, PowerOff, PackageCheck, ArrowLeftRight, FileText, HandCoins, Warehouse, Fish } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
@@ -302,6 +302,24 @@ const NAV_ITEMS: AppNavItem[] = [
       || canView(permissions, "inventario_movimientos"),
   },
   {
+    to: "/inventario/gestion-pescado",
+    label: "Gestión Pescado",
+    icon: <Fish className="h-5 w-5" />,
+    group: "INVENTARIO",
+    tone: {
+      active: "from-sky-500 to-blue-400",
+      idle: "hover:border-sky-200 hover:bg-sky-50/90 hover:text-sky-700",
+      iconIdle: "bg-sky-50 text-sky-600",
+    },
+    visible: (permissions) =>
+      canOperate(permissions, "gestion_pescado")
+      || canView(permissions, "gestion_pescado")
+      || canOperate(permissions, "bodega_general")
+      || canView(permissions, "bodega_general")
+      || canManage(permissions, "admin_global")
+      || canManage(permissions, "admin_sucursal"),
+  },
+  {
     to: "/reportes",
     label: "Reportes",
     icon: <BarChart3 className="h-5 w-5" />,
@@ -414,6 +432,13 @@ export function useVisibleNavItems() {
       isGlobalAdmin
       || canOperate(permissions, "inventario_movimientos")
       || canView(permissions, "inventario_movimientos");
+    const canAccessGestionPescado =
+      isGlobalAdmin
+      || canOperate(permissions, "gestion_pescado")
+      || canView(permissions, "gestion_pescado")
+      || canAccessBodegaGeneral
+      || canManage(permissions, "admin_global")
+      || canManage(permissions, "admin_sucursal");
     const canAccessInventarioPath = (path: string) => {
       if (path === "/inventario/bodega-general" || path.startsWith("/inventario/bodega-general/")) {
         return canAccessBodegaGeneral;
@@ -423,6 +448,9 @@ export function useVisibleNavItems() {
       }
       if (path === "/inventario/nevera" || path.startsWith("/inventario/nevera/")) {
         return canAccessInventarioNevera;
+      }
+      if (path === "/inventario/gestion-pescado" || path.startsWith("/inventario/gestion-pescado/")) {
+        return canAccessGestionPescado;
       }
       // Rutas legacy
       if (path === "/inventario/productos") return canAccessProductosSucursal;

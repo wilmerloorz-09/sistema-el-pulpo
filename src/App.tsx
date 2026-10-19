@@ -60,6 +60,7 @@ import Inventario from "./pages/Inventario";
 import InventarioBodegaGeneral from "./pages/InventarioBodegaGeneral";
 import InventarioBodegaSucursal from "./pages/InventarioBodegaSucursal";
 import InventarioNevera from "./pages/InventarioNevera";
+import InventarioGestionPescado from "./pages/InventarioGestionPescado";
 import MonitoreoGlobal from "./pages/MonitoreoGlobal";
 import NotFound from "./pages/NotFound";
 import PrintCashReport from "./pages/PrintCashReport";
@@ -700,6 +701,14 @@ const App = () => (
                   element={
                     <ProtectedRoute allowedModules={["inventario_movimientos", "admin_global"]}>
                       <InventarioNevera />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/inventario/gestion-pescado"
+                  element={
+                    <ProtectedRoute allowedModules={["gestion_pescado", "bodega_general", "admin_global", "admin_sucursal"]}>
+                      <InventarioGestionPescado />
                     </ProtectedRoute>
                   }
                 />
