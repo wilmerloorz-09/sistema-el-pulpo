@@ -1,6 +1,7 @@
 /**
  * Restricción temporal de menú por usuario.
- * Por ahora: admin1 no ve ni entra a FINANZAS, INVENTARIO ni ADMINISTRACIÓN.
+ * Por ahora: admin1 no ve ni entra a FINANZAS, INVENTARIO ni ADMINISTRACIÓN,
+ * excepto Turno y Forzar cierre de turno.
  */
 const TEMP_RESTRICTED_USERNAMES = new Set(["admin1"]);
 const TEMP_RESTRICTED_EMAILS = new Set(["admin1@elpulpo.com"]);
@@ -10,6 +11,12 @@ const BLOCKED_NAV_GROUPS = new Set([
   "INVENTARIO",
   "ADMINISTRACIÓN",
 ]);
+
+/** Ítems de ADMINISTRACIÓN que sí puede ver/usar el usuario restringido. */
+const ALLOWED_ADMIN_PATHS = [
+  "/turno",
+  "/forzar-cierre-turno",
+] as const;
 
 export type MenuRestrictionProfile = {
   username?: string | null;
@@ -24,6 +31,28 @@ export function isTemporarilyMenuRestrictedUser(profile: MenuRestrictionProfile)
   return false;
 }
 
+function normalizePath(pathname: string): string {
+  return (pathname.split("?")[0] || "/").replace(/\/+$/, "") || "/";
+}
+
+export function isAllowedAdminPathForRestrictedUser(pathname: string): boolean {
+  const path = normalizePath(pathname);
+  return ALLOWED_ADMIN_PATHS.some((allowed) => path === allowed || path.startsWith(`${allowed}/`));
+}
+
+export function isNavItemBlockedForUser(
+  item: { group: string; to: string },
+  profile: MenuRestrictionProfile,
+): boolean {
+  if (!isTemporarilyMenuRestrictedUser(profile)) return false;
+  if (!BLOCKED_NAV_GROUPS.has(item.group)) return false;
+  if (item.group === "ADMINISTRACIÓN" && isAllowedAdminPathForRestrictedUser(item.to)) {
+    return false;
+  }
+  return true;
+}
+
+/** @deprecated Prefer isNavItemBlockedForUser; se mantiene por compatibilidad. */
 export function isNavGroupBlockedForUser(
   group: string,
   profile: MenuRestrictionProfile,
@@ -38,7 +67,12 @@ export function isPathBlockedForRestrictedUser(
 ): boolean {
   if (!isTemporarilyMenuRestrictedUser(profile)) return false;
 
-  const path = pathname.split("?")[0] || "/";
+  const path = normalizePath(pathname);
+
+  // Excepción: Turno y Forzar cierre de turno.
+  if (isAllowedAdminPathForRestrictedUser(path)) {
+    return false;
+  }
 
   // FINANZAS
   if (
@@ -57,14 +91,10 @@ export function isPathBlockedForRestrictedUser(
     return true;
   }
 
-  // ADMINISTRACIÓN
+  // ADMINISTRACIÓN (resto)
   if (
     path === "/reportes"
     || path.startsWith("/reportes/")
-    || path === "/turno"
-    || path.startsWith("/turno/")
-    || path === "/forzar-cierre-turno"
-    || path.startsWith("/forzar-cierre-turno/")
     || path === "/admin"
     || path.startsWith("/admin/")
     || path === "/personal"
@@ -81,7 +111,7 @@ export function isPathBlockedForRestrictedUser(
 export function safeHomePathForRestrictedUser(candidates: Array<string | null | undefined>): string {
   for (const candidate of candidates) {
     if (!candidate) continue;
-    const path = candidate.split("?")[0] || candidate;
+    const path = normalizePath(candidate);
     if (!isPathBlockedForRestrictedUser(path, { username: "admin1" })) {
       return candidate;
     }

@@ -210,6 +210,7 @@ const ProtectedRoute = ({
         preferredPath,
         firstVisiblePath,
         visibleItems[0]?.to,
+        "/turno",
         "/mesas",
         "/ordenes",
       ]);

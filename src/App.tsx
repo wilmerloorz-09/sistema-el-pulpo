@@ -342,7 +342,7 @@ const HomeRedirect = () => {
       : null;
 
   const fallbackHome = isTemporarilyMenuRestrictedUser(profile)
-    ? (safeFirstVisible ?? "/mesas")
+    ? (safeFirstVisible ?? "/turno")
     : (canAccessAdmin ? "/admin" : "/turno");
 
   return (

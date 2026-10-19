@@ -25,7 +25,11 @@ export function usePreferredHomePath() {
       || canView(permissions, "admin_sucursal")
       || canView(permissions, "admin_global")
     );
-    const canAccessTurno = !menuRestricted && (canAccessAdmin || canView(permissions, "turno"));
+    // admin1 sí puede Turno / Forzar cierre aunque el resto de Administración esté bloqueado.
+    const canAccessTurno =
+      canAccessAdmin
+      || canView(permissions, "turno")
+      || (menuRestricted && (isGlobalAdmin || canView(permissions, "admin_global") || canView(permissions, "admin_sucursal")));
     const isGlobalAdminWithoutBranches = isGlobalAdmin && branches.length === 0;
     const gate = shiftGateQuery.data;
     const hasSupervisorBypass = Boolean(gate?.isSupervisor) || (isGlobalAdmin && !menuRestricted);
@@ -44,7 +48,10 @@ export function usePreferredHomePath() {
     } else if (isGlobalAdminWithoutBranches) {
       preferredPath = "/admin";
     } else if (!gate?.shiftOpen || !gate?.userEnabled) {
-      preferredPath = canAccessAdmin ? "/admin" : (canAccessTurno ? "/turno" : (menuRestricted ? safeHomePathForRestrictedUser([visibleItems[0]?.to, "/mesas"]) : null));
+      if (canAccessAdmin) preferredPath = "/admin";
+      else if (canAccessTurno) preferredPath = "/turno";
+      else if (menuRestricted) preferredPath = safeHomePathForRestrictedUser([visibleItems[0]?.to, "/mesas"]);
+      else preferredPath = null;
     } else if (gate?.isCaptureDeviceOnly) {
       preferredPath = menuRestricted ? safeHomePathForRestrictedUser(["/mesas", "/ordenes"]) : "/caja";
     } else if (!hasSupervisorBypass && gate?.canPackOrders) {
@@ -70,6 +77,7 @@ export function usePreferredHomePath() {
         visibleItems[0]?.to,
         "/mesas",
         "/ordenes",
+        "/turno",
       ]);
     }
 

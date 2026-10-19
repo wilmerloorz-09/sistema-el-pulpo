@@ -6,7 +6,7 @@ import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { useDispatchAccess } from "@/hooks/useDispatchAccess";
 import { useAuxiliaryCashAssignment } from "@/hooks/useAuxiliaryCash";
 import { canSeeCajaFinanceNav, isCajaFinanceNavPath } from "@/components/nav/cajaTerminalNav";
-import { isNavGroupBlockedForUser } from "@/lib/menuAccessRestrictions";
+import { isNavItemBlockedForUser } from "@/lib/menuAccessRestrictions";
 import { canManage, canView, canOperate } from "@/lib/permissions";
 
 /** Ocultar sección PROMOCIONES del menú hasta habilitarla en producción. */
@@ -443,8 +443,9 @@ export function useVisibleNavItems() {
         return false;
       }
 
-      // Restricción temporal: admin1 sin FINANZAS / INVENTARIO / ADMINISTRACIÓN.
-      if (isNavGroupBlockedForUser(item.group, profile)) {
+      // Restricción temporal: admin1 sin FINANZAS / INVENTARIO / ADMINISTRACIÓN
+      // (excepto Turno y Forzar cierre de turno).
+      if (isNavItemBlockedForUser(item, profile)) {
         return false;
       }
 
