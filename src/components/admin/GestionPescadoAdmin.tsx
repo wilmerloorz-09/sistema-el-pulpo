@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2 } from "lucide-react";
+import { Loader2, Minus, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useBranch } from "@/contexts/BranchContext";
@@ -297,23 +297,47 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label>Cantidad de bandejas</Label>
-                <Input
-                  inputMode="numeric"
-                  value={cantBandejas}
-                  onChange={(e) => setCantBandejas(e.target.value.replace(/[^\d]/g, ""))}
-                  placeholder="Ej. 4"
-                />
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="h-10 w-10 shrink-0 rounded-xl"
+                    disabled={bandejasCount <= 0}
+                    onClick={() => setCantBandejas(String(Math.max(0, bandejasCount - 1)))}
+                    aria-label="Disminuir bandejas"
+                  >
+                    <Minus className="h-4 w-4" />
+                  </Button>
+                  <Input
+                    inputMode="numeric"
+                    value={cantBandejas}
+                    onChange={(e) => setCantBandejas(e.target.value.replace(/[^\d]/g, ""))}
+                    placeholder="0"
+                    className="text-center"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="h-10 w-10 shrink-0 rounded-xl"
+                    onClick={() => setCantBandejas(String(bandejasCount + 1))}
+                    aria-label="Aumentar bandejas"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
                 <p className="text-xs text-muted-foreground">Cada bandeja pesa {formatLb(PESO_BANDEJA_LB)} lb (descuento: {formatLb(descuentoBandejasLb)} lb).</p>
               </div>
-              <div className="space-y-2 rounded-2xl border border-amber-200 bg-amber-50/70 p-3">
-                <Label className="text-amber-900">Cantidad Total (lb)</Label>
+              <div className="space-y-2 rounded-2xl border border-emerald-200 bg-emerald-50/70 p-3">
+                <Label className="text-emerald-900">Cantidad Total (lb)</Label>
                 <Input
                   readOnly
                   value={verificadaLb > 0 ? formatLb(cantidadTotalLb) : ""}
                   placeholder="Automático"
-                  className="h-11 border-amber-200 bg-white text-center text-xl font-bold text-amber-900 placeholder:text-muted-foreground"
+                  className="h-11 border-emerald-200 bg-white text-center text-xl font-bold text-emerald-800 placeholder:text-muted-foreground"
                 />
-                <p className="text-xs text-amber-800">
+                <p className="text-xs text-emerald-800">
                   Verificada {formatLb(verificadaLb)} lb − bandejas {formatLb(descuentoBandejasLb)} lb · Esto ingresa al stock
                 </p>
               </div>
