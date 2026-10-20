@@ -370,7 +370,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
               <Label>Origen</Label>
               <Select value={origenIngreso} onValueChange={setOrigenIngreso}>
                 <SelectTrigger className="rounded-2xl"><SelectValue /></SelectTrigger>
-                <SelectContent><SelectItem value="PREPARACION_INICIAL">Preparación inicial</SelectItem><SelectItem value="PREPARACION_EXTRA">Preparación extra</SelectItem></SelectContent>
+                <SelectContent><SelectItem value="PREPARACION_INICIAL">Preparación inicial</SelectItem><SelectItem value="PREPARACION_EXTRA">Preparación extra</SelectItem><SelectItem value="OTROS">Otros</SelectItem></SelectContent>
               </Select>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
@@ -547,7 +547,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
       <section className="space-y-2">
         <h3 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">Ingresos</h3>
         <div className="overflow-x-auto rounded-2xl border"><table className="w-full min-w-[820px] text-left text-sm"><thead className="bg-muted/50 text-xs uppercase"><tr><th className="px-3 py-2">Fecha</th><th className="px-3 py-2">Origen</th><th className="px-3 py-2">Entregada lb</th><th className="px-3 py-2">Verificada lb</th><th className="px-3 py-2">Bandejas</th><th className="px-3 py-2">Total lb</th><th className="px-3 py-2">Merma lb</th><th className="px-3 py-2">Quién / Obs.</th></tr></thead><tbody>
-          {(h?.ingresos ?? []).map((r) => <tr key={r.id} className="border-t"><td className="px-3 py-2">{fecha(r.creado_en)}</td><td className="px-3 py-2">{r.origen === "PREPARACION_INICIAL" ? "Preparación inicial" : "Preparación extra"}</td><td className="px-3 py-2">{formatLb(r.cantidad_entregada_lb)}</td><td className="px-3 py-2">{formatLb(r.cantidad_verificada_lb)}</td><td className="px-3 py-2">{r.cantidad_bandejas ?? 0} ({formatLb(r.descuento_bandejas_lb)} lb)</td><td className="px-3 py-2 font-semibold">{formatLb(r.cantidad_total_lb ?? r.cantidad_verificada_lb)}</td><td className="px-3 py-2">{formatLb(r.merma_lb)}</td><td className="px-3 py-2 text-muted-foreground">{r.registrado_por_nombre ?? "—"}{r.observacion ? ` · ${r.observacion}` : ""}</td></tr>)}
+          {(h?.ingresos ?? []).map((r) => <tr key={r.id} className="border-t"><td className="px-3 py-2">{fecha(r.creado_en)}</td><td className="px-3 py-2">{r.origen === "PREPARACION_INICIAL" ? "Preparación inicial" : r.origen === "PREPARACION_EXTRA" ? "Preparación extra" : "Otros"}</td><td className="px-3 py-2">{formatLb(r.cantidad_entregada_lb)}</td><td className="px-3 py-2">{formatLb(r.cantidad_verificada_lb)}</td><td className="px-3 py-2">{r.cantidad_bandejas ?? 0} ({formatLb(r.descuento_bandejas_lb)} lb)</td><td className="px-3 py-2 font-semibold">{formatLb(r.cantidad_total_lb ?? r.cantidad_verificada_lb)}</td><td className="px-3 py-2">{formatLb(r.merma_lb)}</td><td className="px-3 py-2 text-muted-foreground">{r.registrado_por_nombre ?? "—"}{r.observacion ? ` · ${r.observacion}` : ""}</td></tr>)}
           {(h?.ingresos ?? []).length === 0 && <tr><td className="px-3 py-4 text-muted-foreground" colSpan={8}>Sin ingresos aún.</td></tr>}
         </tbody></table></div>
       </section>
