@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -9,573 +9,344 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
-function parseLibras(raw: string): number {
-  const normalized = String(raw ?? "").trim().replace(",", ".");
-  if (!normalized) return 0;
-  const n = Number(normalized);
-  return Number.isFinite(n) && n > 0 ? Math.round(n * 1000) / 1000 : 0;
-}
+export type GestionPescadoSection = "sucursales" | "ingreso-salida" | "movimientos" | "historial";
 
+const GRAMOS_POR_LIBRA = 453.59237;
+type Unidad = "LIBRAS" | "GRAMOS";
+
+function parseCantidad(raw: string): number {
+  const n = Number(String(raw ?? "").trim().replace(",", "."));
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+function aLibras(cantidad: number, unidad: Unidad): number {
+  const lb = unidad === "GRAMOS" ? cantidad / GRAMOS_POR_LIBRA : cantidad;
+  return Math.round(lb * 1000) / 1000;
+}
 function formatLb(value: number | string | null | undefined): string {
   const n = Number(value ?? 0);
-  if (!Number.isFinite(n)) return "0";
-  return n.toLocaleString("es-EC", { minimumFractionDigits: 0, maximumFractionDigits: 3 });
+  return Number.isFinite(n) ? n.toLocaleString("es-EC", { maximumFractionDigits: 3 }) : "0";
+}
+function formatG(valueLb: number | string | null | undefined): string {
+  const n = Number(valueLb ?? 0) * GRAMOS_POR_LIBRA;
+  return Number.isFinite(n) ? n.toLocaleString("es-EC", { maximumFractionDigits: 0 }) : "0";
+}
+function fecha(value: string) {
+  return new Date(value).toLocaleString("es-EC");
 }
 
-type StockRow = {
-  ambito: string;
-  sucursal_id: string | null;
-  sucursal_nombre: string;
-  cantidad_libras: number;
-};
+type StockRow = { ambito: string; sucursal_id: string | null; sucursal_nombre: string; cantidad_libras: number };
 
-type EntregaRow = {
-  id: string;
-  peso_entrega_lb: number;
-  entregado_por_nombre: string | null;
-  notas: string | null;
-  estado: string;
-  creado_en: string;
-};
+function UnidadSelect({ value, onChange }: { value: Unidad; onChange: (v: Unidad) => void }) {
+  return (
+    <Select value={value} onValueChange={(v) => onChange(v as Unidad)}>
+      <SelectTrigger className="rounded-2xl"><SelectValue /></SelectTrigger>
+      <SelectContent>
+        <SelectItem value="LIBRAS">Libras</SelectItem>
+        <SelectItem value="GRAMOS">Gramos</SelectItem>
+      </SelectContent>
+    </Select>
+  );
+}
 
-export default function GestionPescadoAdmin() {
+export default function GestionPescadoAdmin({ section }: { section: GestionPescadoSection }) {
   const { branches, activeBranchId, permissions, isGlobalAdmin } = useBranch();
   const qc = useQueryClient();
 
-  const canOperateFull =
-    isGlobalAdmin
-    || canOperate(permissions, "gestion_pescado")
-    || canOperate(permissions, "bodega_general")
-    || canManage(permissions, "admin_global");
-
-  const canDevolver =
-    canOperateFull
-    || canManage(permissions, "admin_sucursal")
-    || canView(permissions, "gestion_pescado");
-
-  const [pesoEntrega, setPesoEntrega] = useState("");
-  const [notasEntrega, setNotasEntrega] = useState("");
-  const [entregaRecepcionId, setEntregaRecepcionId] = useState("");
-  const [pesoRecepcion, setPesoRecepcion] = useState("");
-  const [notasRecepcion, setNotasRecepcion] = useState("");
-  const [envioSucursalId, setEnvioSucursalId] = useState("");
-  const [envioCantidad, setEnvioCantidad] = useState("");
-  const [envioNotas, setEnvioNotas] = useState("");
-  const [devolSucursalId, setDevolSucursalId] = useState(activeBranchId ?? "");
-  const [devolCantidad, setDevolCantidad] = useState("");
-  const [devolNotas, setDevolNotas] = useState("");
+  const canOperateFull = isGlobalAdmin || canOperate(permissions, "gestion_pescado") || canOperate(permissions, "bodega_general") || canManage(permissions, "admin_global");
+  const canMoveFromBranch = canOperateFull || canManage(permissions, "admin_sucursal") || canView(permissions, "gestion_pescado");
 
   const stockQuery = useQuery({
     queryKey: ["pescado-stock"],
     queryFn: async () => {
       const { data, error } = await supabase.rpc("listar_stock_pescado" as any);
       if (error) throw error;
-      return ((data as StockRow[]) ?? []).map((r) => ({
-        ...r,
-        cantidad_libras: Number(r.cantidad_libras ?? 0),
-      }));
+      return ((data as unknown as StockRow[]) ?? []).map((r) => ({ ...r, cantidad_libras: Number(r.cantidad_libras ?? 0) }));
     },
   });
 
-  const entregasQuery = useQuery({
-    queryKey: ["pescado-entregas"],
+  const historialQuery = useQuery({
+    queryKey: ["pescado-historial-completo"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("pescado_entregas" as any)
-        .select("id, peso_entrega_lb, entregado_por_nombre, notas, estado, creado_en")
-        .order("creado_en", { ascending: false })
-        .limit(50);
-      if (error) throw error;
-      return ((data as unknown as EntregaRow[]) ?? []);
+      const [ing, sal, tra, mov] = await Promise.all([
+        supabase.from("pescado_ingresos" as any).select("id, origen, cantidad_entregada_lb, cantidad_verificada_lb, merma_lb, registrado_por_nombre, observacion, creado_en").order("creado_en", { ascending: false }).limit(60),
+        supabase.from("pescado_salidas" as any).select("id, cantidad_lb, motivo, registrado_por_nombre, observacion, creado_en").order("creado_en", { ascending: false }).limit(60),
+        supabase.from("pescado_traslados" as any).select("id, desde_ambito, desde_sucursal_id, hasta_ambito, hasta_sucursal_id, cantidad_lb, registrado_por_nombre, observacion, creado_en").order("creado_en", { ascending: false }).limit(60),
+        supabase.from("pescado_movimientos" as any).select("id, tipo_movimiento, ambito, sucursal_id, cantidad_lb, cantidad_anterior, cantidad_nueva, registrado_por_nombre, notas, creado_en").order("creado_en", { ascending: false }).limit(100),
+      ]);
+      if (ing.error) throw ing.error;
+      if (sal.error) throw sal.error;
+      if (tra.error) throw tra.error;
+      if (mov.error) throw mov.error;
+      return {
+        ingresos: (ing.data as unknown as any[]) ?? [],
+        salidas: (sal.data as unknown as any[]) ?? [],
+        traslados: (tra.data as unknown as any[]) ?? [],
+        movimientos: (mov.data as unknown as any[]) ?? [],
+      };
     },
-    enabled: canOperateFull,
-  });
-
-  const movimientosQuery = useQuery({
-    queryKey: ["pescado-movimientos"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("pescado_movimientos" as any)
-        .select("id, tipo_movimiento, ambito, sucursal_id, cantidad_lb, cantidad_anterior, cantidad_nueva, registrado_por_nombre, notas, creado_en")
-        .order("creado_en", { ascending: false })
-        .limit(80);
-      if (error) throw error;
-      return ((data as unknown as any[]) ?? []);
-    },
-  });
-
-  const enviosQuery = useQuery({
-    queryKey: ["pescado-envios"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("pescado_envios" as any)
-        .select("id, sucursal_destino_id, cantidad_lb, enviado_por_nombre, notas, creado_en")
-        .order("creado_en", { ascending: false })
-        .limit(40);
-      if (error) throw error;
-      return ((data as unknown as any[]) ?? []);
-    },
-  });
-
-  const devolucionesQuery = useQuery({
-    queryKey: ["pescado-devoluciones"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("pescado_devoluciones" as any)
-        .select("id, sucursal_id, cash_shift_id, cantidad_lb, registrado_por_nombre, notas, creado_en")
-        .order("creado_en", { ascending: false })
-        .limit(40);
-      if (error) throw error;
-      return ((data as unknown as any[]) ?? []);
-    },
+    enabled: section === "historial",
   });
 
   const invalidateAll = async () => {
     await Promise.all([
       qc.invalidateQueries({ queryKey: ["pescado-stock"] }),
-      qc.invalidateQueries({ queryKey: ["pescado-entregas"] }),
-      qc.invalidateQueries({ queryKey: ["pescado-movimientos"] }),
-      qc.invalidateQueries({ queryKey: ["pescado-envios"] }),
-      qc.invalidateQueries({ queryKey: ["pescado-devoluciones"] }),
+      qc.invalidateQueries({ queryKey: ["pescado-historial-completo"] }),
     ]);
   };
 
-  const entregaMut = useMutation({
+  const branchName = (id: string | null | undefined) => branches.find((b) => b.id === id)?.name ?? "—";
+  const ubicacionLabel = (ambito: string, sucursalId: string | null) => ambito === "CENTRAL" ? "Bodega General" : branchName(sucursalId);
+
+  // Ingreso / Salida
+  const [tipo, setTipo] = useState<"INGRESO" | "SALIDA">("INGRESO");
+  const [origenIngreso, setOrigenIngreso] = useState("PREPARACION_INICIAL");
+  const [cantEntregada, setCantEntregada] = useState("");
+  const [unidadEntregada, setUnidadEntregada] = useState<Unidad>("LIBRAS");
+  const [cantVerificada, setCantVerificada] = useState("");
+  const [unidadVerificada, setUnidadVerificada] = useState<Unidad>("LIBRAS");
+  const [obsIngreso, setObsIngreso] = useState("");
+  const [cantSalida, setCantSalida] = useState("");
+  const [unidadSalida, setUnidadSalida] = useState<Unidad>("LIBRAS");
+  const [motivoSalida, setMotivoSalida] = useState("DANO_PRODUCTO");
+  const [obsSalida, setObsSalida] = useState("");
+
+  const ingresoMut = useMutation({
     mutationFn: async () => {
-      const peso = parseLibras(pesoEntrega);
-      if (!peso) throw new Error("Ingresa el peso de entrega en libras");
-      const { error } = await supabase.rpc("registrar_entrega_pescado" as any, {
-        p_peso_entrega_lb: peso,
-        p_notas: notasEntrega.trim() || null,
+      const entregadaRaw = parseCantidad(cantEntregada);
+      const verificadaRaw = parseCantidad(cantVerificada);
+      if (!entregadaRaw) throw new Error("Ingresa la cantidad entregada");
+      if (!verificadaRaw) throw new Error("Ingresa la cantidad verificada");
+      const { error } = await supabase.rpc("registrar_ingreso_pescado" as any, {
+        p_origen: origenIngreso,
+        p_cantidad_entregada_lb: aLibras(entregadaRaw, unidadEntregada),
+        p_cantidad_verificada_lb: aLibras(verificadaRaw, unidadVerificada),
+        p_observacion: obsIngreso.trim() || null,
       });
       if (error) throw error;
     },
-    onSuccess: async () => {
-      toast.success("Entrega registrada. Pendiente de recepción.");
-      setPesoEntrega("");
-      setNotasEntrega("");
-      await invalidateAll();
-    },
-    onError: (e: any) => toast.error(e?.message ?? "No se pudo registrar la entrega"),
+    onSuccess: async () => { toast.success("Ingreso registrado en Bodega General."); setCantEntregada(""); setCantVerificada(""); setObsIngreso(""); await invalidateAll(); },
+    onError: (e: any) => toast.error(e?.message ?? "No se pudo registrar el ingreso"),
   });
 
-  const pendientes = useMemo(
-    () => (entregasQuery.data ?? []).filter((e) => e.estado === "PENDIENTE_RECEPCION"),
-    [entregasQuery.data],
-  );
-
-  const recepcionMut = useMutation({
+  const salidaMut = useMutation({
     mutationFn: async () => {
-      if (!entregaRecepcionId) throw new Error("Selecciona la entrega a recibir");
-      const peso = parseLibras(pesoRecepcion);
-      if (!peso) throw new Error("Ingresa el peso de recepción en libras");
-      const { error } = await supabase.rpc("registrar_recepcion_pescado" as any, {
-        p_entrega_id: entregaRecepcionId,
-        p_peso_recepcion_lb: peso,
-        p_notas: notasRecepcion.trim() || null,
+      const raw = parseCantidad(cantSalida);
+      if (!raw) throw new Error("Ingresa la cantidad");
+      const { error } = await supabase.rpc("registrar_salida_pescado" as any, {
+        p_cantidad_lb: aLibras(raw, unidadSalida),
+        p_motivo: motivoSalida,
+        p_observacion: obsSalida.trim() || null,
       });
       if (error) throw error;
     },
-    onSuccess: async () => {
-      toast.success("Recepción confirmada. Stock central actualizado.");
-      setEntregaRecepcionId("");
-      setPesoRecepcion("");
-      setNotasRecepcion("");
-      await invalidateAll();
-    },
-    onError: (e: any) => toast.error(e?.message ?? "No se pudo registrar la recepción"),
+    onSuccess: async () => { toast.success("Salida registrada."); setCantSalida(""); setObsSalida(""); await invalidateAll(); },
+    onError: (e: any) => toast.error(e?.message ?? "No se pudo registrar la salida"),
   });
 
-  const envioMut = useMutation({
+  // Movimientos
+  const p1Default = useMemo(() => {
+    const p1 = branches.find((b) => /pulpo 1 - ma[ñn]ana/i.test(b.name)) ?? branches.find((b) => /pulpo 1/i.test(b.name)) ?? branches[0];
+    return p1?.id ?? "";
+  }, [branches]);
+  const [desde, setDesde] = useState("CENTRAL");
+  const [hasta, setHasta] = useState("");
+  const [cantMov, setCantMov] = useState("");
+  const [unidadMov, setUnidadMov] = useState<Unidad>("GRAMOS");
+  const [obsMov, setObsMov] = useState("");
+
+  useEffect(() => {
+    if (!hasta && p1Default) setHasta(p1Default);
+  }, [hasta, p1Default]);
+
+  const parseUbicacion = (value: string): { ambito: string; sucursalId: string | null } =>
+    value === "CENTRAL" ? { ambito: "CENTRAL", sucursalId: null } : { ambito: "SUCURSAL", sucursalId: value };
+
+  const trasladoMut = useMutation({
     mutationFn: async () => {
-      if (!envioSucursalId) throw new Error("Selecciona la sucursal destino");
-      const qty = parseLibras(envioCantidad);
-      if (!qty) throw new Error("Ingresa la cantidad en libras");
-      const { error } = await supabase.rpc("enviar_pescado_sucursal" as any, {
-        p_sucursal_destino_id: envioSucursalId,
-        p_cantidad_lb: qty,
-        p_notas: envioNotas.trim() || null,
+      if (!desde || !hasta) throw new Error("Selecciona desde y hasta");
+      if (desde === hasta) throw new Error("El origen y el destino deben ser diferentes");
+      const raw = parseCantidad(cantMov);
+      if (!raw) throw new Error("Ingresa la cantidad");
+      const d = parseUbicacion(desde);
+      const h = parseUbicacion(hasta);
+      const { error } = await supabase.rpc("trasladar_pescado" as any, {
+        p_desde_ambito: d.ambito,
+        p_desde_sucursal_id: d.sucursalId,
+        p_hasta_ambito: h.ambito,
+        p_hasta_sucursal_id: h.sucursalId,
+        p_cantidad_lb: aLibras(raw, unidadMov),
+        p_observacion: obsMov.trim() || null,
       });
       if (error) throw error;
     },
-    onSuccess: async () => {
-      toast.success("Envío registrado.");
-      setEnvioCantidad("");
-      setEnvioNotas("");
-      await invalidateAll();
-    },
-    onError: (e: any) => toast.error(e?.message ?? "No se pudo enviar"),
+    onSuccess: async () => { toast.success("Movimiento registrado. Stocks actualizados."); setCantMov(""); setObsMov(""); await invalidateAll(); },
+    onError: (e: any) => toast.error(e?.message ?? "No se pudo registrar el movimiento"),
   });
 
-  const devolMut = useMutation({
-    mutationFn: async () => {
-      const sucursal = devolSucursalId || activeBranchId;
-      if (!sucursal) throw new Error("Selecciona la sucursal");
-      const qty = parseLibras(devolCantidad);
-      if (!qty) throw new Error("Ingresa la cantidad en libras");
-      const { error } = await supabase.rpc("devolver_pescado_a_central" as any, {
-        p_sucursal_id: sucursal,
-        p_cantidad_lb: qty,
-        p_cash_shift_id: null,
-        p_notas: devolNotas.trim() || null,
-      });
-      if (error) throw error;
-    },
-    onSuccess: async () => {
-      toast.success("Devolución registrada. Stock central actualizado.");
-      setDevolCantidad("");
-      setDevolNotas("");
-      await invalidateAll();
-    },
-    onError: (e: any) => toast.error(e?.message ?? "No se pudo devolver"),
-  });
-
-  const branchName = (id: string | null | undefined) =>
-    branches.find((b) => b.id === id)?.name ?? id ?? "—";
+  const ubicaciones = useMemo(() => [
+    { value: "CENTRAL", label: "Bodega General" },
+    ...branches.map((b) => ({ value: b.id, label: b.name })),
+  ], [branches]);
 
   const stockCentral = (stockQuery.data ?? []).find((r) => r.ambito === "CENTRAL");
-  const stocksSucursal = (stockQuery.data ?? []).filter((r) => r.ambito === "SUCURSAL");
+  const stockMap = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const row of stockQuery.data ?? []) {
+      if (row.sucursal_id) map.set(row.sucursal_id, row.cantidad_libras);
+    }
+    return map;
+  }, [stockQuery.data]);
 
+  if (section === "sucursales") {
+    return (
+      <div className="space-y-4">
+        <Card className="rounded-[24px] border border-sky-200 bg-gradient-to-br from-sky-50 via-white to-blue-50 p-4 shadow-sm sm:p-5">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">Bodega General</p>
+          <p className="mt-1 font-display text-3xl font-black text-sky-950">
+            {stockQuery.isLoading ? "…" : formatLb(stockCentral?.cantidad_libras)} <span className="text-base font-semibold text-sky-700">lb</span>
+            <span className="ml-2 text-base font-semibold text-muted-foreground">({formatG(stockCentral?.cantidad_libras)} g)</span>
+          </p>
+        </Card>
+        <div className="overflow-x-auto rounded-2xl border">
+          <table className="w-full min-w-[520px] text-left text-sm">
+            <thead className="bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">
+              <tr><th className="px-3 py-2">Sucursal</th><th className="px-3 py-2">Stock (lb)</th><th className="px-3 py-2">Stock (g)</th><th className="px-3 py-2">Estado</th></tr>
+            </thead>
+            <tbody>
+              {branches.map((b) => {
+                const qty = stockMap.get(b.id) ?? 0;
+                return (
+                  <tr key={b.id} className="border-t">
+                    <td className="px-3 py-2 font-medium">{b.name}</td>
+                    <td className="px-3 py-2 font-semibold">{formatLb(qty)}</td>
+                    <td className="px-3 py-2">{formatG(qty)}</td>
+                    <td className="px-3 py-2"><Badge variant="outline" className={cn(qty > 0 ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-slate-200 bg-slate-50 text-slate-600")}>{qty > 0 ? "Con stock" : "Sin stock"}</Badge></td>
+                  </tr>
+                );
+              })}
+              {branches.length === 0 && <tr><td className="px-3 py-4 text-muted-foreground" colSpan={4}>Sin sucursales.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
+
+  if (section === "ingreso-salida") {
+    if (!canOperateFull) return <p className="text-sm text-muted-foreground">Solo bodega general / administrador puede registrar ingresos y salidas.</p>;
+    return (
+      <Card className="rounded-[24px] border p-4 space-y-4">
+        <div className="space-y-2">
+          <Label>Tipo de movimiento</Label>
+          <Select value={tipo} onValueChange={(v) => setTipo(v as "INGRESO" | "SALIDA")}>
+            <SelectTrigger className="rounded-2xl"><SelectValue /></SelectTrigger>
+            <SelectContent><SelectItem value="INGRESO">Ingreso</SelectItem><SelectItem value="SALIDA">Salida</SelectItem></SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">Aplica a Bodega General.</p>
+        </div>
+
+        {tipo === "INGRESO" ? (
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <Label>Origen</Label>
+              <Select value={origenIngreso} onValueChange={setOrigenIngreso}>
+                <SelectTrigger className="rounded-2xl"><SelectValue /></SelectTrigger>
+                <SelectContent><SelectItem value="PREPARACION_INICIAL">Preparación inicial</SelectItem><SelectItem value="PREPARACION_EXTRA">Preparación extra</SelectItem></SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-2"><Label>Cantidad entregada</Label><Input inputMode="decimal" value={cantEntregada} onChange={(e) => setCantEntregada(e.target.value)} placeholder="Ej. 25.5" /></div>
+              <div className="space-y-2"><Label>Unidad</Label><UnidadSelect value={unidadEntregada} onChange={setUnidadEntregada} /></div>
+              <div className="space-y-2"><Label>Cantidad verificada</Label><Input inputMode="decimal" value={cantVerificada} onChange={(e) => setCantVerificada(e.target.value)} placeholder="Ej. 24.8" /></div>
+              <div className="space-y-2"><Label>Unidad</Label><UnidadSelect value={unidadVerificada} onChange={setUnidadVerificada} /></div>
+            </div>
+            <p className="text-xs text-muted-foreground">El stock de Bodega General aumenta con la cantidad verificada. La diferencia queda registrada como merma.</p>
+            <div className="space-y-2"><Label>Observación</Label><Textarea value={obsIngreso} onChange={(e) => setObsIngreso(e.target.value)} rows={2} /></div>
+            <Button className="rounded-2xl" disabled={ingresoMut.isPending} onClick={() => ingresoMut.mutate()}>{ingresoMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Registrar ingreso</Button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-2"><Label>Cantidad</Label><Input inputMode="decimal" value={cantSalida} onChange={(e) => setCantSalida(e.target.value)} /></div>
+              <div className="space-y-2"><Label>Unidad</Label><UnidadSelect value={unidadSalida} onChange={setUnidadSalida} /></div>
+            </div>
+            <div className="space-y-2">
+              <Label>Motivo</Label>
+              <Select value={motivoSalida} onValueChange={setMotivoSalida}>
+                <SelectTrigger className="rounded-2xl"><SelectValue /></SelectTrigger>
+                <SelectContent><SelectItem value="DANO_PRODUCTO">Daño del producto</SelectItem><SelectItem value="OTROS">Otros</SelectItem></SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2"><Label>Observación</Label><Textarea value={obsSalida} onChange={(e) => setObsSalida(e.target.value)} rows={2} /></div>
+            <Button className="rounded-2xl" disabled={salidaMut.isPending} onClick={() => salidaMut.mutate()}>{salidaMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Registrar salida</Button>
+          </div>
+        )}
+      </Card>
+    );
+  }
+
+  if (section === "movimientos") {
+    if (!canMoveFromBranch) return <p className="text-sm text-muted-foreground">No tienes permiso para registrar movimientos.</p>;
+    return (
+      <Card className="rounded-[24px] border p-4 space-y-4">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label>Desde</Label>
+            <Select value={desde} onValueChange={setDesde}><SelectTrigger className="rounded-2xl"><SelectValue /></SelectTrigger><SelectContent>{ubicaciones.map((u) => <SelectItem key={u.value} value={u.value}>{u.label}</SelectItem>)}</SelectContent></Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Hasta</Label>
+            <Select value={hasta} onValueChange={setHasta}><SelectTrigger className="rounded-2xl"><SelectValue placeholder="Destino…" /></SelectTrigger><SelectContent>{ubicaciones.map((u) => <SelectItem key={u.value} value={u.value}>{u.label}</SelectItem>)}</SelectContent></Select>
+          </div>
+          <div className="space-y-2"><Label>Cantidad</Label><Input inputMode="decimal" value={cantMov} onChange={(e) => setCantMov(e.target.value)} placeholder="Ej. 500" /></div>
+          <div className="space-y-2"><Label>Unidad de medida</Label><UnidadSelect value={unidadMov} onChange={setUnidadMov} /></div>
+        </div>
+        <div className="space-y-2"><Label>Observación</Label><Textarea value={obsMov} onChange={(e) => setObsMov(e.target.value)} rows={2} /></div>
+        <p className="text-xs text-muted-foreground">Se descuenta del origen y se suma al destino. No se permite dejar el origen en negativo.</p>
+        {!canOperateFull && <p className="text-xs text-amber-700">Como sucursal, solo puedes mover desde tu sucursal hacia Bodega General (devolución).</p>}
+        <Button className="rounded-2xl" disabled={trasladoMut.isPending} onClick={() => trasladoMut.mutate()}>{trasladoMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Registrar movimiento</Button>
+      </Card>
+    );
+  }
+
+  // historial
+  const h = historialQuery.data;
   return (
     <div className="space-y-6">
-      <Card className="rounded-[24px] border border-sky-200 bg-gradient-to-br from-sky-50 via-white to-blue-50 p-4 shadow-sm sm:p-5">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">Stock central</p>
-            <p className="mt-1 font-display text-3xl font-black text-sky-950">
-              {stockQuery.isLoading ? "…" : formatLb(stockCentral?.cantidad_libras)}{" "}
-              <span className="text-base font-semibold text-sky-700">lb</span>
-            </p>
-          </div>
-          <Badge variant="outline" className="border-sky-200 bg-white text-sky-800">
-            Separado de nevera / bodega productos
-          </Badge>
-        </div>
-      </Card>
-
-      <section className="space-y-3">
-        <h2 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">Stock por sucursal</h2>
-        {stockQuery.isLoading ? (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" /> Cargando…
-          </div>
-        ) : stocksSucursal.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Aún no hay stock en sucursales.</p>
-        ) : (
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {stocksSucursal.map((row) => (
-              <Card key={row.sucursal_id ?? row.sucursal_nombre} className="rounded-2xl border p-3">
-                <p className="text-sm font-semibold">{row.sucursal_nombre}</p>
-                <p className="mt-1 text-lg font-bold text-sky-800">{formatLb(row.cantidad_libras)} lb</p>
-              </Card>
-            ))}
-          </div>
-        )}
+      <section className="space-y-2">
+        <h3 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">Ingresos</h3>
+        <div className="overflow-x-auto rounded-2xl border"><table className="w-full min-w-[680px] text-left text-sm"><thead className="bg-muted/50 text-xs uppercase"><tr><th className="px-3 py-2">Fecha</th><th className="px-3 py-2">Origen</th><th className="px-3 py-2">Entregada lb</th><th className="px-3 py-2">Verificada lb</th><th className="px-3 py-2">Merma lb</th><th className="px-3 py-2">Quién / Obs.</th></tr></thead><tbody>
+          {(h?.ingresos ?? []).map((r) => <tr key={r.id} className="border-t"><td className="px-3 py-2">{fecha(r.creado_en)}</td><td className="px-3 py-2">{r.origen === "PREPARACION_INICIAL" ? "Preparación inicial" : "Preparación extra"}</td><td className="px-3 py-2">{formatLb(r.cantidad_entregada_lb)}</td><td className="px-3 py-2 font-semibold">{formatLb(r.cantidad_verificada_lb)}</td><td className="px-3 py-2">{formatLb(r.merma_lb)}</td><td className="px-3 py-2 text-muted-foreground">{r.registrado_por_nombre ?? "—"}{r.observacion ? ` · ${r.observacion}` : ""}</td></tr>)}
+          {(h?.ingresos ?? []).length === 0 && <tr><td className="px-3 py-4 text-muted-foreground" colSpan={6}>Sin ingresos aún.</td></tr>}
+        </tbody></table></div>
       </section>
-
-      {canOperateFull && (
-        <section className="grid gap-4 lg:grid-cols-2">
-          <Card className="rounded-[24px] border p-4 space-y-3">
-            <h3 className="font-display text-base font-bold">1. Registrar entrega</h3>
-            <p className="text-xs text-muted-foreground">
-              Quien entrega el pescado cocinado registra el peso en libras.
-            </p>
-            <div className="space-y-2">
-              <Label>Peso entrega (lb)</Label>
-              <Input
-                inputMode="decimal"
-                value={pesoEntrega}
-                onChange={(e) => setPesoEntrega(e.target.value)}
-                placeholder="Ej. 25.5"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Notas (opcional)</Label>
-              <Textarea value={notasEntrega} onChange={(e) => setNotasEntrega(e.target.value)} rows={2} />
-            </div>
-            <Button
-              className="rounded-2xl"
-              disabled={entregaMut.isPending}
-              onClick={() => entregaMut.mutate()}
-            >
-              {entregaMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              Registrar entrega
-            </Button>
-          </Card>
-
-          <Card className="rounded-[24px] border p-4 space-y-3">
-            <h3 className="font-display text-base font-bold">2. Registrar recepción</h3>
-            <p className="text-xs text-muted-foreground">
-              Quien recibe vuelve a pesar. El stock entra con este peso; la diferencia queda como merma.
-            </p>
-            <div className="space-y-2">
-              <Label>Entrega pendiente</Label>
-              <Select value={entregaRecepcionId} onValueChange={setEntregaRecepcionId}>
-                <SelectTrigger className="rounded-2xl">
-                  <SelectValue placeholder="Selecciona entrega…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {pendientes.map((e) => (
-                    <SelectItem key={e.id} value={e.id}>
-                      {formatLb(e.peso_entrega_lb)} lb · {e.entregado_por_nombre ?? "—"} ·{" "}
-                      {new Date(e.creado_en).toLocaleString("es-EC")}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Peso recepción (lb)</Label>
-              <Input
-                inputMode="decimal"
-                value={pesoRecepcion}
-                onChange={(e) => setPesoRecepcion(e.target.value)}
-                placeholder="Ej. 24.8"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Notas (opcional)</Label>
-              <Textarea value={notasRecepcion} onChange={(e) => setNotasRecepcion(e.target.value)} rows={2} />
-            </div>
-            <Button
-              className="rounded-2xl"
-              disabled={recepcionMut.isPending || pendientes.length === 0}
-              onClick={() => recepcionMut.mutate()}
-            >
-              {recepcionMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              Confirmar recepción
-            </Button>
-          </Card>
-        </section>
-      )}
-
-      {canOperateFull && (
-        <Card className="rounded-[24px] border p-4 space-y-3">
-          <h3 className="font-display text-base font-bold">3. Enviar a sucursal</h3>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div className="space-y-2">
-              <Label>Sucursal</Label>
-              <Select value={envioSucursalId} onValueChange={setEnvioSucursalId}>
-                <SelectTrigger className="rounded-2xl">
-                  <SelectValue placeholder="Destino…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {branches.map((b) => (
-                    <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Cantidad (lb)</Label>
-              <Input
-                inputMode="decimal"
-                value={envioCantidad}
-                onChange={(e) => setEnvioCantidad(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Notas</Label>
-              <Input value={envioNotas} onChange={(e) => setEnvioNotas(e.target.value)} />
-            </div>
-          </div>
-          <Button className="rounded-2xl" disabled={envioMut.isPending} onClick={() => envioMut.mutate()}>
-            {envioMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            Enviar
-          </Button>
-        </Card>
-      )}
-
-      {canDevolver && (
-        <Card className="rounded-[24px] border p-4 space-y-3">
-          <h3 className="font-display text-base font-bold">4. Devolver sobrante a central</h3>
-          <p className="text-xs text-muted-foreground">
-            Al cerrar turno, registra lo que sobra en la sucursal para reingresarlo a bodega pescado.
-          </p>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div className="space-y-2">
-              <Label>Sucursal</Label>
-              <Select
-                value={devolSucursalId || activeBranchId || ""}
-                onValueChange={setDevolSucursalId}
-                disabled={!canOperateFull && Boolean(activeBranchId)}
-              >
-                <SelectTrigger className="rounded-2xl">
-                  <SelectValue placeholder="Sucursal…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(canOperateFull ? branches : branches.filter((b) => b.id === activeBranchId)).map((b) => (
-                    <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Cantidad (lb)</Label>
-              <Input
-                inputMode="decimal"
-                value={devolCantidad}
-                onChange={(e) => setDevolCantidad(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Notas</Label>
-              <Input value={devolNotas} onChange={(e) => setDevolNotas(e.target.value)} />
-            </div>
-          </div>
-          <Button className="rounded-2xl" disabled={devolMut.isPending} onClick={() => devolMut.mutate()}>
-            {devolMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            Devolver a central
-          </Button>
-        </Card>
-      )}
-
-      <section className="space-y-3">
-        <h2 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">Entregas recientes</h2>
-        {!canOperateFull ? (
-          <p className="text-sm text-muted-foreground">Solo operadores de bodega/pescado ven entregas.</p>
-        ) : entregasQuery.isLoading ? (
-          <Loader2 className="h-4 w-4 animate-spin" />
-        ) : (
-          <div className="overflow-x-auto rounded-2xl border">
-            <table className="w-full min-w-[640px] text-left text-sm">
-              <thead className="bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">
-                <tr>
-                  <th className="px-3 py-2">Fecha</th>
-                  <th className="px-3 py-2">Entrega lb</th>
-                  <th className="px-3 py-2">Quién</th>
-                  <th className="px-3 py-2">Estado</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(entregasQuery.data ?? []).map((e) => (
-                  <tr key={e.id} className="border-t">
-                    <td className="px-3 py-2">{new Date(e.creado_en).toLocaleString("es-EC")}</td>
-                    <td className="px-3 py-2 font-semibold">{formatLb(e.peso_entrega_lb)}</td>
-                    <td className="px-3 py-2">{e.entregado_por_nombre ?? "—"}</td>
-                    <td className="px-3 py-2">
-                      <Badge
-                        variant="outline"
-                        className={cn(
-                          e.estado === "PENDIENTE_RECEPCION"
-                            ? "border-amber-200 bg-amber-50 text-amber-800"
-                            : "border-emerald-200 bg-emerald-50 text-emerald-800",
-                        )}
-                      >
-                        {e.estado === "PENDIENTE_RECEPCION" ? "Pendiente recepción" : "Recibido"}
-                      </Badge>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+      <section className="space-y-2">
+        <h3 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">Salidas</h3>
+        <div className="overflow-x-auto rounded-2xl border"><table className="w-full min-w-[620px] text-left text-sm"><thead className="bg-muted/50 text-xs uppercase"><tr><th className="px-3 py-2">Fecha</th><th className="px-3 py-2">Cantidad lb</th><th className="px-3 py-2">Motivo</th><th className="px-3 py-2">Quién / Obs.</th></tr></thead><tbody>
+          {(h?.salidas ?? []).map((r) => <tr key={r.id} className="border-t"><td className="px-3 py-2">{fecha(r.creado_en)}</td><td className="px-3 py-2 font-semibold">{formatLb(r.cantidad_lb)}</td><td className="px-3 py-2">{r.motivo === "DANO_PRODUCTO" ? "Daño del producto" : "Otros"}</td><td className="px-3 py-2 text-muted-foreground">{r.registrado_por_nombre ?? "—"}{r.observacion ? ` · ${r.observacion}` : ""}</td></tr>)}
+          {(h?.salidas ?? []).length === 0 && <tr><td className="px-3 py-4 text-muted-foreground" colSpan={4}>Sin salidas aún.</td></tr>}
+        </tbody></table></div>
       </section>
-
-      <section className="space-y-3">
-        <h2 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">Envíos</h2>
-        <div className="overflow-x-auto rounded-2xl border">
-          <table className="w-full min-w-[640px] text-left text-sm">
-            <thead className="bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">
-              <tr>
-                <th className="px-3 py-2">Fecha</th>
-                <th className="px-3 py-2">Sucursal</th>
-                <th className="px-3 py-2">lb</th>
-                <th className="px-3 py-2">Quién</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(enviosQuery.data ?? []).map((e) => (
-                <tr key={e.id} className="border-t">
-                  <td className="px-3 py-2">{new Date(e.creado_en).toLocaleString("es-EC")}</td>
-                  <td className="px-3 py-2">{branchName(e.sucursal_destino_id)}</td>
-                  <td className="px-3 py-2 font-semibold">{formatLb(e.cantidad_lb)}</td>
-                  <td className="px-3 py-2">{e.enviado_por_nombre ?? "—"}</td>
-                </tr>
-              ))}
-              {(enviosQuery.data ?? []).length === 0 && (
-                <tr><td className="px-3 py-4 text-muted-foreground" colSpan={4}>Sin envíos aún.</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+      <section className="space-y-2">
+        <h3 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">Movimientos entre ubicaciones</h3>
+        <div className="overflow-x-auto rounded-2xl border"><table className="w-full min-w-[680px] text-left text-sm"><thead className="bg-muted/50 text-xs uppercase"><tr><th className="px-3 py-2">Fecha</th><th className="px-3 py-2">Desde</th><th className="px-3 py-2">Hasta</th><th className="px-3 py-2">Cantidad lb</th><th className="px-3 py-2">Quién / Obs.</th></tr></thead><tbody>
+          {(h?.traslados ?? []).map((r) => <tr key={r.id} className="border-t"><td className="px-3 py-2">{fecha(r.creado_en)}</td><td className="px-3 py-2">{ubicacionLabel(r.desde_ambito, r.desde_sucursal_id)}</td><td className="px-3 py-2">{ubicacionLabel(r.hasta_ambito, r.hasta_sucursal_id)}</td><td className="px-3 py-2 font-semibold">{formatLb(r.cantidad_lb)}</td><td className="px-3 py-2 text-muted-foreground">{r.registrado_por_nombre ?? "—"}{r.observacion ? ` · ${r.observacion}` : ""}</td></tr>)}
+          {(h?.traslados ?? []).length === 0 && <tr><td className="px-3 py-4 text-muted-foreground" colSpan={5}>Sin movimientos aún.</td></tr>}
+        </tbody></table></div>
       </section>
-
-      <section className="space-y-3">
-        <h2 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">Devoluciones</h2>
-        <div className="overflow-x-auto rounded-2xl border">
-          <table className="w-full min-w-[640px] text-left text-sm">
-            <thead className="bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">
-              <tr>
-                <th className="px-3 py-2">Fecha</th>
-                <th className="px-3 py-2">Sucursal</th>
-                <th className="px-3 py-2">lb</th>
-                <th className="px-3 py-2">Quién</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(devolucionesQuery.data ?? []).map((e) => (
-                <tr key={e.id} className="border-t">
-                  <td className="px-3 py-2">{new Date(e.creado_en).toLocaleString("es-EC")}</td>
-                  <td className="px-3 py-2">{branchName(e.sucursal_id)}</td>
-                  <td className="px-3 py-2 font-semibold">{formatLb(e.cantidad_lb)}</td>
-                  <td className="px-3 py-2">{e.registrado_por_nombre ?? "—"}</td>
-                </tr>
-              ))}
-              {(devolucionesQuery.data ?? []).length === 0 && (
-                <tr><td className="px-3 py-4 text-muted-foreground" colSpan={4}>Sin devoluciones aún.</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+      <section className="space-y-2">
+        <h3 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">Bitácora de stock</h3>
+        <div className="overflow-x-auto rounded-2xl border"><table className="w-full min-w-[720px] text-left text-sm"><thead className="bg-muted/50 text-xs uppercase"><tr><th className="px-3 py-2">Fecha</th><th className="px-3 py-2">Tipo</th><th className="px-3 py-2">Ámbito</th><th className="px-3 py-2">lb</th><th className="px-3 py-2">Antes → Nueva</th><th className="px-3 py-2">Detalle</th></tr></thead><tbody>
+          {(h?.movimientos ?? []).map((m) => <tr key={m.id} className="border-t"><td className="px-3 py-2">{fecha(m.creado_en)}</td><td className="px-3 py-2 font-medium">{m.tipo_movimiento}</td><td className="px-3 py-2">{m.ambito}</td><td className="px-3 py-2">{formatLb(m.cantidad_lb)}</td><td className="px-3 py-2">{formatLb(m.cantidad_anterior)} → {formatLb(m.cantidad_nueva)}</td><td className="px-3 py-2 text-muted-foreground">{m.notas ?? "—"}</td></tr>)}
+          {(h?.movimientos ?? []).length === 0 && <tr><td className="px-3 py-4 text-muted-foreground" colSpan={6}>Sin movimientos aún.</td></tr>}
+        </tbody></table></div>
       </section>
-
-      <section className="space-y-3">
-        <h2 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">Historial / mermas</h2>
-        <div className="overflow-x-auto rounded-2xl border">
-          <table className="w-full min-w-[720px] text-left text-sm">
-            <thead className="bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">
-              <tr>
-                <th className="px-3 py-2">Fecha</th>
-                <th className="px-3 py-2">Tipo</th>
-                <th className="px-3 py-2">Ámbito</th>
-                <th className="px-3 py-2">lb</th>
-                <th className="px-3 py-2">Antes → Nueva</th>
-                <th className="px-3 py-2">Detalle</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(movimientosQuery.data ?? []).map((m) => (
-                <tr key={m.id} className="border-t">
-                  <td className="px-3 py-2">{new Date(m.creado_en).toLocaleString("es-EC")}</td>
-                  <td className="px-3 py-2 font-medium">{m.tipo_movimiento}</td>
-                  <td className="px-3 py-2">{m.ambito}</td>
-                  <td className="px-3 py-2">{formatLb(m.cantidad_lb)}</td>
-                  <td className="px-3 py-2">
-                    {formatLb(m.cantidad_anterior)} → {formatLb(m.cantidad_nueva)}
-                  </td>
-                  <td className="px-3 py-2 text-muted-foreground">{m.notas ?? "—"}</td>
-                </tr>
-              ))}
-              {(movimientosQuery.data ?? []).length === 0 && (
-                <tr><td className="px-3 py-4 text-muted-foreground" colSpan={6}>Sin movimientos aún.</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
+      {historialQuery.isLoading && <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Cargando historial…</div>}
     </div>
   );
 }
