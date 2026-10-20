@@ -74,14 +74,14 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
     if (/STOCK_INSUFICIENTE|stock insuficiente|insuficiente en origen/i.test(raw)) {
       setErrorDialog({
         title: "Stock insuficiente",
-        description: "No hay suficiente pescado en el origen para realizar este movimiento. Revisa el stock disponible e intenta con una cantidad menor.",
+        description: "No hay suficiente pescado en el origen para realizar este movimiento. Revisa el stock disponible e intenta con un peso menor.",
       });
       return;
     }
-    if (/cantidad total debe ser mayor/i.test(raw)) {
+    if (/cantidad total debe ser mayor|peso total debe ser mayor/i.test(raw)) {
       setErrorDialog({
-        title: "Cantidad no válida",
-        description: "La cantidad total quedó en cero o negativa después de descontar las bandejas. Revisa la cantidad y el número de bandejas.",
+        title: "Peso no válido",
+        description: "El peso total quedó en cero o negativo después de descontar las bandejas. Revisa el peso y el número de bandejas.",
       });
       return;
     }
@@ -178,10 +178,10 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
     mutationFn: async () => {
       const entregadaRaw = parseCantidad(cantEntregada);
       const verificadaRaw = parseCantidad(cantVerificada);
-      if (!entregadaRaw) throw new Error("Ingresa la cantidad entregada");
-      if (!verificadaRaw) throw new Error("Ingresa la cantidad verificada");
+      if (!entregadaRaw) throw new Error("Ingresa el peso entregado");
+      if (!verificadaRaw) throw new Error("Ingresa el peso verificado");
       if (cantidadTotalLb <= 0) {
-        throw new Error(`La cantidad total debe ser mayor a 0 (verificada ${formatLb(verificadaLb)} lb - bandejas ${formatLb(descuentoBandejasLb)} lb)`);
+        throw new Error(`El peso total debe ser mayor a 0 (verificado ${formatLb(verificadaLb)} lb - bandejas ${formatLb(descuentoBandejasLb)} lb)`);
       }
       const { error } = await supabase.rpc("registrar_ingreso_pescado" as any, {
         p_origen: origenIngreso,
@@ -199,7 +199,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
   const salidaMut = useMutation({
     mutationFn: async () => {
       const raw = parseCantidad(cantSalida);
-      if (!raw) throw new Error("Ingresa la cantidad");
+      if (!raw) throw new Error("Ingresa el peso");
       const qtyLb = aLibras(raw, unidadSalida);
       const stockCentralLb = Number(
         (stockQuery.data ?? []).find((r) => r.ambito === "CENTRAL")?.cantidad_libras ?? 0,
@@ -209,7 +209,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
         const solTxt = unidadSalida === "GRAMOS" ? `${formatG(qtyLb)} gramos` : `${formatLb(qtyLb)} Libras`;
         setErrorDialog({
           title: "Stock insuficiente",
-          description: `En Bodega General solo hay ${dispTxt} disponibles y estás intentando retirar ${solTxt}. Ingresa una cantidad menor.`,
+          description: `En Bodega General solo hay ${dispTxt} disponibles y estás intentando retirar ${solTxt}. Ingresa un peso menor.`,
         });
         throw new Error("__DIALOG_SHOWN__");
       }
@@ -256,9 +256,9 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
       if (!desde || !hasta) throw new Error("Selecciona desde y hasta");
       if (desde === hasta) throw new Error("El origen y el destino deben ser diferentes");
       const raw = parseCantidad(cantMov);
-      if (!raw) throw new Error("Ingresa la cantidad");
+      if (!raw) throw new Error("Ingresa el peso");
       if (cantidadTotalMovLb <= 0) {
-        throw new Error(`La cantidad total debe ser mayor a 0 (cantidad ${formatLb(movLb)} lb - bandejas ${formatLb(descuentoBandejasMovLb)} lb)`);
+        throw new Error(`El peso total debe ser mayor a 0 (peso ${formatLb(movLb)} lb - bandejas ${formatLb(descuentoBandejasMovLb)} lb)`);
       }
       const stockOrigenLb = stockDeUbicacion(desde);
       if (cantidadTotalMovLb > stockOrigenLb) {
@@ -267,7 +267,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
         const solTxt = unidadMov === "GRAMOS" ? `${formatG(cantidadTotalMovLb)} gramos` : `${formatLb(cantidadTotalMovLb)} Libras`;
         setErrorDialog({
           title: "Stock insuficiente",
-          description: `En ${nombreOrigen} solo hay ${dispTxt} disponibles y estás intentando mover ${solTxt}. Ingresa una cantidad menor.`,
+          description: `En ${nombreOrigen} solo hay ${dispTxt} disponibles y estás intentando mover ${solTxt}. Ingresa un peso menor.`,
         });
         throw new Error("__DIALOG_SHOWN__");
       }
@@ -374,12 +374,12 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
               </Select>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-2"><Label>Cantidad entregada</Label><Input inputMode="decimal" value={cantEntregada} onChange={(e) => setCantEntregada(e.target.value)} placeholder="Ej. 25.5" /></div>
+              <div className="space-y-2"><Label>Peso entregado</Label><Input inputMode="decimal" value={cantEntregada} onChange={(e) => setCantEntregada(e.target.value)} placeholder="Ej. 25.5" /></div>
               <div className="space-y-2"><Label>Unidad</Label><UnidadSelect value={unidadEntregada} onChange={setUnidadEntregada} /></div>
-              <div className="space-y-2"><Label>Cantidad verificada</Label><Input inputMode="decimal" value={cantVerificada} onChange={(e) => setCantVerificada(e.target.value)} placeholder="Ej. 24.8" /></div>
+              <div className="space-y-2"><Label>Peso verificado</Label><Input inputMode="decimal" value={cantVerificada} onChange={(e) => setCantVerificada(e.target.value)} placeholder="Ej. 24.8" /></div>
               <div className="space-y-2"><Label>Unidad</Label><UnidadSelect value={unidadVerificada} onChange={setUnidadVerificada} /></div>
             </div>
-            <p className="text-xs text-muted-foreground">El stock de Bodega General aumenta con la cantidad total (verificada menos bandejas). La diferencia entregada-verificada queda registrada como merma.</p>
+            <p className="text-xs text-muted-foreground">El stock de Bodega General aumenta con el peso total (verificado menos bandejas). La diferencia entregado-verificado queda registrada como merma.</p>
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label>Cantidad de bandejas</Label>
@@ -416,7 +416,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
                 <p className="text-xs text-muted-foreground">Cada bandeja pesa {formatLb(PESO_BANDEJA_LB)} lb (descuento: {formatLb(descuentoBandejasLb)} lb).</p>
               </div>
               <div className="space-y-2 rounded-2xl border border-blue-200 bg-blue-50 p-3">
-                <Label className="text-blue-900">Cantidad Total</Label>
+                <Label className="text-blue-900">Peso Total</Label>
                 <div className="py-1 text-center">
                   {verificadaLb > 0 ? (
                     <span className="font-display text-3xl font-black leading-none text-blue-700">
@@ -436,7 +436,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
         ) : (
           <div className="space-y-3">
             <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-2"><Label>Cantidad</Label><Input inputMode="decimal" value={cantSalida} onChange={(e) => setCantSalida(e.target.value)} /></div>
+              <div className="space-y-2"><Label>Peso</Label><Input inputMode="decimal" value={cantSalida} onChange={(e) => setCantSalida(e.target.value)} /></div>
               <div className="space-y-2"><Label>Unidad</Label><UnidadSelect value={unidadSalida} onChange={setUnidadSalida} /></div>
             </div>
             <div className="space-y-2">
@@ -477,7 +477,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
             <Label>Hasta</Label>
             <Select value={hasta} onValueChange={setHasta}><SelectTrigger className="rounded-2xl"><SelectValue placeholder="Destino…" /></SelectTrigger><SelectContent>{ubicaciones.map((u) => <SelectItem key={u.value} value={u.value}>{u.label}</SelectItem>)}</SelectContent></Select>
           </div>
-          <div className="space-y-2"><Label>Cantidad</Label><Input inputMode="decimal" value={cantMov} onChange={(e) => setCantMov(e.target.value)} placeholder="Ej. 500" /></div>
+          <div className="space-y-2"><Label>Peso</Label><Input inputMode="decimal" value={cantMov} onChange={(e) => setCantMov(e.target.value)} placeholder="Ej. 500" /></div>
           <div className="space-y-2"><Label>Unidad de medida</Label><UnidadSelect value={unidadMov} onChange={setUnidadMov} /></div>
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
@@ -516,7 +516,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
             <p className="text-xs text-muted-foreground">Cada bandeja pesa {formatLb(PESO_BANDEJA_LB)} lb (descuento: {formatLb(descuentoBandejasMovLb)} lb).</p>
           </div>
           <div className="space-y-2 rounded-2xl border border-blue-200 bg-blue-50 p-3">
-            <Label className="text-blue-900">Cantidad Total</Label>
+            <Label className="text-blue-900">Peso Total</Label>
             <div className="py-1 text-center">
               {movLb > 0 ? (
                 <span className="font-display text-3xl font-black leading-none text-blue-700">
