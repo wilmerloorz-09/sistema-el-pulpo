@@ -330,7 +330,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
                 <p className="text-xs text-muted-foreground">Cada bandeja pesa {formatLb(PESO_BANDEJA_LB)} lb (descuento: {formatLb(descuentoBandejasLb)} lb).</p>
               </div>
               <div className="space-y-2 rounded-2xl border border-blue-200 bg-blue-50 p-3">
-                <Label className="text-blue-900">Cantidad Total (lb)</Label>
+                <Label className="text-blue-900">Cantidad Total</Label>
                 <div className="py-1 text-center">
                   {verificadaLb > 0 ? (
                     <span className="font-display text-3xl font-black leading-none text-blue-700">
