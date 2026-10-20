@@ -331,13 +331,15 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
               </div>
               <div className="space-y-2 rounded-2xl border border-blue-200 bg-blue-50 p-3">
                 <Label className="text-blue-900">Cantidad Total (lb)</Label>
-                <div className="flex h-20 items-center justify-center rounded-xl border border-blue-200 bg-white">
+                <div className="py-1 text-center">
                   {verificadaLb > 0 ? (
-                    <span className="font-display text-6xl font-black leading-none text-blue-700">
-                      {formatLb(cantidadTotalLb)}
+                    <span className="font-display text-3xl font-black leading-none text-blue-700">
+                      {unidadVerificada === "GRAMOS"
+                        ? `${formatG(cantidadTotalLb)} gramos`
+                        : `${formatLb(cantidadTotalLb)} Libras`}
                     </span>
                   ) : (
-                    <span className="text-2xl font-bold text-blue-300">Automático</span>
+                    <span className="text-lg font-bold text-blue-300">Automático</span>
                   )}
                 </div>
               </div>
