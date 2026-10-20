@@ -331,12 +331,15 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
               </div>
               <div className="space-y-2 rounded-2xl border border-blue-200 bg-blue-50 p-3">
                 <Label className="text-blue-900">Cantidad Total (lb)</Label>
-                <Input
-                  readOnly
-                  value={verificadaLb > 0 ? formatLb(cantidadTotalLb) : ""}
-                  placeholder="Automático"
-                  className="h-14 border-blue-200 bg-white text-center text-4xl font-black text-blue-700 placeholder:text-blue-300"
-                />
+                <div className="flex h-20 items-center justify-center rounded-xl border border-blue-200 bg-white">
+                  {verificadaLb > 0 ? (
+                    <span className="font-display text-6xl font-black leading-none text-blue-700">
+                      {formatLb(cantidadTotalLb)}
+                    </span>
+                  ) : (
+                    <span className="text-2xl font-bold text-blue-300">Automático</span>
+                  )}
+                </div>
               </div>
             </div>
             <div className="space-y-2"><Label>Observación</Label><Textarea value={obsIngreso} onChange={(e) => setObsIngreso(e.target.value)} rows={2} /></div>
