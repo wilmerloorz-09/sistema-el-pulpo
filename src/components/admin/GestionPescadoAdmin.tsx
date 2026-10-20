@@ -305,10 +305,20 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
                 />
                 <p className="text-xs text-muted-foreground">Cada bandeja pesa {formatLb(PESO_BANDEJA_LB)} lb (descuento: {formatLb(descuentoBandejasLb)} lb).</p>
               </div>
-              <div className="space-y-2">
-                <Label>Cantidad Total (lb)</Label>
-                <Input readOnly value={verificadaLb > 0 ? formatLb(cantidadTotalLb) : ""} placeholder="Automático" className="bg-muted/40 font-semibold" />
-                <p className="text-xs text-muted-foreground">Verificada {formatLb(verificadaLb)} lb − bandejas {formatLb(descuentoBandejasLb)} lb.</p>
+              <div className="space-y-2 rounded-3xl border-2 border-orange-400 bg-gradient-to-br from-orange-500 via-amber-500 to-yellow-400 p-3 shadow-[0_16px_35px_-18px_rgba(249,115,22,0.9)]">
+                <Label className="text-white drop-shadow-sm">Cantidad Total (lb)</Label>
+                <Input
+                  readOnly
+                  value={verificadaLb > 0 ? formatLb(cantidadTotalLb) : ""}
+                  placeholder="Automático"
+                  className="h-14 border-white/60 bg-white/95 text-center font-display text-3xl font-black tracking-tight text-orange-700 shadow-inner placeholder:text-orange-300"
+                />
+                <p className="text-center text-xs font-bold text-white drop-shadow-sm">
+                  Verificada {formatLb(verificadaLb)} lb − bandejas {formatLb(descuentoBandejasLb)} lb
+                </p>
+                <p className="text-center text-[11px] font-semibold uppercase tracking-[0.18em] text-orange-50">
+                  Esto ingresa al stock
+                </p>
               </div>
             </div>
             <div className="space-y-2"><Label>Observación</Label><Textarea value={obsIngreso} onChange={(e) => setObsIngreso(e.target.value)} rows={2} /></div>
