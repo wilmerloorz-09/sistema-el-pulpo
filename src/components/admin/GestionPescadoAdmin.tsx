@@ -76,7 +76,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
       const [ing, sal, tra, mov] = await Promise.all([
         supabase.from("pescado_ingresos" as any).select("id, origen, cantidad_entregada_lb, cantidad_verificada_lb, merma_lb, cantidad_bandejas, descuento_bandejas_lb, cantidad_total_lb, registrado_por_nombre, observacion, creado_en").order("creado_en", { ascending: false }).limit(60),
         supabase.from("pescado_salidas" as any).select("id, cantidad_lb, motivo, registrado_por_nombre, observacion, creado_en").order("creado_en", { ascending: false }).limit(60),
-        supabase.from("pescado_traslados" as any).select("id, desde_ambito, desde_sucursal_id, hasta_ambito, hasta_sucursal_id, cantidad_lb, registrado_por_nombre, observacion, creado_en").order("creado_en", { ascending: false }).limit(60),
+        supabase.from("pescado_traslados" as any).select("id, desde_ambito, desde_sucursal_id, hasta_ambito, hasta_sucursal_id, cantidad_lb, cantidad_bruta_lb, cantidad_bandejas, descuento_bandejas_lb, cantidad_total_lb, registrado_por_nombre, observacion, creado_en").order("creado_en", { ascending: false }).limit(60),
         supabase.from("pescado_movimientos" as any).select("id, tipo_movimiento, ambito, sucursal_id, cantidad_lb, cantidad_anterior, cantidad_nueva, registrado_por_nombre, notas, creado_en").order("creado_en", { ascending: false }).limit(100),
       ]);
       if (ing.error) throw ing.error;
@@ -174,7 +174,16 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
   const [hasta, setHasta] = useState("");
   const [cantMov, setCantMov] = useState("");
   const [unidadMov, setUnidadMov] = useState<Unidad>("GRAMOS");
+  const [cantBandejasMov, setCantBandejasMov] = useState("");
   const [obsMov, setObsMov] = useState("");
+
+  const bandejasMovCount = useMemo(() => {
+    const n = Number.parseInt(String(cantBandejasMov ?? "").trim(), 10);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  }, [cantBandejasMov]);
+  const movLb = useMemo(() => aLibras(parseCantidad(cantMov), unidadMov), [cantMov, unidadMov]);
+  const descuentoBandejasMovLb = Math.round(bandejasMovCount * PESO_BANDEJA_LB * 1000) / 1000;
+  const cantidadTotalMovLb = Math.round((movLb - descuentoBandejasMovLb) * 1000) / 1000;
 
   useEffect(() => {
     if (!hasta && p1Default) setHasta(p1Default);
@@ -189,6 +198,9 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
       if (desde === hasta) throw new Error("El origen y el destino deben ser diferentes");
       const raw = parseCantidad(cantMov);
       if (!raw) throw new Error("Ingresa la cantidad");
+      if (cantidadTotalMovLb <= 0) {
+        throw new Error(`La cantidad total debe ser mayor a 0 (cantidad ${formatLb(movLb)} lb - bandejas ${formatLb(descuentoBandejasMovLb)} lb)`);
+      }
       const d = parseUbicacion(desde);
       const h = parseUbicacion(hasta);
       const { error } = await supabase.rpc("trasladar_pescado" as any, {
@@ -198,10 +210,11 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
         p_hasta_sucursal_id: h.sucursalId,
         p_cantidad_lb: aLibras(raw, unidadMov),
         p_observacion: obsMov.trim() || null,
+        p_cantidad_bandejas: bandejasMovCount,
       });
       if (error) throw error;
     },
-    onSuccess: async () => { toast.success("Movimiento registrado. Stocks actualizados."); setCantMov(""); setObsMov(""); await invalidateAll(); },
+    onSuccess: async () => { toast.success("Movimiento registrado. Stocks actualizados."); setCantMov(""); setCantBandejasMov(""); setObsMov(""); await invalidateAll(); },
     onError: (e: any) => toast.error(e?.message ?? "No se pudo registrar el movimiento"),
   });
 
@@ -391,6 +404,56 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
           <div className="space-y-2"><Label>Cantidad</Label><Input inputMode="decimal" value={cantMov} onChange={(e) => setCantMov(e.target.value)} placeholder="Ej. 500" /></div>
           <div className="space-y-2"><Label>Unidad de medida</Label><UnidadSelect value={unidadMov} onChange={setUnidadMov} /></div>
         </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label>Cantidad de bandejas</Label>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="h-10 w-10 shrink-0 rounded-xl"
+                disabled={bandejasMovCount <= 0}
+                onClick={() => setCantBandejasMov(String(Math.max(0, bandejasMovCount - 1)))}
+                aria-label="Disminuir bandejas"
+              >
+                <Minus className="h-4 w-4" />
+              </Button>
+              <Input
+                inputMode="numeric"
+                value={cantBandejasMov}
+                onChange={(e) => setCantBandejasMov(e.target.value.replace(/[^\d]/g, ""))}
+                placeholder="0"
+                className="text-center"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="h-10 w-10 shrink-0 rounded-xl"
+                onClick={() => setCantBandejasMov(String(bandejasMovCount + 1))}
+                aria-label="Aumentar bandejas"
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">Cada bandeja pesa {formatLb(PESO_BANDEJA_LB)} lb (descuento: {formatLb(descuentoBandejasMovLb)} lb).</p>
+          </div>
+          <div className="space-y-2 rounded-2xl border border-blue-200 bg-blue-50 p-3">
+            <Label className="text-blue-900">Cantidad Total</Label>
+            <div className="py-1 text-center">
+              {movLb > 0 ? (
+                <span className="font-display text-3xl font-black leading-none text-blue-700">
+                  {unidadMov === "GRAMOS"
+                    ? `${formatG(cantidadTotalMovLb)} gramos`
+                    : `${formatLb(cantidadTotalMovLb)} Libras`}
+                </span>
+              ) : (
+                <span className="text-lg font-bold text-blue-300">Automático</span>
+              )}
+            </div>
+          </div>
+        </div>
         <div className="space-y-2"><Label>Observación</Label><Textarea value={obsMov} onChange={(e) => setObsMov(e.target.value)} rows={2} /></div>
         <p className="text-xs text-muted-foreground">Se descuenta del origen y se suma al destino. No se permite dejar el origen en negativo.</p>
         {!canOperateFull && <p className="text-xs text-amber-700">Como sucursal, solo puedes mover desde tu sucursal hacia Bodega General (devolución).</p>}
@@ -419,9 +482,9 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
       </section>
       <section className="space-y-2">
         <h3 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">Movimientos entre ubicaciones</h3>
-        <div className="overflow-x-auto rounded-2xl border"><table className="w-full min-w-[680px] text-left text-sm"><thead className="bg-muted/50 text-xs uppercase"><tr><th className="px-3 py-2">Fecha</th><th className="px-3 py-2">Desde</th><th className="px-3 py-2">Hasta</th><th className="px-3 py-2">Cantidad lb</th><th className="px-3 py-2">Quién / Obs.</th></tr></thead><tbody>
-          {(h?.traslados ?? []).map((r) => <tr key={r.id} className="border-t"><td className="px-3 py-2">{fecha(r.creado_en)}</td><td className="px-3 py-2">{ubicacionLabel(r.desde_ambito, r.desde_sucursal_id)}</td><td className="px-3 py-2">{ubicacionLabel(r.hasta_ambito, r.hasta_sucursal_id)}</td><td className="px-3 py-2 font-semibold">{formatLb(r.cantidad_lb)}</td><td className="px-3 py-2 text-muted-foreground">{r.registrado_por_nombre ?? "—"}{r.observacion ? ` · ${r.observacion}` : ""}</td></tr>)}
-          {(h?.traslados ?? []).length === 0 && <tr><td className="px-3 py-4 text-muted-foreground" colSpan={5}>Sin movimientos aún.</td></tr>}
+        <div className="overflow-x-auto rounded-2xl border"><table className="w-full min-w-[760px] text-left text-sm"><thead className="bg-muted/50 text-xs uppercase"><tr><th className="px-3 py-2">Fecha</th><th className="px-3 py-2">Desde</th><th className="px-3 py-2">Hasta</th><th className="px-3 py-2">Bandejas</th><th className="px-3 py-2">Total lb</th><th className="px-3 py-2">Quién / Obs.</th></tr></thead><tbody>
+          {(h?.traslados ?? []).map((r) => <tr key={r.id} className="border-t"><td className="px-3 py-2">{fecha(r.creado_en)}</td><td className="px-3 py-2">{ubicacionLabel(r.desde_ambito, r.desde_sucursal_id)}</td><td className="px-3 py-2">{ubicacionLabel(r.hasta_ambito, r.hasta_sucursal_id)}</td><td className="px-3 py-2">{r.cantidad_bandejas ?? 0}</td><td className="px-3 py-2 font-semibold">{formatLb(r.cantidad_total_lb ?? r.cantidad_lb)}</td><td className="px-3 py-2 text-muted-foreground">{r.registrado_por_nombre ?? "—"}{r.observacion ? ` · ${r.observacion}` : ""}</td></tr>)}
+          {(h?.traslados ?? []).length === 0 && <tr><td className="px-3 py-4 text-muted-foreground" colSpan={6}>Sin movimientos aún.</td></tr>}
         </tbody></table></div>
       </section>
       <section className="space-y-2">
