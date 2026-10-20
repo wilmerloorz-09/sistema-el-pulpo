@@ -329,15 +329,15 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
                 </div>
                 <p className="text-xs text-muted-foreground">Cada bandeja pesa {formatLb(PESO_BANDEJA_LB)} lb (descuento: {formatLb(descuentoBandejasLb)} lb).</p>
               </div>
-              <div className="space-y-2 rounded-2xl bg-blue-600 p-3 shadow-md">
-                <Label className="text-white">Cantidad Total (lb)</Label>
+              <div className="space-y-2 rounded-2xl border border-blue-200 bg-blue-50 p-3">
+                <Label className="text-blue-900">Cantidad Total (lb)</Label>
                 <Input
                   readOnly
                   value={verificadaLb > 0 ? formatLb(cantidadTotalLb) : ""}
                   placeholder="Automático"
-                  className="h-12 border-white/40 bg-white text-center text-2xl font-black text-blue-700 placeholder:text-blue-300"
+                  className="h-12 border-blue-200 bg-white text-center text-2xl font-black text-blue-700 placeholder:text-blue-300"
                 />
-                <p className="text-xs font-semibold text-blue-50">
+                <p className="text-xs font-semibold text-blue-800">
                   Verificada {formatLb(verificadaLb)} lb − bandejas {formatLb(descuentoBandejasLb)} lb · Esto ingresa al stock
                 </p>
               </div>
