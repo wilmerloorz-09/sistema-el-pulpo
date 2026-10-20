@@ -188,11 +188,6 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
     onError: (e: any) => toast.error(e?.message ?? "No se pudo registrar el movimiento"),
   });
 
-  const ubicaciones = useMemo(() => [
-    { value: "CENTRAL", label: "Bodega General" },
-    ...branches.map((b) => ({ value: b.id, label: b.name })),
-  ], [branches]);
-
   const stockCentral = (stockQuery.data ?? []).find((r) => r.ambito === "CENTRAL");
   const stockMap = useMemo(() => {
     const map = new Map<string, number>();
@@ -201,6 +196,22 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
     }
     return map;
   }, [stockQuery.data]);
+
+  const ubicaciones = useMemo(() => [
+    {
+      value: "CENTRAL",
+      label: "Bodega General",
+      stockLb: Number(stockCentral?.cantidad_libras ?? 0),
+    },
+    ...branches.map((b) => ({
+      value: b.id,
+      label: b.name,
+      stockLb: Number(stockMap.get(b.id) ?? 0),
+    })),
+  ], [branches, stockCentral?.cantidad_libras, stockMap]);
+
+  const stockDeUbicacion = (value: string): number =>
+    ubicaciones.find((u) => u.value === value)?.stockLb ?? 0;
 
   if (section === "sucursales") {
     return (
@@ -297,7 +308,14 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-2">
             <Label>Desde</Label>
-            <Select value={desde} onValueChange={setDesde}><SelectTrigger className="rounded-2xl"><SelectValue /></SelectTrigger><SelectContent>{ubicaciones.map((u) => <SelectItem key={u.value} value={u.value}>{u.label}</SelectItem>)}</SelectContent></Select>
+            <Select value={desde} onValueChange={setDesde}><SelectTrigger className="rounded-2xl"><SelectValue /></SelectTrigger><SelectContent>{ubicaciones.map((u) => (
+              <SelectItem key={u.value} value={u.value} disabled={u.stockLb <= 0}>
+                {u.label} ({formatLb(u.stockLb)} lb){u.stockLb <= 0 ? " — Sin stock" : ""}
+              </SelectItem>
+            ))}</SelectContent></Select>
+            {stockDeUbicacion(desde) <= 0 && (
+              <p className="text-xs text-amber-700">La ubicación seleccionada no tiene stock. Elige otra en “Desde”.</p>
+            )}
           </div>
           <div className="space-y-2">
             <Label>Hasta</Label>
@@ -309,7 +327,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
         <div className="space-y-2"><Label>Observación</Label><Textarea value={obsMov} onChange={(e) => setObsMov(e.target.value)} rows={2} /></div>
         <p className="text-xs text-muted-foreground">Se descuenta del origen y se suma al destino. No se permite dejar el origen en negativo.</p>
         {!canOperateFull && <p className="text-xs text-amber-700">Como sucursal, solo puedes mover desde tu sucursal hacia Bodega General (devolución).</p>}
-        <Button className="rounded-2xl" disabled={trasladoMut.isPending} onClick={() => trasladoMut.mutate()}>{trasladoMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Registrar movimiento</Button>
+        <Button className="rounded-2xl" disabled={trasladoMut.isPending || stockDeUbicacion(desde) <= 0} onClick={() => trasladoMut.mutate()}>{trasladoMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Registrar movimiento</Button>
       </Card>
     );
   }
