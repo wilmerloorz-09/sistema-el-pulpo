@@ -12,6 +12,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 
 export type GestionPescadoSection = "sucursales" | "ingreso-salida" | "movimientos" | "historial";
@@ -57,6 +66,43 @@ function UnidadSelect({ value, onChange }: { value: Unidad; onChange: (v: Unidad
 export default function GestionPescadoAdmin({ section }: { section: GestionPescadoSection }) {
   const { branches, activeBranchId, permissions, isGlobalAdmin } = useBranch();
   const qc = useQueryClient();
+  const [errorDialog, setErrorDialog] = useState<{ title: string; description: string } | null>(null);
+
+  const mostrarError = (error: any, fallback: string) => {
+    const raw = String(error?.message ?? "");
+    if (raw.includes("__DIALOG_SHOWN__")) return;
+    if (/STOCK_INSUFICIENTE|stock insuficiente|insuficiente en origen/i.test(raw)) {
+      setErrorDialog({
+        title: "Stock insuficiente",
+        description: "No hay suficiente pescado en el origen para realizar este movimiento. Revisa el stock disponible e intenta con una cantidad menor.",
+      });
+      return;
+    }
+    if (/cantidad total debe ser mayor/i.test(raw)) {
+      setErrorDialog({
+        title: "Cantidad no válida",
+        description: "La cantidad total quedó en cero o negativa después de descontar las bandejas. Revisa la cantidad y el número de bandejas.",
+      });
+      return;
+    }
+    setErrorDialog({ title: "No se pudo completar", description: fallback });
+  };
+
+  const errorDialogNode = (
+    <AlertDialog open={Boolean(errorDialog)} onOpenChange={(open) => { if (!open) setErrorDialog(null); }}>
+      <AlertDialogContent className="rounded-[24px]">
+        <AlertDialogHeader>
+          <AlertDialogTitle>{errorDialog?.title ?? "Aviso"}</AlertDialogTitle>
+          <AlertDialogDescription>{errorDialog?.description ?? ""}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogAction className="rounded-2xl" onClick={() => setErrorDialog(null)}>
+            Entendido
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
 
   const canOperateFull = isGlobalAdmin || canOperate(permissions, "gestion_pescado") || canOperate(permissions, "bodega_general") || canManage(permissions, "admin_global");
   const canMoveFromBranch = canOperateFull || canManage(permissions, "admin_sucursal") || canView(permissions, "gestion_pescado");
@@ -147,13 +193,26 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
       if (error) throw error;
     },
     onSuccess: async () => { toast.success("Ingreso registrado en Bodega General."); setCantEntregada(""); setCantVerificada(""); setCantBandejas(""); setObsIngreso(""); await invalidateAll(); },
-    onError: (e: any) => toast.error(e?.message ?? "No se pudo registrar el ingreso"),
+    onError: (e: any) => mostrarError(e, "No se pudo registrar el ingreso. Revisa los datos e inténtalo de nuevo."),
   });
 
   const salidaMut = useMutation({
     mutationFn: async () => {
       const raw = parseCantidad(cantSalida);
       if (!raw) throw new Error("Ingresa la cantidad");
+      const qtyLb = aLibras(raw, unidadSalida);
+      const stockCentralLb = Number(
+        (stockQuery.data ?? []).find((r) => r.ambito === "CENTRAL")?.cantidad_libras ?? 0,
+      );
+      if (qtyLb > stockCentralLb) {
+        const dispTxt = unidadSalida === "GRAMOS" ? `${formatG(stockCentralLb)} gramos` : `${formatLb(stockCentralLb)} Libras`;
+        const solTxt = unidadSalida === "GRAMOS" ? `${formatG(qtyLb)} gramos` : `${formatLb(qtyLb)} Libras`;
+        setErrorDialog({
+          title: "Stock insuficiente",
+          description: `En Bodega General solo hay ${dispTxt} disponibles y estás intentando retirar ${solTxt}. Ingresa una cantidad menor.`,
+        });
+        throw new Error("__DIALOG_SHOWN__");
+      }
       const { error } = await supabase.rpc("registrar_salida_pescado" as any, {
         p_cantidad_lb: aLibras(raw, unidadSalida),
         p_motivo: motivoSalida,
@@ -162,7 +221,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
       if (error) throw error;
     },
     onSuccess: async () => { toast.success("Salida registrada."); setCantSalida(""); setObsSalida(""); await invalidateAll(); },
-    onError: (e: any) => toast.error(e?.message ?? "No se pudo registrar la salida"),
+    onError: (e: any) => mostrarError(e, "No se pudo registrar la salida. Revisa los datos e inténtalo de nuevo."),
   });
 
   // Movimientos
@@ -201,6 +260,17 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
       if (cantidadTotalMovLb <= 0) {
         throw new Error(`La cantidad total debe ser mayor a 0 (cantidad ${formatLb(movLb)} lb - bandejas ${formatLb(descuentoBandejasMovLb)} lb)`);
       }
+      const stockOrigenLb = stockDeUbicacion(desde);
+      if (cantidadTotalMovLb > stockOrigenLb) {
+        const nombreOrigen = ubicaciones.find((u) => u.value === desde)?.label ?? "el origen";
+        const dispTxt = unidadMov === "GRAMOS" ? `${formatG(stockOrigenLb)} gramos` : `${formatLb(stockOrigenLb)} Libras`;
+        const solTxt = unidadMov === "GRAMOS" ? `${formatG(cantidadTotalMovLb)} gramos` : `${formatLb(cantidadTotalMovLb)} Libras`;
+        setErrorDialog({
+          title: "Stock insuficiente",
+          description: `En ${nombreOrigen} solo hay ${dispTxt} disponibles y estás intentando mover ${solTxt}. Ingresa una cantidad menor.`,
+        });
+        throw new Error("__DIALOG_SHOWN__");
+      }
       const d = parseUbicacion(desde);
       const h = parseUbicacion(hasta);
       const { error } = await supabase.rpc("trasladar_pescado" as any, {
@@ -215,7 +285,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
       if (error) throw error;
     },
     onSuccess: async () => { toast.success("Movimiento registrado. Stocks actualizados."); setCantMov(""); setCantBandejasMov(""); setObsMov(""); await invalidateAll(); },
-    onError: (e: any) => toast.error(e?.message ?? "No se pudo registrar el movimiento"),
+    onError: (e: any) => mostrarError(e, "No se pudo registrar el movimiento. Revisa los datos e inténtalo de nuevo."),
   });
 
   const stockCentral = (stockQuery.data ?? []).find((r) => r.ambito === "CENTRAL");
@@ -246,6 +316,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
   if (section === "sucursales") {
     return (
       <div className="space-y-4">
+        {errorDialogNode}
         <Card className="rounded-[24px] border border-sky-200 bg-gradient-to-br from-sky-50 via-white to-blue-50 p-4 shadow-sm sm:p-5">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">Bodega General</p>
           <p className="mt-1 font-display text-3xl font-black text-sky-950">
@@ -281,6 +352,8 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
   if (section === "ingreso-salida") {
     if (!canOperateFull) return <p className="text-sm text-muted-foreground">Solo bodega general / administrador puede registrar ingresos y salidas.</p>;
     return (
+      <>
+        {errorDialogNode}
       <Card className="rounded-[24px] border p-4 space-y-4">
         <div className="space-y-2">
           <Label>Tipo de movimiento</Label>
@@ -378,12 +451,15 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
           </div>
         )}
       </Card>
+      </>
     );
   }
 
   if (section === "movimientos") {
     if (!canMoveFromBranch) return <p className="text-sm text-muted-foreground">No tienes permiso para registrar movimientos.</p>;
     return (
+      <>
+        {errorDialogNode}
       <Card className="rounded-[24px] border p-4 space-y-4">
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-2">
@@ -459,6 +535,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
         {!canOperateFull && <p className="text-xs text-amber-700">Como sucursal, solo puedes mover desde tu sucursal hacia Bodega General (devolución).</p>}
         <Button className="rounded-2xl" disabled={trasladoMut.isPending || stockDeUbicacion(desde) <= 0} onClick={() => trasladoMut.mutate()}>{trasladoMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Registrar movimiento</Button>
       </Card>
+      </>
     );
   }
 
@@ -466,6 +543,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
   const h = historialQuery.data;
   return (
     <div className="space-y-6">
+      {errorDialogNode}
       <section className="space-y-2">
         <h3 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">Ingresos</h3>
         <div className="overflow-x-auto rounded-2xl border"><table className="w-full min-w-[820px] text-left text-sm"><thead className="bg-muted/50 text-xs uppercase"><tr><th className="px-3 py-2">Fecha</th><th className="px-3 py-2">Origen</th><th className="px-3 py-2">Entregada lb</th><th className="px-3 py-2">Verificada lb</th><th className="px-3 py-2">Bandejas</th><th className="px-3 py-2">Total lb</th><th className="px-3 py-2">Merma lb</th><th className="px-3 py-2">Quién / Obs.</th></tr></thead><tbody>
