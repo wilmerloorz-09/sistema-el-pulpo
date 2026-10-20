@@ -335,11 +335,8 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
                   readOnly
                   value={verificadaLb > 0 ? formatLb(cantidadTotalLb) : ""}
                   placeholder="Automático"
-                  className="h-12 border-blue-200 bg-white text-center text-2xl font-black text-blue-700 placeholder:text-blue-300"
+                  className="h-14 border-blue-200 bg-white text-center text-4xl font-black text-blue-700 placeholder:text-blue-300"
                 />
-                <p className="text-xs font-semibold text-blue-800">
-                  Verificada {formatLb(verificadaLb)} lb − bandejas {formatLb(descuentoBandejasLb)} lb · Esto ingresa al stock
-                </p>
               </div>
             </div>
             <div className="space-y-2"><Label>Observación</Label><Textarea value={obsIngreso} onChange={(e) => setObsIngreso(e.target.value)} rows={2} /></div>
