@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 export type GestionPescadoSection = "sucursales" | "ingreso-salida" | "movimientos" | "historial";
 
 const GRAMOS_POR_LIBRA = 453.59237;
+const PESO_BANDEJA_LB = 0.78;
 type Unidad = "LIBRAS" | "GRAMOS";
 
 function parseCantidad(raw: string): number {
@@ -73,7 +74,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
     queryKey: ["pescado-historial-completo"],
     queryFn: async () => {
       const [ing, sal, tra, mov] = await Promise.all([
-        supabase.from("pescado_ingresos" as any).select("id, origen, cantidad_entregada_lb, cantidad_verificada_lb, merma_lb, registrado_por_nombre, observacion, creado_en").order("creado_en", { ascending: false }).limit(60),
+        supabase.from("pescado_ingresos" as any).select("id, origen, cantidad_entregada_lb, cantidad_verificada_lb, merma_lb, cantidad_bandejas, descuento_bandejas_lb, cantidad_total_lb, registrado_por_nombre, observacion, creado_en").order("creado_en", { ascending: false }).limit(60),
         supabase.from("pescado_salidas" as any).select("id, cantidad_lb, motivo, registrado_por_nombre, observacion, creado_en").order("creado_en", { ascending: false }).limit(60),
         supabase.from("pescado_traslados" as any).select("id, desde_ambito, desde_sucursal_id, hasta_ambito, hasta_sucursal_id, cantidad_lb, registrado_por_nombre, observacion, creado_en").order("creado_en", { ascending: false }).limit(60),
         supabase.from("pescado_movimientos" as any).select("id, tipo_movimiento, ambito, sucursal_id, cantidad_lb, cantidad_anterior, cantidad_nueva, registrado_por_nombre, notas, creado_en").order("creado_en", { ascending: false }).limit(100),
@@ -109,7 +110,19 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
   const [unidadEntregada, setUnidadEntregada] = useState<Unidad>("LIBRAS");
   const [cantVerificada, setCantVerificada] = useState("");
   const [unidadVerificada, setUnidadVerificada] = useState<Unidad>("LIBRAS");
+  const [cantBandejas, setCantBandejas] = useState("");
   const [obsIngreso, setObsIngreso] = useState("");
+
+  const bandejasCount = useMemo(() => {
+    const n = Number.parseInt(String(cantBandejas ?? "").trim(), 10);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  }, [cantBandejas]);
+  const verificadaLb = useMemo(
+    () => aLibras(parseCantidad(cantVerificada), unidadVerificada),
+    [cantVerificada, unidadVerificada],
+  );
+  const descuentoBandejasLb = Math.round(bandejasCount * PESO_BANDEJA_LB * 1000) / 1000;
+  const cantidadTotalLb = Math.round((verificadaLb - descuentoBandejasLb) * 1000) / 1000;
   const [cantSalida, setCantSalida] = useState("");
   const [unidadSalida, setUnidadSalida] = useState<Unidad>("LIBRAS");
   const [motivoSalida, setMotivoSalida] = useState("DANO_PRODUCTO");
@@ -121,15 +134,19 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
       const verificadaRaw = parseCantidad(cantVerificada);
       if (!entregadaRaw) throw new Error("Ingresa la cantidad entregada");
       if (!verificadaRaw) throw new Error("Ingresa la cantidad verificada");
+      if (cantidadTotalLb <= 0) {
+        throw new Error(`La cantidad total debe ser mayor a 0 (verificada ${formatLb(verificadaLb)} lb - bandejas ${formatLb(descuentoBandejasLb)} lb)`);
+      }
       const { error } = await supabase.rpc("registrar_ingreso_pescado" as any, {
         p_origen: origenIngreso,
         p_cantidad_entregada_lb: aLibras(entregadaRaw, unidadEntregada),
         p_cantidad_verificada_lb: aLibras(verificadaRaw, unidadVerificada),
         p_observacion: obsIngreso.trim() || null,
+        p_cantidad_bandejas: bandejasCount,
       });
       if (error) throw error;
     },
-    onSuccess: async () => { toast.success("Ingreso registrado en Bodega General."); setCantEntregada(""); setCantVerificada(""); setObsIngreso(""); await invalidateAll(); },
+    onSuccess: async () => { toast.success("Ingreso registrado en Bodega General."); setCantEntregada(""); setCantVerificada(""); setCantBandejas(""); setObsIngreso(""); await invalidateAll(); },
     onError: (e: any) => toast.error(e?.message ?? "No se pudo registrar el ingreso"),
   });
 
@@ -276,7 +293,24 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
               <div className="space-y-2"><Label>Cantidad verificada</Label><Input inputMode="decimal" value={cantVerificada} onChange={(e) => setCantVerificada(e.target.value)} placeholder="Ej. 24.8" /></div>
               <div className="space-y-2"><Label>Unidad</Label><UnidadSelect value={unidadVerificada} onChange={setUnidadVerificada} /></div>
             </div>
-            <p className="text-xs text-muted-foreground">El stock de Bodega General aumenta con la cantidad verificada. La diferencia queda registrada como merma.</p>
+            <p className="text-xs text-muted-foreground">El stock de Bodega General aumenta con la cantidad total (verificada menos bandejas). La diferencia entregada-verificada queda registrada como merma.</p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Cantidad de bandejas</Label>
+                <Input
+                  inputMode="numeric"
+                  value={cantBandejas}
+                  onChange={(e) => setCantBandejas(e.target.value.replace(/[^\d]/g, ""))}
+                  placeholder="Ej. 4"
+                />
+                <p className="text-xs text-muted-foreground">Cada bandeja pesa {formatLb(PESO_BANDEJA_LB)} lb (descuento: {formatLb(descuentoBandejasLb)} lb).</p>
+              </div>
+              <div className="space-y-2">
+                <Label>Cantidad Total (lb)</Label>
+                <Input readOnly value={verificadaLb > 0 ? formatLb(cantidadTotalLb) : ""} placeholder="Automático" className="bg-muted/40 font-semibold" />
+                <p className="text-xs text-muted-foreground">Verificada {formatLb(verificadaLb)} lb − bandejas {formatLb(descuentoBandejasLb)} lb.</p>
+              </div>
+            </div>
             <div className="space-y-2"><Label>Observación</Label><Textarea value={obsIngreso} onChange={(e) => setObsIngreso(e.target.value)} rows={2} /></div>
             <Button className="rounded-2xl" disabled={ingresoMut.isPending} onClick={() => ingresoMut.mutate()}>{ingresoMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Registrar ingreso</Button>
           </div>
@@ -338,9 +372,9 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
     <div className="space-y-6">
       <section className="space-y-2">
         <h3 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">Ingresos</h3>
-        <div className="overflow-x-auto rounded-2xl border"><table className="w-full min-w-[680px] text-left text-sm"><thead className="bg-muted/50 text-xs uppercase"><tr><th className="px-3 py-2">Fecha</th><th className="px-3 py-2">Origen</th><th className="px-3 py-2">Entregada lb</th><th className="px-3 py-2">Verificada lb</th><th className="px-3 py-2">Merma lb</th><th className="px-3 py-2">Quién / Obs.</th></tr></thead><tbody>
-          {(h?.ingresos ?? []).map((r) => <tr key={r.id} className="border-t"><td className="px-3 py-2">{fecha(r.creado_en)}</td><td className="px-3 py-2">{r.origen === "PREPARACION_INICIAL" ? "Preparación inicial" : "Preparación extra"}</td><td className="px-3 py-2">{formatLb(r.cantidad_entregada_lb)}</td><td className="px-3 py-2 font-semibold">{formatLb(r.cantidad_verificada_lb)}</td><td className="px-3 py-2">{formatLb(r.merma_lb)}</td><td className="px-3 py-2 text-muted-foreground">{r.registrado_por_nombre ?? "—"}{r.observacion ? ` · ${r.observacion}` : ""}</td></tr>)}
-          {(h?.ingresos ?? []).length === 0 && <tr><td className="px-3 py-4 text-muted-foreground" colSpan={6}>Sin ingresos aún.</td></tr>}
+        <div className="overflow-x-auto rounded-2xl border"><table className="w-full min-w-[820px] text-left text-sm"><thead className="bg-muted/50 text-xs uppercase"><tr><th className="px-3 py-2">Fecha</th><th className="px-3 py-2">Origen</th><th className="px-3 py-2">Entregada lb</th><th className="px-3 py-2">Verificada lb</th><th className="px-3 py-2">Bandejas</th><th className="px-3 py-2">Total lb</th><th className="px-3 py-2">Merma lb</th><th className="px-3 py-2">Quién / Obs.</th></tr></thead><tbody>
+          {(h?.ingresos ?? []).map((r) => <tr key={r.id} className="border-t"><td className="px-3 py-2">{fecha(r.creado_en)}</td><td className="px-3 py-2">{r.origen === "PREPARACION_INICIAL" ? "Preparación inicial" : "Preparación extra"}</td><td className="px-3 py-2">{formatLb(r.cantidad_entregada_lb)}</td><td className="px-3 py-2">{formatLb(r.cantidad_verificada_lb)}</td><td className="px-3 py-2">{r.cantidad_bandejas ?? 0} ({formatLb(r.descuento_bandejas_lb)} lb)</td><td className="px-3 py-2 font-semibold">{formatLb(r.cantidad_total_lb ?? r.cantidad_verificada_lb)}</td><td className="px-3 py-2">{formatLb(r.merma_lb)}</td><td className="px-3 py-2 text-muted-foreground">{r.registrado_por_nombre ?? "—"}{r.observacion ? ` · ${r.observacion}` : ""}</td></tr>)}
+          {(h?.ingresos ?? []).length === 0 && <tr><td className="px-3 py-4 text-muted-foreground" colSpan={8}>Sin ingresos aún.</td></tr>}
         </tbody></table></div>
       </section>
       <section className="space-y-2">
