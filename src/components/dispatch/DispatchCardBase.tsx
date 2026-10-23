@@ -501,10 +501,15 @@ export function DispatchCardBase({
                   ) : null}
                   <div className="min-w-0 flex-1">
                     {isSimple && !isBulkItem ? (
-                      <p className="break-words whitespace-normal text-lg font-semibold leading-snug text-slate-900 sm:text-xl">
-                        <span className="mr-1.5 font-bold tabular-nums text-orange-700">{remainingToDispatch}</span>
+                      <p className="flex flex-wrap items-center gap-x-2 gap-y-1 break-words whitespace-normal text-lg font-semibold leading-snug text-slate-900 sm:text-xl">
+                        <span
+                          className="inline-flex h-8 min-w-8 shrink-0 items-center justify-center rounded-full bg-orange-500 px-2 text-base font-bold tabular-nums text-white shadow-sm"
+                          aria-label={`Cantidad ${remainingToDispatch}`}
+                        >
+                          {remainingToDispatch}
+                        </span>
                         <span>{item.description_snapshot}</span>
-                        <span className="ml-1 font-semibold text-slate-600">({unitPriceLabel})</span>
+                        <span className="font-semibold text-slate-600">({unitPriceLabel})</span>
                       </p>
                     ) : isSimple && isBulkItem ? (
                       <p className="break-words whitespace-normal text-lg font-semibold leading-snug text-slate-900 sm:text-xl">
