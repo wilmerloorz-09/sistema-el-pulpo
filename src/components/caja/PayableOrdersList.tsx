@@ -352,10 +352,16 @@ export default function PayableOrdersList({
 
                     {isExpanded && (
                       <div className="border-t border-orange-200/80 bg-orange-50/80">
+                        <div className="hidden grid-cols-[minmax(0,1fr)_90px_120px] gap-3 border-b border-orange-200/70 px-4 py-2.5 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500 sm:grid lg:px-8">
+                          <span>Detalle</span>
+                          <span className="text-right">Pend.</span>
+                          <span className="text-right">Subtotal</span>
+                        </div>
                         <div className="divide-y divide-orange-100/80">
                           {groupedItems.map((item) => {
                             const isBulkItem = item.tray_item_type === "C";
-                            const qty = Math.max(0, Number(item.quantity_pending || item.quantity || 0));
+                            const qty = Math.max(0, Number(item.quantity || 0));
+                            const pendingQty = Math.max(0, Number(item.quantity_pending || 0));
                             const unitPriceLabel = Number(item.unit_price ?? 0).toFixed(2);
                             const consolidatedModifiers = (() => {
                               const modCounts: Record<string, { description: string; count: number; firstId: string }> = {};
@@ -375,44 +381,61 @@ export default function PayableOrdersList({
                             return (
                               <div
                                 key={`${item.description_snapshot}_${item.unit_price}`}
-                                className="px-4 py-4 lg:px-8"
+                                className="grid gap-2 px-4 py-4 sm:grid-cols-[minmax(0,1fr)_90px_120px] sm:items-start sm:gap-3 lg:px-8"
                               >
-                                {isBulkItem ? (
-                                  <p className="break-words whitespace-normal text-lg font-semibold leading-snug text-slate-900 sm:text-xl">
-                                    <span>{item.description_snapshot}</span>
-                                    <span className="ml-1 font-semibold text-slate-600">({unitPriceLabel})</span>
-                                  </p>
-                                ) : (
-                                  <p className="flex flex-wrap items-center gap-x-2 gap-y-1 break-words whitespace-normal text-lg font-semibold leading-snug text-slate-900 sm:text-xl">
-                                    <span
-                                      className="inline-flex h-8 min-w-8 shrink-0 items-center justify-center rounded-full bg-orange-500 px-2 text-base font-bold tabular-nums text-white shadow-sm"
-                                      aria-label={`Cantidad ${qty}`}
-                                    >
-                                      {qty}
-                                    </span>
-                                    <span>{item.description_snapshot}</span>
-                                    <span className="font-semibold text-slate-600">({unitPriceLabel})</span>
-                                  </p>
-                                )}
+                                <div className="min-w-0">
+                                  {isBulkItem ? (
+                                    <p className="break-words whitespace-normal text-lg font-semibold leading-snug text-slate-900 sm:text-xl">
+                                      <span>{item.description_snapshot}</span>
+                                      <span className="ml-1 font-semibold text-slate-600">({unitPriceLabel})</span>
+                                    </p>
+                                  ) : (
+                                    <p className="flex flex-wrap items-center gap-x-2 gap-y-1 break-words whitespace-normal text-lg font-semibold leading-snug text-slate-900 sm:text-xl">
+                                      <span
+                                        className="inline-flex h-8 min-w-8 shrink-0 items-center justify-center rounded-full bg-orange-500 px-2 text-base font-bold tabular-nums text-white shadow-sm"
+                                        aria-label={`Cantidad ${qty}`}
+                                      >
+                                        {qty}
+                                      </span>
+                                      <span>{item.description_snapshot}</span>
+                                      <span className="font-semibold text-slate-600">({unitPriceLabel})</span>
+                                    </p>
+                                  )}
 
-                                {consolidatedModifiers.length > 0 ? (
-                                  <div className="mt-1 flex flex-col gap-0.5 pl-10 text-sm font-semibold text-red-700">
-                                    {consolidatedModifiers.map((mc) => (
-                                      <p key={mc.firstId} className="break-words whitespace-normal">
-                                        - {mc.description}
-                                        {mc.count > 1 ? ` (${mc.count})` : ""}
-                                      </p>
-                                    ))}
-                                  </div>
-                                ) : null}
-
-                                <div className="mt-1 flex flex-wrap items-center gap-2 pl-10">
-                                  {item.tray_item_type ? <TrayItemChip type={item.tray_item_type} size="xs" /> : null}
-                                  {item.tray_item_type === "B" && Number(item.tray_container_cost ?? 0) > 0 ? (
-                                    <span className="text-[11px] font-semibold text-orange-600">
-                                      + {formatCurrency(Number(item.tray_container_cost ?? 0))} tarrina
-                                    </span>
+                                  {consolidatedModifiers.length > 0 ? (
+                                    <div className="mt-1 flex flex-col gap-0.5 pl-10 text-sm font-semibold text-red-700">
+                                      {consolidatedModifiers.map((mc) => (
+                                        <p key={mc.firstId} className="break-words whitespace-normal">
+                                          - {mc.description}
+                                          {mc.count > 1 ? ` (${mc.count})` : ""}
+                                        </p>
+                                      ))}
+                                    </div>
                                   ) : null}
+
+                                  <div className="mt-1 flex flex-wrap items-center gap-2 pl-10">
+                                    {item.tray_item_type ? <TrayItemChip type={item.tray_item_type} size="xs" /> : null}
+                                    {item.tray_item_type === "B" && Number(item.tray_container_cost ?? 0) > 0 ? (
+                                      <span className="text-[11px] font-semibold text-orange-600">
+                                        + {formatCurrency(Number(item.tray_container_cost ?? 0))} tarrina
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-2 sm:contents">
+                                  <div className="rounded-xl bg-white/70 px-2.5 py-1.5 text-center sm:rounded-none sm:bg-transparent sm:px-0 sm:py-0 sm:text-right">
+                                    <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 sm:hidden">Pend.</p>
+                                    <p className="text-sm font-bold tabular-nums text-slate-800">
+                                      {isBulkItem ? "—" : pendingQty}
+                                    </p>
+                                  </div>
+                                  <div className="rounded-xl bg-white/70 px-2.5 py-1.5 text-center sm:rounded-none sm:bg-transparent sm:px-0 sm:py-0 sm:text-right">
+                                    <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 sm:hidden">Subtotal</p>
+                                    <p className="text-sm font-bold tabular-nums text-slate-900">
+                                      {formatCurrency(item.pending_total)}
+                                    </p>
+                                  </div>
                                 </div>
                               </div>
                             );
