@@ -490,8 +490,16 @@ export function DispatchCardBase({
               <div className="flex flex-col gap-3 md:grid md:grid-cols-[minmax(0,1fr)_auto] md:items-start md:gap-4">
                 <div className="flex min-w-0 items-start gap-3">
                   {!isBulkItem ? (
-                    <div className="shrink-0 rounded-lg bg-primary/10 px-2 py-1 text-xs font-bold text-primary">
-                      {remainingToDispatch}X
+                    <div
+                      className={cn(
+                        "flex shrink-0 items-center justify-center rounded-xl font-black leading-none tabular-nums",
+                        isSimple
+                          ? "h-12 min-w-[3rem] bg-orange-100 px-3 font-display text-3xl text-orange-700"
+                          : "h-10 min-w-[2.5rem] bg-primary/10 px-2.5 text-2xl text-primary",
+                      )}
+                      aria-label={`Cantidad ${remainingToDispatch}`}
+                    >
+                      {remainingToDispatch}
                     </div>
                   ) : null}
                   <div className="min-w-0 flex-1">
