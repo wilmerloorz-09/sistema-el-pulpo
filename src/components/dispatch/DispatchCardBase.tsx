@@ -485,27 +485,37 @@ export function DispatchCardBase({
             ? prorateOrderChargeAmount(specialChargeTotal, remainingCatalogTotal, catalogOrderTotal)
             : remainingCatalogTotal;
 
+          const unitPriceLabel = Number(item.unit_price ?? 0).toFixed(2);
+
           return (
             <div key={item.id} className="px-4 py-4 lg:px-8">
               <div className="flex flex-col gap-3 md:grid md:grid-cols-[minmax(0,1fr)_auto] md:items-start md:gap-4">
                 <div className="flex min-w-0 items-start gap-3">
-                  {!isBulkItem ? (
+                  {!isBulkItem && !isSimple ? (
                     <div
-                      className={cn(
-                        "flex shrink-0 items-center justify-center rounded-xl font-black leading-none tabular-nums",
-                        isSimple
-                          ? "h-12 min-w-[3rem] bg-orange-100 px-3 font-display text-3xl text-orange-700"
-                          : "h-10 min-w-[2.5rem] bg-primary/10 px-2.5 text-2xl text-primary",
-                      )}
+                      className="flex h-9 min-w-[2.25rem] shrink-0 items-center justify-center rounded-lg bg-primary/10 px-2 text-lg font-bold tabular-nums text-primary"
                       aria-label={`Cantidad ${remainingToDispatch}`}
                     >
                       {remainingToDispatch}
                     </div>
                   ) : null}
                   <div className="min-w-0 flex-1">
-                    <p className="break-words whitespace-normal font-medium leading-tight text-[15px] text-foreground">
-                      {item.description_snapshot}
-                    </p>
+                    {isSimple && !isBulkItem ? (
+                      <p className="break-words whitespace-normal text-lg font-semibold leading-snug text-slate-900 sm:text-xl">
+                        <span className="mr-1.5 font-bold tabular-nums text-orange-700">{remainingToDispatch}</span>
+                        <span>{item.description_snapshot}</span>
+                        <span className="ml-1 font-semibold text-slate-600">({unitPriceLabel})</span>
+                      </p>
+                    ) : isSimple && isBulkItem ? (
+                      <p className="break-words whitespace-normal text-lg font-semibold leading-snug text-slate-900 sm:text-xl">
+                        <span>{item.description_snapshot}</span>
+                        <span className="ml-1 font-semibold text-slate-600">({unitPriceLabel})</span>
+                      </p>
+                    ) : (
+                      <p className="break-words whitespace-normal font-medium leading-tight text-[15px] text-foreground">
+                        {item.description_snapshot}
+                      </p>
+                    )}
                     {item.modifiers.length > 0 ? (
                       <div className="mt-1 flex flex-col gap-1">
                         {consolidateModifiersForDisplay(item.modifiers, remainingToDispatch).map((mc) => (
@@ -540,23 +550,25 @@ export function DispatchCardBase({
                       ) : null}
                     </div>
 
-                    <div className="mt-1 text-sm font-semibold text-slate-800">
-                      {isBulkItem ? (
-                        <span>{formatMoney(remainingLineTotal)}</span>
-                      ) : specialChargeTotal != null ? (
-                        <span>
-                          {formatMoney(remainingLineTotal)}
-                          <span className="ml-1 text-xs font-semibold text-orange-700">cobro manual</span>
-                          {remainingLineTotal !== remainingCatalogTotal ? (
-                            <span className="mt-0.5 block text-xs font-medium text-slate-500">
-                              Ref. {formatMoney(item.unit_price)} x {remainingToDispatch} = {formatMoney(remainingCatalogTotal)}
-                            </span>
-                          ) : null}
-                        </span>
-                      ) : (
-                        <span>{formatMoney(item.unit_price)} x {remainingToDispatch} = {formatMoney(remainingLineTotal)}</span>
-                      )}
-                    </div>
+                    {!isSimple ? (
+                      <div className="mt-1 text-sm font-semibold text-slate-800">
+                        {isBulkItem ? (
+                          <span>{formatMoney(remainingLineTotal)}</span>
+                        ) : specialChargeTotal != null ? (
+                          <span>
+                            {formatMoney(remainingLineTotal)}
+                            <span className="ml-1 text-xs font-semibold text-orange-700">cobro manual</span>
+                            {remainingLineTotal !== remainingCatalogTotal ? (
+                              <span className="mt-0.5 block text-xs font-medium text-slate-500">
+                                Ref. {formatMoney(item.unit_price)} x {remainingToDispatch} = {formatMoney(remainingCatalogTotal)}
+                              </span>
+                            ) : null}
+                          </span>
+                        ) : (
+                          <span>{formatMoney(item.unit_price)} x {remainingToDispatch} = {formatMoney(remainingLineTotal)}</span>
+                        )}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
 
