@@ -315,7 +315,7 @@ export default function PayableOrdersList({
 
                       <div className="flex items-center justify-between gap-3 pl-11 lg:pl-0">
                         <div className="text-left lg:text-right">
-                          <p className="text-sm font-black text-emerald-700 sm:text-base">
+                          <p className="text-lg font-black tabular-nums text-emerald-700 sm:text-2xl">
                             {formatCurrency(pendingTotal)}
                           </p>
                           {order.is_special ? (
