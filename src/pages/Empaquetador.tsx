@@ -74,7 +74,7 @@ const Empaquetador = () => {
             <div>
               <h1 className="font-display text-2xl font-bold tracking-tight text-slate-900">Empaquetador</h1>
               <p className="text-sm font-medium text-slate-500">
-                {pendingLabel} ordenes Para llevar / Express pendientes
+                {pendingLabel} {visibleOrders.length === 1 ? "orden" : "órdenes"} Para llevar / Express
               </p>
             </div>
           </div>
@@ -187,6 +187,7 @@ const Empaquetador = () => {
                     key={order.card_id}
                     order={order}
                     index={index}
+                    variant="simple"
                     onMarkOrderReady={(currentOrder) => {
                       if (currentOrder.order_type === "TAKEOUT" || currentOrder.is_special) {
                         dispatchOrder.mutate({ orderId: currentOrder.id });
