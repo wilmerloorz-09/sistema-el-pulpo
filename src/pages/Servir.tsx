@@ -71,7 +71,7 @@ const Servir = () => {
             <div>
               <h1 className="font-display text-2xl font-bold tracking-tight text-slate-900">Servir</h1>
               <p className="text-sm font-medium text-slate-500">
-                {pendingLabel} órdenes pendientes
+                {pendingLabel} {orders.length === 1 ? "orden" : "órdenes"}
               </p>
             </div>
           </div>
@@ -194,6 +194,7 @@ const Servir = () => {
                       key={order.card_id}
                       order={order}
                       index={index}
+                      variant="simple"
                       onMarkOrderReady={(currentOrder) => {
                         if (currentOrder.order_type === "TAKEOUT" || currentOrder.is_special) {
                           dispatchOrder.mutate({ orderId: currentOrder.id });

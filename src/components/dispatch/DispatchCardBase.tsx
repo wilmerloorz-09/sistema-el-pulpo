@@ -34,6 +34,8 @@ interface DispatchCardBaseProps {
   isDispatching?: boolean;
   isDispatchingOrder?: boolean;
   readOnly?: boolean;
+  /** Vista simplificada (Servir): sin reloj, sin "pendientes" ni botón Listo. */
+  variant?: "default" | "simple";
 }
 
 function useElapsed(since: string | null | undefined) {
@@ -216,9 +218,11 @@ export function DispatchCardBase({
   isDispatching = false,
   isDispatchingOrder = false,
   readOnly = false,
+  variant = "default",
 }: DispatchCardBaseProps) {
+  const isSimple = variant === "simple";
   const since = order.sent_to_kitchen_at || order.updated_at;
-  const { elapsed } = useElapsed(since);
+  const { elapsed } = useElapsed(isSimple ? null : since);
   const orderKind = getOrderKind({ orderType: order.order_type, isSpecial: order.is_special, isTrayOrder: order.is_tray_order });
   const isTakeout = orderKind === "takeout";
   const isSpecial = orderKind === "special";
@@ -242,7 +246,7 @@ export function DispatchCardBase({
     });
   }, [order.items]);
 
-  const shouldShowTimer = order.status === "SENT_TO_KITCHEN" || order.status === "READY";
+  const shouldShowTimer = !isSimple && (order.status === "SENT_TO_KITCHEN" || order.status === "READY");
   const isWarning = shouldShowTimer && elapsed > 10 * 60;
   const isUrgent = shouldShowTimer && elapsed > 15 * 60;
 
@@ -256,7 +260,6 @@ export function DispatchCardBase({
     isSpecial: order.is_special,
     isTrayOrder: order.is_tray_order,
   });
-  const canMarkAnyReady = order.pending_prepare_count > 0;
   const canDispatchAny = order.dispatchable_count > 0;
   const dispatchAllBusy = isDispatching || isDispatchingOrder;
   const dispatchAllDisabled = order.locked_for_editing || dispatchAllBusy || !canDispatchAny;
@@ -286,29 +289,43 @@ export function DispatchCardBase({
 
   return (
     <div className={cn(
-      "rounded-2xl border shadow-sm transition-shadow hover:shadow-md overflow-hidden",
-      order.is_packer_order 
-        ? "border-red-600 bg-yellow-300 ring-4 ring-red-500" 
-        : cn("border-slate-200", index % 2 === 0 ? "bg-white" : "bg-slate-100")
+      "rounded-2xl border shadow-sm transition-all overflow-hidden",
+      order.is_packer_order
+        ? "border-red-600 bg-yellow-300 ring-4 ring-red-500"
+        : isExpanded
+          ? "border-orange-300 bg-orange-50 shadow-md ring-1 ring-orange-200"
+          : cn("border-slate-200 hover:shadow-md", index % 2 === 0 ? "bg-white" : "bg-slate-100"),
     )}>
       <div
         onClick={onToggleExpand}
         className={cn(
           "group flex flex-col lg:flex-row lg:items-center justify-between gap-4 px-4 py-4 lg:px-6 transition-colors",
           "cursor-pointer",
-          order.is_packer_order ? "hover:bg-yellow-400" : "hover:bg-slate-50",
+          order.is_packer_order
+            ? "hover:bg-yellow-400"
+            : isExpanded
+              ? "hover:bg-orange-100/70"
+              : "hover:bg-slate-50",
         )}
       >
         {/* Left Section: Chevron, Icon, Type, User, Order Ref */}
         <div className="flex items-center gap-3 min-w-0 flex-1">
           <div
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors group-hover:bg-slate-100 group-hover:text-slate-800"
+            className={cn(
+              "flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-slate-500 transition-colors group-hover:text-slate-800",
+              isExpanded
+                ? "border-orange-200 bg-white text-orange-700 group-hover:bg-orange-100"
+                : "border-slate-200 bg-white group-hover:bg-slate-100",
+            )}
             aria-label={isExpanded ? "Ocultar detalle" : "Mostrar detalle"}
           >
             {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           </div>
 
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600">
+          <span className={cn(
+            "flex h-10 w-10 shrink-0 items-center justify-center rounded-full",
+            isExpanded ? "bg-orange-100 text-orange-700" : "bg-slate-100 text-slate-600",
+          )}>
             {isTray ? (
               <ShoppingBag className="h-5 w-5" />
             ) : isTakeout ? (
@@ -352,59 +369,75 @@ export function DispatchCardBase({
           </div>
         </div>
 
-        {/* Middle Section: Summary & Time (Desktop) */}
-        <div className="hidden lg:flex items-center gap-6 shrink-0 px-4">
-          <div className="text-right">
-            <p className="truncate text-[13px] font-semibold text-slate-700">
-              {summaryText}
-            </p>
-            <p className="mt-0.5 text-sm font-black text-emerald-700">
-              Total pendiente {formatMoney(pendingTotal)}
+        {/* Middle Section: Summary & Time (Desktop) — oculto en vista simple */}
+        {!isSimple ? (
+          <div className="hidden lg:flex items-center gap-6 shrink-0 px-4">
+            <div className="text-right">
+              <p className="truncate text-[13px] font-semibold text-slate-700">
+                {summaryText}
+              </p>
+              <p className="mt-0.5 text-sm font-black text-emerald-700">
+                Total pendiente {formatMoney(pendingTotal)}
+              </p>
+            </div>
+            <div className={cn(
+              "flex shrink-0 items-center justify-end gap-1.5 rounded-full border px-3 py-1 font-mono text-sm font-bold shadow-sm",
+              isUrgent ? "border-red-200 bg-red-50 text-red-700" : isWarning ? "border-amber-200 bg-amber-50 text-amber-700" : "border-slate-200 bg-slate-100 text-slate-700"
+            )}>
+              <Clock className="h-4 w-4 shrink-0" />
+              <span>{timeDisplay}</span>
+            </div>
+          </div>
+        ) : (
+          <div className="hidden lg:flex items-center shrink-0 px-4">
+            <p className="text-sm font-black text-emerald-700">
+              {formatMoney(pendingTotal)}
             </p>
           </div>
-          <div className={cn(
-            "flex shrink-0 items-center justify-end gap-1.5 rounded-full border px-3 py-1 font-mono text-sm font-bold shadow-sm",
-            isUrgent ? "border-red-200 bg-red-50 text-red-700" : isWarning ? "border-amber-200 bg-amber-50 text-amber-700" : "border-slate-200 bg-slate-100 text-slate-700"
-          )}>
-            <Clock className="h-4 w-4 shrink-0" />
-            <span>{timeDisplay}</span>
-          </div>
-        </div>
+        )}
 
         {/* Mobile Middle Section */}
-        <div className="flex lg:hidden items-center justify-between pl-11">
-          <div>
-             <p className="text-xs font-semibold text-slate-700">{summaryText}</p>
-             <p className="mt-0.5 text-xs font-black text-emerald-700">Total pendiente {formatMoney(pendingTotal)}</p>
+        {!isSimple ? (
+          <div className="flex lg:hidden items-center justify-between pl-11">
+            <div>
+               <p className="text-xs font-semibold text-slate-700">{summaryText}</p>
+               <p className="mt-0.5 text-xs font-black text-emerald-700">Total pendiente {formatMoney(pendingTotal)}</p>
+            </div>
+            <div className={cn(
+              "flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-mono text-xs font-bold shadow-sm",
+              isUrgent ? "border-red-200 bg-red-50 text-red-700" : isWarning ? "border-amber-200 bg-amber-50 text-amber-700" : "border-slate-200 bg-slate-100 text-slate-700"
+            )}>
+              <Clock className="h-3.5 w-3.5 shrink-0" />
+              <span>{timeDisplay}</span>
+            </div>
           </div>
-          <div className={cn(
-            "flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-mono text-xs font-bold shadow-sm",
-            isUrgent ? "border-red-200 bg-red-50 text-red-700" : isWarning ? "border-amber-200 bg-amber-50 text-amber-700" : "border-slate-200 bg-slate-100 text-slate-700"
-          )}>
-            <Clock className="h-3.5 w-3.5 shrink-0" />
-            <span>{timeDisplay}</span>
+        ) : (
+          <div className="flex lg:hidden items-center pl-11">
+            <p className="text-xs font-black text-emerald-700">{formatMoney(pendingTotal)}</p>
           </div>
-        </div>
+        )}
 
         {/* Right Section: Actions */}
         <div className="flex items-center justify-end gap-2 pl-11 lg:pl-0 shrink-0">
           {!readOnly ? (
             <>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={order.locked_for_editing || isMarkingOrderReady || isMarkingReady || isDispatching || (usesOrderLevelDispatch && !canDispatchAny)}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onMarkOrderReady(order);
-                }}
-                className="h-10 gap-1.5 rounded-xl border-blue-200 bg-blue-50 px-5 text-sm font-semibold text-blue-700 shadow-sm transition-colors hover:bg-blue-100 hover:text-blue-800"
-              >
-                {order.locked_for_editing ? <Lock className="h-4 w-4" /> : <Check className="h-4 w-4" />}
-                <span className="hidden lg:inline">{order.locked_for_editing ? "Editando" : "Listo"}</span>
-                <span className="lg:hidden">Listo</span>
-              </Button>
+              {!isSimple && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={order.locked_for_editing || isMarkingOrderReady || isMarkingReady || isDispatching || (usesOrderLevelDispatch && !canDispatchAny)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onMarkOrderReady(order);
+                  }}
+                  className="h-10 gap-1.5 rounded-xl border-blue-200 bg-blue-50 px-5 text-sm font-semibold text-blue-700 shadow-sm transition-colors hover:bg-blue-100 hover:text-blue-800"
+                >
+                  {order.locked_for_editing ? <Lock className="h-4 w-4" /> : <Check className="h-4 w-4" />}
+                  <span className="hidden lg:inline">{order.locked_for_editing ? "Editando" : "Listo"}</span>
+                  <span className="lg:hidden">Listo</span>
+                </Button>
+              )}
               
               {canDispatchAny && (
                 <Button
@@ -415,7 +448,12 @@ export function DispatchCardBase({
                     e.stopPropagation();
                     onDispatchAll(order);
                   }}
-                  className="h-10 gap-1.5 rounded-xl bg-slate-900 px-5 text-sm font-semibold text-white shadow-md transition-colors hover:bg-slate-800"
+                  className={cn(
+                    "h-10 gap-1.5 rounded-xl px-5 text-sm font-semibold text-white shadow-md transition-colors",
+                    isSimple
+                      ? "bg-orange-600 hover:bg-orange-700"
+                      : "bg-slate-900 hover:bg-slate-800",
+                  )}
                 >
                   {isDispatchingOrder ? <Loader2 className="h-4 w-4 animate-spin" /> : <Truck className="h-4 w-4" />}
                   <span className="hidden lg:inline">Despachar todo</span>
@@ -430,7 +468,10 @@ export function DispatchCardBase({
       </div>
 
       {isExpanded && (
-        <div className="border-t border-slate-200 bg-slate-50/70">
+        <div className={cn(
+          "border-t",
+          isExpanded ? "border-orange-200/80 bg-orange-50/80" : "border-slate-200 bg-slate-50/70",
+        )}>
           <div className="divide-y divide-slate-200/60">
         {previewableItems.map((item) => {
           const isBulkItem = item.tray_item_type === "C";

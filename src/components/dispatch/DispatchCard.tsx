@@ -14,6 +14,7 @@ interface DispatchCardProps {
   isDispatching?: boolean;
   isDispatchingOrder?: boolean;
   readOnly?: boolean;
+  variant?: "default" | "simple";
 }
 
 export default function DispatchCard({
@@ -28,6 +29,7 @@ export default function DispatchCard({
   isDispatching = false,
   isDispatchingOrder = false,
   readOnly = false,
+  variant = "default",
 }: DispatchCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
 
@@ -46,6 +48,7 @@ export default function DispatchCard({
       isDispatching={isDispatching}
       isDispatchingOrder={isDispatchingOrder}
       readOnly={readOnly}
+      variant={variant}
     />
   );
 }
