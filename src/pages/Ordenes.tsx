@@ -3114,7 +3114,8 @@ const OrdenesContent = () => {
         } else {
           toast.error("El dispositivo es demasiado pequeño para operar caja.");
         }
-      } else if (isDispatchFirstFlow && mobile) {
+      } else if (isDispatchFirstFlow) {
+        // Cierra el panel de orden en layout móvil (si estaba abierto).
         setShowCart(false);
       }
     } catch (error: any) {
