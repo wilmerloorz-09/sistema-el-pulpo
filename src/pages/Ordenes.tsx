@@ -3145,22 +3145,69 @@ const OrdenesContent = () => {
         });
       }
 
-      await runEditStep("desbloquear la orden", () => unlockOrder.mutateAsync());
-      setStagedDirty(false);
-      toast.success("Cambios aceptados.");
-      if (orderId) {
-        invalidateOperationalOrderQueries(qc, {
-          branchId: order?.branch_id,
-          orderId,
-          includeTables: true,
+      // Congelar visualmente el resultado del staging ANTES de salir de "Editar orden".
+      // Si no, al quitar from=editar la UI vuelve a order.items viejos y los tachos
+      // "reaparecen" un instante hasta el refetch.
+      const acceptedItems = stagedItems
+        .filter((item) => Math.max(0, Number(item.quantity ?? 0)) > 0)
+        .map((item) => {
+          const qty = Math.max(0, Number(item.quantity ?? 0));
+          const remaining = Math.min(qty, Math.max(0, Number(item.quantity_remaining ?? 0)));
+          const dispatched = Math.max(0, qty - remaining);
+          const unit = Number(item.unit_price ?? 0);
+          const container = qty > 0 ? Number(item.tray_container_cost ?? 0) : 0;
+          return {
+            ...item,
+            quantity: qty,
+            quantity_remaining: remaining,
+            quantity_dispatched: dispatched,
+            total: Math.round((qty * unit + container) * 100) / 100,
+          };
         });
-        void qc.invalidateQueries({ queryKey: getOrderQueryKey(orderId) });
+
+      if (orderId) {
+        qc.setQueryData(getOrderQueryKey(orderId), (current: any) => {
+          if (!current) return current;
+          return {
+            ...current,
+            locked_for_editing: false,
+            items: acceptedItems,
+          };
+        });
       }
+      setStagedItems(acceptedItems as typeof stagedItems);
+      setKitchenBaselineItems(acceptedItems as typeof stagedItems);
+      setStagedDirty(false);
+
+      await runEditStep("desbloquear la orden", () => unlockOrder.mutateAsync());
+
+      // unlockOrder invalida caches; reaplicar el snapshot aceptado para no flash.
+      if (orderId) {
+        qc.setQueryData(getOrderQueryKey(orderId), (current: any) => {
+          if (!current) return current;
+          return {
+            ...current,
+            locked_for_editing: false,
+            items: acceptedItems,
+          };
+        });
+      }
+
+      toast.success("Cambios aceptados.");
       // Always navigate back to the order page after accepting changes.
       // This keeps the user on the order (with menu enabled) even when all
       // items were removed, so they can add new products without leaving.
       const originValue = searchParams.get("origin") || "consulta";
       navigate(`/ordenes?order=${orderId}&from=${originValue}${originParam}`, { replace: true });
+
+      if (orderId) {
+        // Refetch en segundo plano (sin bloquear ni restaurar items borrados en UI).
+        invalidateOperationalOrderQueries(qc, {
+          branchId: order?.branch_id,
+          orderId,
+          includeTables: true,
+        });
+      }
     } catch (error: any) {
       toast.error(error?.message || "No se pudieron aplicar los cambios.");
     } finally {
