@@ -147,6 +147,7 @@ export type OrderItemEditSurface = {
   quantity_requested?: number | null;
   quantity_ordered?: number | null;
   quantity?: number | null;
+  quantity_paid?: number | null;
 };
 
 /** Linea totalmente despachada (etiqueta "Despachado"). */
@@ -157,8 +158,8 @@ export function isOrderItemFullyDispatched(item: OrderItemEditSurface): boolean 
 }
 
 /**
- * Despacho primero: lineas "En despacho" / parciales / borrador editables en vista normal
- * sin entrar a "Editar orden".
+ * Despacho primero: lineas enviadas (en despacho, parciales o despachadas) y borrador
+ * editables en vista normal. Solo bloquea pagados / anulacion pendiente.
  */
 export function isOrderItemFreelyEditableInDispatchFirst(item: OrderItemEditSurface): boolean {
   if (String(item.status ?? "") === "DRAFT") return true;
@@ -173,7 +174,7 @@ export function isOrderItemFreelyEditableInDispatchFirst(item: OrderItemEditSurf
   }
 
   if (item.status === "PAID") return false;
-  if (isOrderItemFullyDispatched(item)) return false;
+  if (Math.max(0, Number(item.quantity_paid ?? 0)) > 0) return false;
 
   return true;
 }

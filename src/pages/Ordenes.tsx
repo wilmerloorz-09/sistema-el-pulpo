@@ -70,6 +70,7 @@ import { formatearMensajeStockInventario, productoBloqueadoPorStockInventario, s
 import { formatTableNameLabel, getOrderMesaHeaderNumber, getOrderRef } from "@/lib/orderPresentation";
 import { getDispatchedEditQuantity, getOrderStatusLabel, isExtraOrder as orderIsExtra, isOrderItemEditableInDispatchFirstEditMode, isOrderItemFullyDispatched, isSpecialOrderExplicitZeroTotal, resolveInDispatchStagingQuantities } from "@/lib/orderFlow";
 import {
+  collectDispatchedCancellationSelections,
   computeKitchenSendMoneyDeltaForSend,
   formatKitchenSendMoneyDelta,
   hasKitchenPendingSendChanges,
@@ -1296,28 +1297,6 @@ const OrdenesContent = () => {
     });
   }, [useKitchenStaging, stagedDirty, orderItems, isLoading, kitchenBaselineItems]);
 
-  // Bajas de items ya despachados no van por Enviar a cocina: revertir staging.
-  // Usar solo cantidades operativas (no status): un item puede seguir en EN DESPACHO
-  // aunque el status legacy diga DISPATCHED.
-  useEffect(() => {
-    if (!useKitchenStaging || fromEditar || isLoading || !stagedDirty) return;
-
-    setStagedItems((prev) => {
-      let changed = false;
-      const next = prev.map((item) => {
-        const base = kitchenBaselineItems.find((b) => b.id === item.id);
-        if (!base) return item;
-        if (!isOrderItemFullyDispatched(base)) return item;
-        if (Math.max(0, Number(item.quantity ?? 0)) === Math.max(0, Number(base.quantity ?? 0))) {
-          return item;
-        }
-        changed = true;
-        return { ...base };
-      });
-      return changed ? next : prev;
-    });
-  }, [useKitchenStaging, fromEditar, isLoading, kitchenBaselineItems, stagedDirty]);
-
   const tableOrdersQuery = useQuery({
     queryKey: isExpressOrder
       ? ["express-orders", order?.branch_id ?? null]
@@ -2281,7 +2260,7 @@ const OrdenesContent = () => {
   const kitchenSendDelta = useKitchenStaging
     ? computeKitchenSendMoneyDeltaForSend(kitchenBaselineItems, stagedItems)
     : finalButtonTotal;
-  // Borradores qty>0 o cambios de "En despacho". Bajas de despachados → Editar orden.
+  // Borradores qty>0 o cambios pendientes (incluye bajas de despachados).
   const showKitchenSendButton = useKitchenStaging
     ? (hasPendingKitchenSendChanges || hasDraftItems)
     : hasDraftItems;
@@ -2465,31 +2444,16 @@ const OrdenesContent = () => {
        */
       (order.order_type === "DINE_IN" && Boolean(order.table_id))
     );
-  const canEnterEditMode =
-    !fromEditar &&
-    canUseEditarOrden &&
-    (isDispatchFirstFlow
-      ? (hasDispatchedItems && isEditableInEditar)
-      : isEditableInCaja) &&
-    !hasPendingCancellationItems &&
-    order.status !== "PAID" &&
-    order.status !== "CANCELLED";
-  const showDispatchEditOrderAction =
-    !fromEditar &&
-    isDispatchFirstFlow &&
-    hasDispatchedItems &&
-    canUseEditarOrden &&
-    isEditableInEditar &&
-    order.status !== "PAID" &&
-    order.status !== "CANCELLED";
+  // La orden permanece editable sin "Editar orden"; solo se bloquea pagada/cancelada.
+  const canEnterEditMode = false;
+  const showDispatchEditOrderAction = false;
   const canEditItems =
-    (fromEditar && isEditableInEditar) ||
-    (
-      (canOperateOrders || canUseEditarOrden) &&
-      (canEditDraftOrder || isEditableInCaja) &&
-      !hasPendingCancellationItems &&
-      !isLockedFromEditar
-    );
+    (canOperateOrders || canUseEditarOrden) &&
+    order.status !== "PAID" &&
+    order.status !== "CANCELLED" &&
+    !order.paid_at &&
+    !hasPendingCancellationItems &&
+    !isLockedFromEditar;
   const handleSelectMenuProduct = async (node: MenuNode) => {
     if (!canEditItems) {
       toast.error("Esta orden no admite agregar productos.");
@@ -3785,7 +3749,7 @@ const OrdenesContent = () => {
                   items={mixedRestoItems}
                   orderType={order.order_type}
                   isSpecialOrder={false}
-                  alwaysShowControls={false}
+                  alwaysShowControls={canEditItems && !isDispatchFirstFlow}
                   allowSentStageEditing={isDispatchFirstFlow && canEditItems}
                   splitDispatchSections={isDispatchFirstFlow}
                   editDispatchedItemsOnly={false}
@@ -3929,12 +3893,12 @@ const OrdenesContent = () => {
           items={(fromEditar || useKitchenStaging) ? stagedItems : orderItems}
           orderType={order.order_type}
           isSpecialOrder={Boolean(order?.is_special)}
-          alwaysShowControls={fromEditar && !isDispatchFirstFlow}
-          allowSentStageEditing={isDispatchFirstFlow && !fromEditar && canEditItems}
+          alwaysShowControls={canEditItems && !isDispatchFirstFlow}
+          allowSentStageEditing={isDispatchFirstFlow && canEditItems}
           splitDispatchSections={isDispatchFirstFlow}
-          editDispatchedItemsOnly={fromEditar && isDispatchFirstFlow}
+          editDispatchedItemsOnly={false}
           hideItemControls={false}
-          editableItemIds={editableItemIdsForEditar}
+          editableItemIds={[]}
           specialOrderChargeTotal={order.is_special && effectiveSpecialTotalManual != null ? effectiveSpecialTotalManual : null}
           specialOrderCatalogTotal={order.is_special && effectiveSpecialTotalManual != null ? total : null}
           onRemove={(id) => {
@@ -3967,8 +3931,7 @@ const OrdenesContent = () => {
             // lineas ya enviadas quedan pendientes hasta "Enviar a cocina".
             if (useKitchenStaging) {
               const draftIds: string[] = [];
-              const enDespachoIds: string[] = [];
-              let blockedDispatched = false;
+              const sentIds: string[] = [];
               for (const itemId of ids) {
                 const item = stagedItems.find((i) => i.id === itemId);
                 if (!item) continue;
@@ -3976,28 +3939,29 @@ const OrdenesContent = () => {
                   draftIds.push(itemId);
                   continue;
                 }
-                // Solo bloquear si operativamente ya esta 100% despachado.
-                if (isOrderItemFullyDispatched(item)) {
-                  blockedDispatched = true;
-                  continue;
-                }
-                enDespachoIds.push(itemId);
+                sentIds.push(itemId);
               }
 
-              if (blockedDispatched) {
-                toast.error("Los items despachados se editan con la opcion Editar orden.");
-              }
-
-              if (enDespachoIds.length > 0) {
+              if (sentIds.length > 0) {
                 setStagedDirty(true);
                 setStagedItems((prev) => {
                   const next = [...prev];
-                  for (const itemId of enDespachoIds) {
+                  for (const itemId of sentIds) {
                     const idx = next.findIndex((i) => i.id === itemId);
                     if (idx < 0) continue;
                     const current = next[idx];
+                    if (isOrderItemFullyDispatched(current)) {
+                      next[idx] = {
+                        ...current,
+                        quantity: 0,
+                        quantity_remaining: 0,
+                        quantity_dispatched: 0,
+                        total: 0,
+                      };
+                      continue;
+                    }
                     const dispatchedQty = Math.max(0, Number(current.quantity_dispatched ?? 0));
-                    // Si hay porcion despachada, solo quitar lo que sigue en despacho.
+                    // Parcial: solo quitar lo en despacho; conservar lo ya despachado.
                     const nextQty = dispatchedQty;
                     next[idx] = {
                       ...current,
@@ -4088,13 +4052,30 @@ const OrdenesContent = () => {
                 return;
               }
 
-              // Ya despachado al 100%: no bajar desde vista normal.
+              // Despachado: permitir bajar/eliminar en staging; no aumentar sobre el baseline.
+              const baselineItem = kitchenBaselineItems.find((item) => item.id === id);
               if (
                 stagedItem
-                && isOrderItemFullyDispatched(stagedItem)
-                && qty < Math.max(0, Number(stagedItem.quantity ?? 0))
+                && baselineItem
+                && isOrderItemFullyDispatched(baselineItem)
               ) {
-                toast.error("Los items despachados se editan con la opcion Editar orden.");
+                const ceiling = Math.max(0, Number(baselineItem.quantity ?? 0));
+                if (qty > ceiling) return;
+                setStagedDirty(true);
+                setStagedItems((prev) =>
+                  prev.map((i) =>
+                    i.id === id
+                      ? {
+                        ...i,
+                        quantity: Math.max(0, qty),
+                        quantity_remaining: 0,
+                        quantity_dispatched: Math.max(0, qty),
+                        unit_price: price,
+                        total: Math.max(0, qty) * price + (qty > 0 ? (i.tray_container_cost ?? 0) : 0),
+                      }
+                      : i
+                  )
+                );
                 return;
               }
 
@@ -4102,13 +4083,6 @@ const OrdenesContent = () => {
               setStagedItems((prev) => {
                 const current = prev.find((i) => i.id === id);
                 if (!current) return prev;
-
-                if (
-                  isOrderItemFullyDispatched(current)
-                  && qty < Math.max(0, Number(current.quantity ?? 0))
-                ) {
-                  return prev;
-                }
 
                 const resolved = resolveInDispatchStagingQuantities(current, qty);
                 const nextQty = resolved.quantity;
@@ -4166,7 +4140,31 @@ const OrdenesContent = () => {
               if (hadKitchenPending) {
                 // Si este paso falla, los borradores quedarian sin enviarse: avisar siempre.
                 try {
-                  const applied = await applyKitchenPendingItemChanges(orderId!, orderItems, stagedItems);
+                  const dispatchedCancels = collectDispatchedCancellationSelections(
+                    kitchenBaselineItems,
+                    stagedItems,
+                  );
+                  if (dispatchedCancels.length > 0 && user?.id && orderId) {
+                    const { error: cancelError } = await (supabase as any).rpc("cancel_order_quantities", {
+                      p_order_id: orderId,
+                      p_cancelled_by: user.id,
+                      p_reason: "otro",
+                      p_notes: "Baja de items despachados al confirmar cambios de la orden.",
+                      p_items: dispatchedCancels,
+                      p_cancellation_type: "partial",
+                      p_from_order_edit: true,
+                    });
+                    if (cancelError) throw cancelError;
+                  }
+
+                  const dispatchedCancelIds = new Set(dispatchedCancels.map((row) => row.order_item_id));
+                  const serverForApply = orderItems.filter((item) => !dispatchedCancelIds.has(item.id));
+                  const stagedForApply = stagedItems.filter((item) => !dispatchedCancelIds.has(item.id));
+                  const applied = await applyKitchenPendingItemChanges(
+                    orderId!,
+                    serverForApply,
+                    stagedForApply,
+                  );
                   createdDraftDelta = Math.max(0, Number(applied?.createdDraftDelta ?? 0));
                 } catch (error: any) {
                   console.error("[Enviar a cocina] applyKitchenPendingItemChanges", error);

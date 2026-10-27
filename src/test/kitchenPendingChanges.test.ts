@@ -42,7 +42,7 @@ describe("kitchenPendingChanges", () => {
     expect(computeKitchenSendMoneyDelta(baseline, baseline)).toBe(0);
   });
 
-  it("ignora bajas de lineas ya despachadas para Enviar a cocina", () => {
+  it("incluye bajas de lineas ya despachadas para Enviar a cocina", () => {
     const dispatchedBaseline = [
       {
         id: "d1",
@@ -69,11 +69,11 @@ describe("kitchenPendingChanges", () => {
     ];
 
     expect(hasKitchenPendingChanges(dispatchedBaseline, pending)).toBe(true);
-    expect(hasKitchenPendingSendChanges(dispatchedBaseline, pending)).toBe(false);
-    expect(computeKitchenSendMoneyDeltaForSend(dispatchedBaseline, pending)).toBe(0);
+    expect(hasKitchenPendingSendChanges(dispatchedBaseline, pending)).toBe(true);
+    expect(computeKitchenSendMoneyDeltaForSend(dispatchedBaseline, pending)).toBe(-10.5);
   });
 
-  it("si incluye baja en En despacho, si cuenta para Enviar a cocina", () => {
+  it("si incluye baja en En despacho y despachado, cuenta ambas para Enviar a cocina", () => {
     const mixBaseline = [
       {
         id: "d1",
@@ -98,7 +98,7 @@ describe("kitchenPendingChanges", () => {
     ];
 
     expect(hasKitchenPendingSendChanges(mixBaseline, pending)).toBe(true);
-    expect(computeKitchenSendMoneyDeltaForSend(mixBaseline, pending)).toBe(-1.25);
+    expect(computeKitchenSendMoneyDeltaForSend(mixBaseline, pending)).toBe(-11.75);
   });
 
   it("status DISPATCHED con remanente sigue contando baja para Enviar a cocina", () => {

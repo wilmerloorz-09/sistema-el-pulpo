@@ -53,64 +53,46 @@ export function hasKitchenPendingChanges(
 }
 
 /**
- * Cambios que sí deben confirmarse con "Enviar a cocina".
- * Reducir/eliminar líneas ya despachadas NO aplica: eso va por "Editar orden".
+ * Cambios que sí deben confirmarse con "Enviar a cocina"
+ * (incluye bajas de líneas ya despachadas).
  */
 export function hasKitchenPendingSendChanges(
   baseline: KitchenPendingItem[],
   pending: KitchenPendingItem[],
 ): boolean {
-  const pendingById = new Map(pending.map((item) => [item.id, item]));
-  const baselineById = new Map(baseline.map((item) => [item.id, item]));
-
-  for (const [id, base] of baselineById) {
-    const pend = pendingById.get(id);
-    const baseQty = effectiveQuantity(base);
-    const pendQty = pend ? effectiveQuantity(pend) : 0;
-    if (pendQty === baseQty) continue;
-
-    // Baja o baja a 0 de una línea despachada: ignorar para Enviar a cocina.
-    if (pendQty < baseQty && isDispatchedLine(base)) {
-      continue;
-    }
-
-    return true;
-  }
-
-  for (const [id, pend] of pendingById) {
-    if (baselineById.has(id)) continue;
-    if (effectiveQuantity(pend) > 0) return true;
-  }
-
-  return false;
+  return hasKitchenPendingChanges(baseline, pending);
 }
 
-/** Delta monetario solo de cambios que aplican a Enviar a cocina. */
+/** Bajas de líneas 100% despachadas (van por cancel_order_quantities). */
+export function collectDispatchedCancellationSelections(
+  baseline: KitchenPendingItem[],
+  pending: KitchenPendingItem[],
+): Array<{ order_item_id: string; quantity_cancelled: number }> {
+  const pendingById = new Map(pending.map((item) => [item.id, item]));
+  const selections: Array<{ order_item_id: string; quantity_cancelled: number }> = [];
+
+  for (const base of baseline) {
+    if (!isDispatchedLine(base)) continue;
+    const pend = pendingById.get(base.id);
+    const baseQty = effectiveQuantity(base);
+    const pendQty = pend ? effectiveQuantity(pend) : 0;
+    const quantityCancelled = Math.max(0, baseQty - pendQty);
+    if (quantityCancelled <= 0) continue;
+    selections.push({
+      order_item_id: base.id,
+      quantity_cancelled: quantityCancelled,
+    });
+  }
+
+  return selections;
+}
+
+/** Delta monetario de cambios que aplican a Enviar a cocina. */
 export function computeKitchenSendMoneyDeltaForSend(
   baseline: KitchenPendingItem[],
   pending: KitchenPendingItem[],
 ): number {
-  const pendingById = new Map(pending.map((item) => [item.id, item]));
-  let delta = 0;
-
-  for (const base of baseline) {
-    const pend = pendingById.get(base.id);
-    const baseQty = effectiveQuantity(base);
-    const pendQty = pend ? effectiveQuantity(pend) : 0;
-    if (pendQty === baseQty) continue;
-    if (pendQty < baseQty && isDispatchedLine(base)) continue;
-
-    const baseCharge = computeItemChargeTotal(base);
-    const pendCharge = pend ? computeItemChargeTotal({ ...pend, quantity: pendQty }) : 0;
-    delta += pendCharge - baseCharge;
-  }
-
-  for (const pend of pending) {
-    if (baseline.some((b) => b.id === pend.id)) continue;
-    delta += computeItemChargeTotal(pend);
-  }
-
-  return Math.round(delta * 100) / 100;
+  return computeKitchenSendMoneyDelta(baseline, pending);
 }
 
 export function computeKitchenSendMoneyDelta(

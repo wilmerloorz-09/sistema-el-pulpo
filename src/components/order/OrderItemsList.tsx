@@ -426,11 +426,10 @@ const OrderItemsList = ({
           || item.status === "DRAFT"
         );
       const canShowControlsForItem = !listHideControls || editableById;
-      // En seccion Despachados solo se edita con "Editar orden" (editableById).
+      // Vista normal despacho-primero: controles tambien en seccion Despachados.
       const freelyEditableInDispatchFirst =
         allowSentStageEditing
         && !listAlwaysShowControls
-        && section !== "dispatched"
         && isOrderItemFreelyEditableInDispatchFirst(item);
       const showControls =
         canShowControlsForItem &&
