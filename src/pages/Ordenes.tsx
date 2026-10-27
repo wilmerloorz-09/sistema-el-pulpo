@@ -2260,9 +2260,8 @@ const OrdenesContent = () => {
   const kitchenSendDelta = useKitchenStaging
     ? computeKitchenSendMoneyDeltaForSend(kitchenBaselineItems, stagedItems)
     : finalButtonTotal;
-  // Borradores qty>0 o cambios pendientes (incluye bajas de despachados).
-  const showKitchenSendButton = useKitchenStaging
-    ? (hasPendingKitchenSendChanges || hasDraftItems)
+  const orderEditActionsEnabled = useKitchenStaging
+    ? (hasPendingKitchenSendChanges || hasDraftItems || stagedDirty)
     : hasDraftItems;
   const kitchenSendButtonLabel = isMixedSpecial
     ? `$${draftItemsTotal.toFixed(2)}`
@@ -2454,6 +2453,11 @@ const OrdenesContent = () => {
     !order.paid_at &&
     !hasPendingCancellationItems &&
     !isLockedFromEditar;
+  // Barra Cancelar/Enviar: siempre visible si la orden es editable; activa solo con cambios.
+  const showOrderEditActionBar =
+    !fromEditar
+    && canOperateOrders
+    && canEditItems;
   const handleSelectMenuProduct = async (node: MenuNode) => {
     if (!canEditItems) {
       toast.error("Esta orden no admite agregar productos.");
@@ -2905,6 +2909,223 @@ const OrdenesContent = () => {
       return await Promise.race([action(), timeout]);
     } finally {
       window.clearTimeout(timeoutId);
+    }
+  };
+
+  const handleCancelOrderEdits = async () => {
+    if (!orderEditActionsEnabled || sendingKitchenChanges) return;
+    try {
+      const baselineById = new Map(kitchenBaselineItems.map((item) => [item.id, item]));
+      const orphanDrafts = stagedItems.filter(
+        (item) =>
+          item.status === "DRAFT"
+          && !baselineById.has(item.id)
+          && !isTemporaryOrderItemId(item.id),
+      );
+      for (const draft of orphanDrafts) {
+        await removeItem.mutateAsync(draft.id);
+      }
+      for (const base of kitchenBaselineItems) {
+        if (base.status !== "DRAFT") continue;
+        const staged = stagedItems.find((item) => item.id === base.id);
+        if (!staged) continue;
+        if (Number(staged.quantity ?? 0) === Number(base.quantity ?? 0)
+          && Number(staged.unit_price ?? 0) === Number(base.unit_price ?? 0)) {
+          continue;
+        }
+        await updateQuantity.mutateAsync({
+          itemId: base.id,
+          quantity: Number(base.quantity ?? 0),
+          unit_price: Number(base.unit_price ?? 0),
+        });
+      }
+      setStagedItems(kitchenBaselineItems.map((item) => ({ ...item })));
+      setStagedDirty(false);
+      setKitchenSendError(null);
+      toast.message("Cambios descartados");
+    } catch (error: any) {
+      toast.error(error?.message || "No se pudieron descartar los cambios.");
+    }
+  };
+
+  const handleSendOrderEdits = async () => {
+    if (!orderEditActionsEnabled || sendingKitchenChanges) return;
+    try {
+      setSendingKitchenChanges(true);
+      setKitchenSendError(null);
+      if (order.is_special) {
+        await flushPendingSpecialTotalSave();
+      }
+
+      const hadKitchenPending = useKitchenStaging && hasPendingKitchenSendChanges;
+      let createdDraftDelta = 0;
+      if (hadKitchenPending) {
+        try {
+          const dispatchedCancels = collectDispatchedCancellationSelections(
+            kitchenBaselineItems,
+            stagedItems,
+          );
+          if (dispatchedCancels.length > 0 && user?.id && orderId) {
+            const { error: cancelError } = await (supabase as any).rpc("cancel_order_quantities", {
+              p_order_id: orderId,
+              p_cancelled_by: user.id,
+              p_reason: "otro",
+              p_notes: "Baja de items despachados al confirmar cambios de la orden.",
+              p_items: dispatchedCancels,
+              p_cancellation_type: "partial",
+              p_from_order_edit: true,
+            });
+            if (cancelError) throw cancelError;
+          }
+
+          const dispatchedCancelIds = new Set(dispatchedCancels.map((row) => row.order_item_id));
+          const serverForApply = orderItems.filter((item) => !dispatchedCancelIds.has(item.id));
+          const stagedForApply = stagedItems.filter((item) => !dispatchedCancelIds.has(item.id));
+          const applied = await applyKitchenPendingItemChanges(
+            orderId!,
+            serverForApply,
+            stagedForApply,
+          );
+          createdDraftDelta = Math.max(0, Number(applied?.createdDraftDelta ?? 0));
+        } catch (error: any) {
+          console.error("[Enviar] applyKitchenPendingItemChanges", error);
+          const message = formatearMensajeStockInventario(
+            `No se pudieron aplicar los cambios: ${error?.message || "error desconocido"}. Intenta de nuevo.`,
+          );
+          setKitchenSendError(message);
+          toast.error(message);
+          return;
+        }
+      }
+
+      const localItems = useKitchenStaging ? stagedItems : orderItems;
+      const draftsToSend = localItems.some(
+        (item) => item.status === "DRAFT" && Number(item.quantity ?? 0) > 0,
+      ) || orderItems.some(
+        (item) => item.status === "DRAFT" && Number(item.quantity ?? 0) > 0,
+      );
+      const shouldSubmitDrafts = draftsToSend || createdDraftDelta > 0;
+
+      let freshOrder: Order | null =
+        (orderId
+          ? (qc.getQueryData(getOrderQueryKey(orderId)) as Order | undefined) ?? null
+          : null)
+        ?? order
+        ?? null;
+
+      if (shouldSubmitDrafts || !hadKitchenPending) {
+        await (isExpressOrder
+          ? sendToDispatch.mutateAsync()
+          : sendToKitchen.mutateAsync());
+
+        if (orderId) {
+          freshOrder =
+            (qc.getQueryData(getOrderQueryKey(orderId)) as Order | undefined)
+            ?? freshOrder;
+        }
+      } else if (orderId && useKitchenStaging) {
+        const current =
+          (qc.getQueryData(getOrderQueryKey(orderId)) as Order | undefined) ?? order;
+        if (current) {
+          const stagedById = new Map(stagedItems.map((item) => [item.id, item]));
+          const acceptedItems = stagedItems
+            .filter((item) => Math.max(0, Number(item.quantity ?? 0)) > 0)
+            .map((item) => {
+              const qty = Math.max(0, Number(item.quantity ?? 0));
+              const remaining = Math.min(qty, Math.max(0, Number(item.quantity_remaining ?? 0)));
+              const dispatched = Math.max(0, qty - remaining);
+              return {
+                ...item,
+                quantity: qty,
+                quantity_remaining: remaining,
+                quantity_dispatched: dispatched,
+              };
+            });
+          const updated: Order = {
+            ...current,
+            items: acceptedItems.length > 0
+              ? acceptedItems.map((staged) => {
+                  const prev = stagedById.get(staged.id);
+                  return {
+                    ...(current.items.find((item) => item.id === staged.id) ?? staged),
+                    ...staged,
+                    total: staged.total ?? prev?.total,
+                    status: staged.status ?? prev?.status,
+                  };
+                }) as Order["items"]
+              : current.items
+                  .map((item) => {
+                    const staged = stagedById.get(item.id);
+                    if (!staged) return null;
+                    if (Math.max(0, Number(staged.quantity ?? 0)) <= 0) return null;
+                    return {
+                      ...item,
+                      quantity: staged.quantity,
+                      unit_price: staged.unit_price,
+                      total: staged.total ?? item.total,
+                      status: staged.status ?? item.status,
+                      quantity_dispatched: staged.quantity_dispatched ?? item.quantity_dispatched,
+                      quantity_remaining: staged.quantity_remaining ?? item.quantity_remaining,
+                    };
+                  })
+                  .filter((item): item is NonNullable<typeof item> => item != null),
+          };
+          qc.setQueryData(getOrderQueryKey(orderId), updated);
+          freshOrder = updated;
+          void qc.invalidateQueries({ queryKey: getOrderQueryKey(orderId) });
+        }
+      }
+
+      if (useKitchenStaging && orderId) {
+        setStagedDirty(false);
+        setKitchenSendError(null);
+        const itemsForBaseline =
+          freshOrder?.items ??
+          (qc.getQueryData(getOrderQueryKey(orderId)) as Order | undefined)?.items;
+        if (itemsForBaseline) {
+          setKitchenBaselineItems(itemsForBaseline);
+          setStagedItems(itemsForBaseline);
+        } else {
+          setKitchenBaselineItems(stagedItems);
+        }
+      }
+
+      toast.success("Cambios enviados.");
+
+      const skipPaymentForSpecialZero = isSpecialOrderExplicitZeroTotal(freshOrder ?? order)
+        || freshOrder?.status === "PAID";
+
+      if (
+        !isDispatchFirstFlow
+        && canUseCaja
+        && (order?.id || orderId)
+        && !skipPaymentForSpecialZero
+      ) {
+        if (
+          !shiftGateQuery.data?.shiftOpen
+          || shiftGateQuery.data?.cajaStatus === "CLOSED"
+        ) {
+          setShowCajaUnopenedAlert(true);
+          return;
+        }
+
+        if (canOpenPaymentUiOnDevice(shiftGateQuery.data, isTablet10)) {
+          setPaymentDialogOpenForOrderId(orderId);
+        } else {
+          toast.error("El dispositivo es demasiado pequeño para operar caja.");
+        }
+      } else if (isDispatchFirstFlow && mobile) {
+        setShowCart(false);
+      }
+    } catch (error: any) {
+      console.error("[Enviar]", error);
+      setKitchenSendError(
+        formatearMensajeStockInventario(
+          error?.message || "No se pudieron enviar los cambios. Intenta de nuevo.",
+        ),
+      );
+    } finally {
+      setSendingKitchenChanges(false);
     }
   };
 
@@ -4119,196 +4340,47 @@ const OrdenesContent = () => {
         )}
       </div>
 
-      {!fromEditar && canOperateOrders && showKitchenSendButton && order.status !== "PAID" && order.status !== "CANCELLED" && (
+      {showOrderEditActionBar && (
         <div className={cn("mt-4 shrink-0", mobile && "footer-safe-bottom sticky bottom-0 z-10 -mx-1 bg-background/95 px-1 pt-2 backdrop-blur-sm")}>
         {kitchenSendError ? (
           <div className="mb-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900">
             {kitchenSendError}
           </div>
         ) : null}
-        <Button
-          onClick={async () => {
-            try {
-              setSendingKitchenChanges(true);
-              setKitchenSendError(null);
-              if (order.is_special) {
-                await flushPendingSpecialTotalSave();
-              }
-
-              const hadKitchenPending = useKitchenStaging && hasPendingKitchenSendChanges;
-              let createdDraftDelta = 0;
-              if (hadKitchenPending) {
-                // Si este paso falla, los borradores quedarian sin enviarse: avisar siempre.
-                try {
-                  const dispatchedCancels = collectDispatchedCancellationSelections(
-                    kitchenBaselineItems,
-                    stagedItems,
-                  );
-                  if (dispatchedCancels.length > 0 && user?.id && orderId) {
-                    const { error: cancelError } = await (supabase as any).rpc("cancel_order_quantities", {
-                      p_order_id: orderId,
-                      p_cancelled_by: user.id,
-                      p_reason: "otro",
-                      p_notes: "Baja de items despachados al confirmar cambios de la orden.",
-                      p_items: dispatchedCancels,
-                      p_cancellation_type: "partial",
-                      p_from_order_edit: true,
-                    });
-                    if (cancelError) throw cancelError;
-                  }
-
-                  const dispatchedCancelIds = new Set(dispatchedCancels.map((row) => row.order_item_id));
-                  const serverForApply = orderItems.filter((item) => !dispatchedCancelIds.has(item.id));
-                  const stagedForApply = stagedItems.filter((item) => !dispatchedCancelIds.has(item.id));
-                  const applied = await applyKitchenPendingItemChanges(
-                    orderId!,
-                    serverForApply,
-                    stagedForApply,
-                  );
-                  createdDraftDelta = Math.max(0, Number(applied?.createdDraftDelta ?? 0));
-                } catch (error: any) {
-                  console.error("[Enviar a cocina] applyKitchenPendingItemChanges", error);
-                  const message = formatearMensajeStockInventario(
-                    `No se pudieron aplicar los cambios antes de enviar: ${error?.message || "error desconocido"}. Intenta de nuevo.`,
-                  );
-                  setKitchenSendError(message);
-                  toast.error(message);
-                  return;
-                }
-              }
-
-              // Decidir con estado local (sin refetch pesado previo).
-              const localItems = useKitchenStaging ? stagedItems : orderItems;
-              const draftsToSend = localItems.some(
-                (item) => item.status === "DRAFT" && Number(item.quantity ?? 0) > 0,
-              ) || orderItems.some(
-                (item) => item.status === "DRAFT" && Number(item.quantity ?? 0) > 0,
-              );
-              const shouldSubmitDrafts = draftsToSend || createdDraftDelta > 0;
-
-              let freshOrder: Order | null =
-                (orderId
-                  ? (qc.getQueryData(getOrderQueryKey(orderId)) as Order | undefined) ?? null
-                  : null)
-                ?? order
-                ?? null;
-
-              if (shouldSubmitDrafts || !hadKitchenPending) {
-                await (isExpressOrder
-                  ? sendToDispatch.mutateAsync()
-                  : sendToKitchen.mutateAsync());
-
-                // La mutacion ya aplico update optimista en cache.
-                if (orderId) {
-                  freshOrder =
-                    (qc.getQueryData(getOrderQueryKey(orderId)) as Order | undefined)
-                    ?? freshOrder;
-                }
-              } else if (orderId && useKitchenStaging) {
-                // Solo bajas/ajustes ya aplicados en BD: alinear cache con staging.
-                const current =
-                  (qc.getQueryData(getOrderQueryKey(orderId)) as Order | undefined) ?? order;
-                if (current) {
-                  const stagedById = new Map(stagedItems.map((item) => [item.id, item]));
-                  const updated: Order = {
-                    ...current,
-                    items: current.items
-                      .map((item) => {
-                        const staged = stagedById.get(item.id);
-                        if (!staged) return null;
-                        return {
-                          ...item,
-                          quantity: staged.quantity,
-                          unit_price: staged.unit_price,
-                          total: staged.total ?? item.total,
-                          status: staged.status ?? item.status,
-                        };
-                      })
-                      .filter((item): item is NonNullable<typeof item> => item != null),
-                  };
-                  qc.setQueryData(getOrderQueryKey(orderId), updated);
-                  freshOrder = updated;
-                  void qc.invalidateQueries({ queryKey: getOrderQueryKey(orderId) });
-                }
-              }
-
-              if (useKitchenStaging && orderId) {
-                setStagedDirty(false);
-                setKitchenSendError(null);
-                const itemsForBaseline =
-                  freshOrder?.items ??
-                  (qc.getQueryData(getOrderQueryKey(orderId)) as Order | undefined)?.items;
-                if (itemsForBaseline) {
-                  setKitchenBaselineItems(itemsForBaseline);
-                  setStagedItems(itemsForBaseline);
-                } else {
-                  setKitchenBaselineItems(stagedItems);
-                }
-              }
-
-              const skipPaymentForSpecialZero = isSpecialOrderExplicitZeroTotal(freshOrder ?? order)
-                || freshOrder?.status === "PAID";
-
-              if (
-                !isDispatchFirstFlow
-                && canUseCaja
-                && (order?.id || orderId)
-                && !skipPaymentForSpecialZero
-              ) {
-                if (
-                  !shiftGateQuery.data?.shiftOpen
-                  || shiftGateQuery.data?.cajaStatus === "CLOSED"
-                ) {
-                  setShowCajaUnopenedAlert(true);
-                  return;
-                }
-
-                if (canOpenPaymentUiOnDevice(shiftGateQuery.data, isTablet10)) {
-                  setPaymentDialogOpenForOrderId(orderId);
-                } else {
-                  toast.error("El dispositivo es demasiado pequeño para operar caja.");
-                }
-              } else if (isDispatchFirstFlow && mobile) {
-                setShowCart(false);
-              }
-            } catch (error: any) {
-              console.error("[Enviar a cocina]", error);
-              setKitchenSendError(
-                formatearMensajeStockInventario(
-                  error?.message || "No se pudo enviar a cocina. Intenta de nuevo.",
-                ),
-              );
-            } finally {
-              setSendingKitchenChanges(false);
+        <div className="grid grid-cols-2 gap-3">
+          <Button
+            type="button"
+            variant="outline"
+            className="h-12 w-full gap-2 rounded-xl border-slate-200 font-display text-base font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+            disabled={!orderEditActionsEnabled || sendingKitchenChanges || hasTemporaryDraftItems}
+            onClick={() => { void handleCancelOrderEdits(); }}
+          >
+            <X className="h-5 w-5" />
+            Cancelar
+          </Button>
+          <Button
+            type="button"
+            className="h-12 w-full gap-2 rounded-xl font-display text-base font-semibold disabled:opacity-50"
+            disabled={
+              !orderEditActionsEnabled
+              || sendingKitchenChanges
+              || (isExpressOrder ? sendToDispatch.isPending : sendToKitchen.isPending)
+              || hasTemporaryDraftItems
             }
-          }}
-          disabled={
-            sendingKitchenChanges
-            || (isExpressOrder ? sendToDispatch.isPending : sendToKitchen.isPending)
-            || hasTemporaryDraftItems
-          }
-          title={hasTemporaryDraftItems ? "Sincronizando producto agregado..." : undefined}
-          className="h-12 w-full gap-2 rounded-xl font-display text-base font-semibold"
-        >
-          {sendingKitchenChanges || (isExpressOrder ? sendToDispatch.isPending : sendToKitchen.isPending) || hasTemporaryDraftItems ? (
-            <Loader2 className="h-5 w-5 animate-spin" />
-          ) : isExpressOrder ? (
-            <>
-              <Truck className="h-5 w-5" />
-              Enviar a despacho - {kitchenSendButtonLabel}
-            </>
-          ) : isDispatchFirstFlow ? (
-            <>
-              <ChefHat className="h-5 w-5" />
-              Enviar a cocina - {kitchenSendButtonLabel}
-            </>
-          ) : (
-            <>
-              <CircleDollarSign className="h-5 w-5" />
-              Enviar a caja - {kitchenSendButtonLabel}
-            </>
-          )}
-        </Button>
+            title={hasTemporaryDraftItems ? "Sincronizando producto agregado..." : undefined}
+            onClick={() => { void handleSendOrderEdits(); }}
+          >
+            {sendingKitchenChanges || (isExpressOrder ? sendToDispatch.isPending : sendToKitchen.isPending) || hasTemporaryDraftItems ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : (
+              <>
+                <Sparkles className="h-5 w-5" />
+                {"Enviar"}
+                {orderEditActionsEnabled ? ` · ${kitchenSendButtonLabel}` : ""}
+              </>
+            )}
+          </Button>
+        </div>
         </div>
       )}
 
