@@ -366,10 +366,17 @@ const OrderItemsList = ({
   const total = visibleItems.reduce((sum, i) => sum + Number(i.total ?? 0), 0);
 
   if (visibleItems.length === 0) {
+    const hasPendingKitchenRemovals = items.some(
+      (item) => Math.max(0, Number(item.quantity ?? 0)) <= 0 && String(item.status ?? "") !== "DRAFT",
+    );
     return (
       <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
         <p className="text-sm">Orden vacia</p>
-        <p className="text-xs mt-1">Selecciona productos del menu</p>
+        <p className="text-xs mt-1">
+          {hasPendingKitchenRemovals
+            ? "Bajas pendientes: Enviar para confirmar o Cancelar para revertir"
+            : "Selecciona productos del menu"}
+        </p>
       </div>
     );
   }

@@ -1231,14 +1231,12 @@ const OrdenesContent = () => {
   const itemsToUse = (fromEditar || useKitchenStaging) ? stagedItems : (order?.items ?? []);
   const isPaidItem = (item: any) => {
     const status = String(item.status ?? "");
-    const orderedQuantity = Math.max(0, Number(item.quantity_ordered ?? item.original_quantity ?? item.quantity ?? 0));
-    const pendingQuantity = Math.max(0, Number(item.quantity ?? 0));
-
+    // No tratar quantity=0 de staging (baja pendiente de Enviar) como pagado:
+    // eso bloqueaba el menú y otras acciones al eliminar despachados.
     return (
       status === "PAID" ||
       Boolean(item.paid_at) ||
-      Math.max(0, Number((item as any).quantity_paid ?? 0)) > 0 ||
-      (orderedQuantity > 0 && pendingQuantity <= 0 && !status.includes("CANCEL"))
+      Math.max(0, Number((item as any).quantity_paid ?? 0)) > 0
     );
   };
 
@@ -4200,11 +4198,12 @@ const OrdenesContent = () => {
                     if (idx < 0) continue;
                     const current = next[idx];
                     if (isOrderItemFullyDispatched(current)) {
+                      // qty 0 = baja pendiente; conservar quantity_dispatched para no
+                      // reclasificar la línea como pagada ni bloquear el menú.
                       next[idx] = {
                         ...current,
                         quantity: 0,
                         quantity_remaining: 0,
-                        quantity_dispatched: 0,
                         total: 0,
                       };
                       continue;
@@ -4223,6 +4222,8 @@ const OrdenesContent = () => {
                   }
                   return next;
                 });
+                clearBodyPointerLock();
+                window.setTimeout(clearBodyPointerLock, 0);
               }
 
               if (draftIds.length > 0) {
@@ -4310,17 +4311,20 @@ const OrdenesContent = () => {
               ) {
                 const ceiling = Math.max(0, Number(baselineItem.quantity ?? 0));
                 if (qty > ceiling) return;
+                const nextQty = Math.max(0, qty);
+                const baselineDispatched = Math.max(0, Number(baselineItem.quantity_dispatched ?? baselineItem.quantity ?? 0));
                 setStagedDirty(true);
                 setStagedItems((prev) =>
                   prev.map((i) =>
                     i.id === id
                       ? {
                         ...i,
-                        quantity: Math.max(0, qty),
+                        quantity: nextQty,
                         quantity_remaining: 0,
-                        quantity_dispatched: Math.max(0, qty),
+                        // Si qty=0 (baja pendiente), conservar despachado del baseline.
+                        quantity_dispatched: nextQty > 0 ? nextQty : baselineDispatched,
                         unit_price: price,
-                        total: Math.max(0, qty) * price + (qty > 0 ? (i.tray_container_cost ?? 0) : 0),
+                        total: nextQty * price + (nextQty > 0 ? (i.tray_container_cost ?? 0) : 0),
                       }
                       : i
                   )
