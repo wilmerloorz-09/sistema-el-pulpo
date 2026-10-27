@@ -33,7 +33,6 @@ import {
   useAdaptiveRefetchInterval,
   useOperationalOrdersRealtime,
 } from "@/lib/queryEgress";
-import { fetchRegisterOpeningCollectedPayments } from "@/lib/cajaRegisterOpeningSummary";
 import type { CajaRegisterDenomRow, CajaRegisterSnapshot } from "@/lib/cajaSummaryScope";
 import { belongsToCashierRegisterActivity, resolveCashierOpening } from "@/lib/cajaSummaryScope";
 import { qk } from "@/lib/queryKeys";
@@ -2447,41 +2446,20 @@ export function useCaja(params?: {
           ? resolveCashierOpening(openingHistory, filterCashierId)
           : null;
 
+      // Lista de "Pagos del turno": incluir anulados/reversados.
+      // No usar get_register_opening_collected_payments aquí: esa RPC es para el
+      // cuadre/resumen y excluye voided/reversed (por eso solo aparecían con "Todos").
       let paymentsScopedToRegister = allPaymentsInRangeRaw;
       if (filterCashierId !== "ALL") {
-        if (cashierOpening?.id) {
-          try {
-            const openingPayments = await fetchRegisterOpeningCollectedPayments(cashierOpening.id);
-            const openingPaymentIds = new Set(openingPayments.map((payment) => payment.id));
-            paymentsScopedToRegister = allPaymentsInRangeRaw.filter((payment) =>
-              openingPaymentIds.has(payment.id),
-            );
-          } catch (rpcError) {
-            console.warn(
-              "[useCaja] RPC get_register_opening_collected_payments no disponible, usando respaldo:",
-              rpcError,
-            );
-            paymentsScopedToRegister = allPaymentsInRangeRaw.filter((payment) =>
-              belongsToCashierRegisterActivity({
-                actorId: payment.created_by,
-                activityAt: payment.created_at,
-                cashierId: filterCashierId,
-                opening: cashierOpening,
-                openingHistory,
-              }),
-            );
-          }
-        } else {
-          paymentsScopedToRegister = allPaymentsInRangeRaw.filter((payment) =>
-            belongsToCashierRegisterActivity({
-              actorId: payment.created_by,
-              activityAt: payment.created_at,
-              cashierId: filterCashierId,
-              opening: cashierOpening,
-              openingHistory,
-            }),
-          );
-        }
+        paymentsScopedToRegister = allPaymentsInRangeRaw.filter((payment) =>
+          belongsToCashierRegisterActivity({
+            actorId: payment.created_by,
+            activityAt: payment.created_at,
+            cashierId: filterCashierId,
+            opening: cashierOpening,
+            openingHistory,
+          }),
+        );
       }
 
       if (paymentsScopedToRegister.length === 0) {
