@@ -146,7 +146,12 @@ function getOrderItemStage(item: OrderItem): OrderItemStage {
     return "partial";
   }
 
-  if (item.status === "PAID" || (Number(item.quantity_ordered ?? 0) > 0 && Number(item.quantity ?? 0) === 0 && !String(item.status ?? "").includes("CANCEL"))) {
+  // Solo “pagado” real. quantity=0 en staging (baja pendiente de Enviar) NO es pago:
+  // si no, se apaga el layout por secciones y los ítems en 0 reaparecen en la lista plana.
+  if (
+    item.status === "PAID"
+    || Math.max(0, Number(item.quantity_paid ?? 0)) > 0
+  ) {
     return "paid";
   }
 
@@ -270,6 +275,11 @@ function splitItemsForDispatchFirstSections(items: OrderItem[], editDispatchedIt
     const remainingQty = Math.max(0, Number(item.quantity_remaining ?? 0));
     const visibleQty = Math.max(0, Number(item.quantity ?? 0));
 
+    // Bajas en staging (qty 0): no mostrar; siguen en memoria hasta Enviar/Cancelar.
+    if (visibleQty <= 0 && stage !== "pendingCancellation") {
+      continue;
+    }
+
     if (stage === "draft") {
       if (visibleQty > 0) draft.push(item);
       continue;
@@ -347,9 +357,15 @@ const OrderItemsList = ({
 }: Props) => {
   const { activeBranch } = useBranch();
   const workflowMode = activeBranch?.workflow_mode ?? "CASH_THEN_DISPATCH";
-  const total = items.reduce((sum, i) => sum + i.total, 0);
+  const visibleItems = items.filter((item) => {
+    const qty = Math.max(0, Number(item.quantity ?? 0));
+    if (qty > 0) return true;
+    const stage = getOrderItemStage(item);
+    return stage === "pendingCancellation";
+  });
+  const total = visibleItems.reduce((sum, i) => sum + Number(i.total ?? 0), 0);
 
-  if (items.length === 0) {
+  if (visibleItems.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
         <p className="text-sm">Orden vacia</p>
@@ -377,7 +393,7 @@ const OrderItemsList = ({
         .join("|");
       const isDraft = item.status === "DRAFT";
       const key = `${item.description_snapshot}_${item.unit_price}_${isDraft ? "draft" : "non-draft"}_${modKey}`;
-      const itemQty = Math.max(0, Number(item.quantity || item.quantity_ordered || 0));
+      const itemQty = Math.max(0, Number(item.quantity ?? 0));
       if (!groups[key]) {
         groups[key] = {
           ...item,
@@ -519,7 +535,7 @@ const OrderItemsList = ({
                     (displayQuantity === 0 && itemStage !== "paid" && itemStage !== "dispatched") && "opacity-50 !border-red-300 !bg-red-100 !text-red-900"
                   )}
                 >
-                  {(displayQuantity || item.quantity_ordered) ?? 0}
+                  {displayQuantity}
                 </Badge>
               ) : null}
 
@@ -623,9 +639,9 @@ const OrderItemsList = ({
                   <>
                     <span>${item.unit_price.toFixed(2)}</span>
                     <span className="px-1 text-slate-400">x</span>
-                    <span>{displayQuantity || item.quantity_ordered}</span>
+                    <span>{displayQuantity}</span>
                     <span className="px-1 text-slate-400">=</span>
-                    <span className="font-bold text-slate-900">${formatLineTotal(item.unit_price, displayQuantity || item.quantity_ordered)}</span>
+                    <span className="font-bold text-slate-900">${formatLineTotal(item.unit_price, displayQuantity)}</span>
                   </>
                 )}
               </p>
@@ -734,10 +750,10 @@ const OrderItemsList = ({
     });
   };
 
-  const hasPaidItems = items.some((item) => (item.quantity_paid ?? 0) > 0);
+  const hasPaidItems = visibleItems.some((item) => (item.quantity_paid ?? 0) > 0);
 
   if (hasPaidItems) {
-    const pendingItems = items
+    const pendingItems = visibleItems
       .map((item) => {
         const pendingQty = item.quantity;
         const containerCost = Number(item.tray_container_cost ?? 0);
@@ -752,7 +768,7 @@ const OrderItemsList = ({
       })
       .filter((item) => item.quantity > 0);
 
-    const paidItems = items
+    const paidItems = visibleItems
       .map((item) => {
         const paidQty = item.quantity_paid ?? 0;
         const containerCost = Number(item.tray_container_cost ?? 0);
@@ -856,8 +872,8 @@ const OrderItemsList = ({
     );
   }
 
-  if (splitDispatchSections && shouldUseDispatchFirstSections(items, orderType, workflowMode)) {
-    const { draft, inDispatch, dispatched } = splitItemsForDispatchFirstSections(items, editDispatchedItemsOnly);
+  if (splitDispatchSections && shouldUseDispatchFirstSections(visibleItems, orderType, workflowMode)) {
+    const { draft, inDispatch, dispatched } = splitItemsForDispatchFirstSections(visibleItems, editDispatchedItemsOnly);
     const inDispatchLabel = getSentItemStageLabel(orderType, workflowMode);
 
     return (
@@ -925,7 +941,7 @@ const OrderItemsList = ({
 
   return (
     <div className="flex flex-col gap-3">
-      {renderList(items, false)}
+      {renderList(visibleItems, false)}
 
       {!hideFooterTotals && (
         <div className="mt-1 space-y-1 border-t border-border pt-2">
