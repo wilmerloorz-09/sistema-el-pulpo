@@ -67,7 +67,6 @@ import {
   type InventarioProductoInfo,
 } from "@/lib/inventarioMenuData";
 import { formatearMensajeStockInventario, productoBloqueadoPorStockInventario, stockVisibleParaOrden } from "@/lib/inventarioProductos";
-import { useCancellation } from "@/hooks/useCancellation";
 import { formatTableNameLabel, getOrderMesaHeaderNumber, getOrderRef } from "@/lib/orderPresentation";
 import { getDispatchedEditQuantity, getOrderStatusLabel, isExtraOrder as orderIsExtra, isOrderItemEditableInDispatchFirstEditMode, isOrderItemFullyDispatched, isSpecialOrderExplicitZeroTotal, resolveInDispatchStagingQuantities } from "@/lib/orderFlow";
 import {
@@ -767,7 +766,6 @@ const OrdenesContent = () => {
     unlockOrder,
   } = useOrder(orderId);
   const orderItems = order?.items ?? EMPTY_ITEMS;
-  const { cancelOrderMutation } = useCancellation();
 
   // Permisos y estados base moved up to avoid TDZ
   const canManageOrders = canManage(permissions, "admin_sucursal") || canManage(permissions, "admin_global");
@@ -3094,7 +3092,11 @@ const OrdenesContent = () => {
         .map((item) => {
           const staged = stagedItems.find((stagedItem) => stagedItem.id === item.id);
           const targetQuantity = Math.max(0, Number(staged?.quantity ?? 0));
-          const currentQuantity = Math.max(0, Number(item.quantity ?? 0));
+          const currentQuantity = Math.max(
+            0,
+            Number(item.quantity ?? 0),
+            Number(item.quantity_dispatched ?? 0) + Number(item.quantity_remaining ?? 0),
+          );
           const quantityCancelled = Math.max(0, currentQuantity - targetQuantity);
 
           if (quantityCancelled <= 0) return null;
@@ -3109,43 +3111,49 @@ const OrdenesContent = () => {
         })
         .filter((item): item is NonNullable<typeof item> => item !== null);
 
-      let cancellationBecameRequest = false;
       if (cancellationSelections.length > 0 && user) {
-        // Always use "partial" cancellation when accepting edit changes.
-        // Even if all items are removed, we do NOT auto-cancel the order so
-        // the user stays on the order page and can add new products.
-        const cancellationResult = await runEditStep("registrar anulacion de despachados", () =>
-          cancelOrderMutation.mutateAsync({
-            orderId,
-            items: cancellationSelections,
-            userId: user.id,
-            cancellationType: "partial",
-            requiresAuthorization: false,
-            cancellationData: {
-              reason: stagedCancellationData?.reason ?? "otro",
-              notes: stagedCancellationData?.notes
-                ? stagedCancellationData.notes
-                : isClosedForPayment
-                  ? "Anulacion aplicada automaticamente al aceptar cambios en orden cerrada."
-                  : "Anulacion aplicada automaticamente al aceptar cambios en orden despachada.",
-              cancelledBy: user.id,
-            },
-          }),
-        );
-        cancellationBecameRequest = Boolean((cancellationResult as { isRequest?: boolean })?.isRequest);
+        // RPC directa (no cancelOrderMutation): su onSuccess hace refetch masivo y puede
+        // colgar "Aceptar cambios". p_from_order_edit permite anular despachados sin
+        // supervisor cuando la orden esta en modo edicion.
+        await runEditStep("registrar anulacion de despachados", async () => {
+          const { error: cancelError } = await (supabase as any).rpc("cancel_order_quantities", {
+            p_order_id: orderId,
+            p_cancelled_by: user.id,
+            p_reason: stagedCancellationData?.reason ?? "otro",
+            p_notes: stagedCancellationData?.notes
+              ? stagedCancellationData.notes
+              : isClosedForPayment
+                ? "Anulacion aplicada automaticamente al aceptar cambios en orden cerrada."
+                : "Anulacion aplicada automaticamente al aceptar cambios en orden despachada.",
+            p_items: cancellationSelections.map((item) => ({
+              order_item_id: item.order_item_id,
+              quantity_cancelled: item.quantity_cancelled,
+            })),
+            p_cancellation_type: "partial",
+            p_from_order_edit: true,
+          });
+
+          if (cancelError) {
+            const message = String(cancelError.message ?? "");
+            if (message.toLowerCase().includes("requiere autorizacion")) {
+              throw new Error(
+                "No se pudieron guardar las bajas de items despachados: tu usuario necesita permiso de editar ordenes o autorizacion de supervisor.",
+              );
+            }
+            throw cancelError;
+          }
+        });
       }
 
       await runEditStep("desbloquear la orden", () => unlockOrder.mutateAsync());
       setStagedDirty(false);
-      if (cancellationBecameRequest) {
-        toast.warning(
-          "Tu usuario no puede anular despachados directamente: la reduccion quedo como solicitud pendiente de autorizacion.",
-          { duration: 8000 },
-        );
-      } else {
-        toast.success("Cambios aceptados.");
-      }
+      toast.success("Cambios aceptados.");
       if (orderId) {
+        invalidateOperationalOrderQueries(qc, {
+          branchId: order?.branch_id,
+          orderId,
+          includeTables: true,
+        });
         void qc.invalidateQueries({ queryKey: getOrderQueryKey(orderId) });
       }
       // Always navigate back to the order page after accepting changes.
