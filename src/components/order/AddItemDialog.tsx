@@ -144,6 +144,28 @@ const AddItemDialog = ({
     setSelectedMods([]);
   }, [dialogOpen, product?.id, displayProduct?.unit_price, isSpecial]);
 
+  // Cierre controlado desde el padre (p.ej. Agregar optimista) no siempre dispara onOpenChange.
+  useEffect(() => {
+    if (dialogOpen) return;
+    const release = () => {
+      if (document.body.style.pointerEvents === "none") {
+        document.body.style.pointerEvents = "";
+      }
+      if (document.body.hasAttribute("data-scroll-locked")) {
+        document.body.removeAttribute("data-scroll-locked");
+        document.body.style.removeProperty("overflow");
+        document.body.style.removeProperty("padding-right");
+      }
+    };
+    release();
+    const t0 = window.setTimeout(release, 0);
+    const t1 = window.setTimeout(release, 350);
+    return () => {
+      window.clearTimeout(t0);
+      window.clearTimeout(t1);
+    };
+  }, [dialogOpen]);
+
   useEffect(() => {
     if (!dialogOpen || stockCap == null) return;
     setQuantity((current) => Math.min(Math.max(0, current), stockCap));
@@ -259,13 +281,38 @@ const AddItemDialog = ({
     setQuantity(next);
   };
 
+  const releaseBodyPointerLock = () => {
+    if (document.body.style.pointerEvents === "none") {
+      document.body.style.pointerEvents = "";
+    }
+    if (document.body.hasAttribute("data-scroll-locked")) {
+      document.body.removeAttribute("data-scroll-locked");
+      document.body.style.removeProperty("overflow");
+      document.body.style.removeProperty("padding-right");
+    }
+  };
+
+  const handleDialogOpenChange = (value: boolean) => {
+    if (value) return;
+    onClose();
+    // Cierre optimista (Agregar) desmonta el content en el mismo frame y Radix
+    // a veces deja body con pointer-events:none → UI “congelada”.
+    releaseBodyPointerLock();
+    window.setTimeout(releaseBodyPointerLock, 0);
+    window.setTimeout(releaseBodyPointerLock, 350);
+  };
+
   return (
-    <Dialog open={dialogOpen} onOpenChange={(value) => !value && onClose()}>
+    <Dialog open={dialogOpen} onOpenChange={handleDialogOpenChange}>
       {displayProduct ? (
       <DialogContent
         className="max-w-sm rounded-[24px] p-5 shadow-xl sm:rounded-[28px] border-orange-200/40 bg-background"
         onPointerDownOutside={suppressAccidentalDismiss}
         onInteractOutside={suppressAccidentalDismiss}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          releaseBodyPointerLock();
+        }}
       >
         <DialogHeader className="mb-1 text-left">
           <div className="flex items-start gap-3">

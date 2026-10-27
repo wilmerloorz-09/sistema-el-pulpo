@@ -1267,18 +1267,24 @@ const OrdenesContent = () => {
     }
 
     if (!stagedDirty) {
+      // Baseline = último estado confirmado (sin cambios pendientes de Enviar).
+      // Si no se actualiza al agregar borradores, Cancelar los trata como huérfanos y los borra.
+      setKitchenBaselineItems(orderItems);
       setStagedItems(orderItems);
     }
   }, [fromEditar, useKitchenStaging, orderId, orderItems, stagedDirty, isLoading, order]);
 
+  // Solo con staging dirty: si no, el efecto de arriba ya iguala baseline+staged a orderItems.
+  // Si este efecto corre con dirty=false, puede meter borradores en staged y dejar baseline atrás;
+  // entonces Cancelar restaura baseline vacío y “borra” la orden en pantalla.
   useEffect(() => {
-    if (!useKitchenStaging || fromEditar || isLoading) return;
+    if (!useKitchenStaging || fromEditar || isLoading || !stagedDirty) return;
 
     setStagedItems((prev) => {
       const reconciled = reconcileKitchenStagedItems(prev, orderItems);
       return mergeMissingKitchenTempItems(reconciled, orderItems);
     });
-  }, [useKitchenStaging, fromEditar, isLoading, orderItems]);
+  }, [useKitchenStaging, fromEditar, isLoading, orderItems, stagedDirty]);
 
   useEffect(() => {
     if (!useKitchenStaging || !stagedDirty || isLoading) return;
@@ -2260,9 +2266,14 @@ const OrdenesContent = () => {
   const kitchenSendDelta = useKitchenStaging
     ? computeKitchenSendMoneyDeltaForSend(kitchenBaselineItems, stagedItems)
     : finalButtonTotal;
-  const orderEditActionsEnabled = useKitchenStaging
+  // Enviar: borradores por mandar o cambios en staging.
+  const orderEditSendEnabled = useKitchenStaging
     ? (hasPendingKitchenSendChanges || hasDraftItems || stagedDirty)
     : hasDraftItems;
+  // Cancelar: solo si el usuario ensució el staging (bajas/ajustes).
+  // NO usar hasPendingKitchenSendChanges: trata borradores nuevos como “pendientes”
+  // y al cancelar se restauraba un baseline vacío.
+  const orderEditCancelEnabled = useKitchenStaging ? stagedDirty : false;
   const kitchenSendButtonLabel = isMixedSpecial
     ? `$${draftItemsTotal.toFixed(2)}`
     : order.is_special
@@ -2912,44 +2923,58 @@ const OrdenesContent = () => {
     }
   };
 
-  const handleCancelOrderEdits = async () => {
-    if (!orderEditActionsEnabled || sendingKitchenChanges) return;
-    try {
-      const baselineById = new Map(kitchenBaselineItems.map((item) => [item.id, item]));
-      const orphanDrafts = stagedItems.filter(
-        (item) =>
-          item.status === "DRAFT"
-          && !baselineById.has(item.id)
-          && !isTemporaryOrderItemId(item.id),
-      );
-      for (const draft of orphanDrafts) {
-        await removeItem.mutateAsync(draft.id);
-      }
-      for (const base of kitchenBaselineItems) {
-        if (base.status !== "DRAFT") continue;
-        const staged = stagedItems.find((item) => item.id === base.id);
-        if (!staged) continue;
-        if (Number(staged.quantity ?? 0) === Number(base.quantity ?? 0)
-          && Number(staged.unit_price ?? 0) === Number(base.unit_price ?? 0)) {
-          continue;
+  const clearBodyPointerLock = () => {
+    if (document.body.style.pointerEvents === "none") {
+      document.body.style.pointerEvents = "";
+    }
+    // Radix a veces deja el body con scroll-lock / pointer-events tras cerrar un Dialog.
+    if (document.body.hasAttribute("data-scroll-locked")) {
+      document.body.removeAttribute("data-scroll-locked");
+      document.body.style.removeProperty("overflow");
+      document.body.style.removeProperty("padding-right");
+    }
+    const hasOpenModal = Boolean(
+      document.querySelector("[data-state='open'][role='dialog'], [data-state='open'][data-radix-dialog-content]"),
+    );
+    if (!hasOpenModal) {
+      document.querySelectorAll("[data-radix-dialog-overlay]").forEach((node) => {
+        if (node instanceof HTMLElement && node.dataset.state !== "open") {
+          node.remove();
         }
-        await updateQuantity.mutateAsync({
-          itemId: base.id,
-          quantity: Number(base.quantity ?? 0),
-          unit_price: Number(base.unit_price ?? 0),
-        });
+      });
+    }
+  };
+
+  const handleCancelOrderEdits = async () => {
+    if (!orderEditCancelEnabled || sendingKitchenChanges) return;
+    try {
+      // Volver al baseline (descarta bajas/ajustes de líneas ya enviadas).
+      // Conservar borradores nuevos que estén en orderItems y no en el baseline.
+      const restored = kitchenBaselineItems.map((item) => ({ ...item }));
+      const restoredIds = new Set(restored.map((item) => item.id));
+      for (const item of orderItems) {
+        if (item.status !== "DRAFT") continue;
+        if (restoredIds.has(item.id)) continue;
+        if (Math.max(0, Number(item.quantity ?? 0)) <= 0) continue;
+        restored.push({ ...item });
+        restoredIds.add(item.id);
       }
-      setStagedItems(kitchenBaselineItems.map((item) => ({ ...item })));
+      setStagedItems(restored);
+      setKitchenBaselineItems(restored);
       setStagedDirty(false);
       setKitchenSendError(null);
       toast.message("Cambios descartados");
     } catch (error: any) {
       toast.error(error?.message || "No se pudieron descartar los cambios.");
+    } finally {
+      clearBodyPointerLock();
+      window.setTimeout(clearBodyPointerLock, 0);
+      window.setTimeout(clearBodyPointerLock, 350);
     }
   };
 
   const handleSendOrderEdits = async () => {
-    if (!orderEditActionsEnabled || sendingKitchenChanges) return;
+    if (!orderEditSendEnabled || sendingKitchenChanges) return;
     try {
       setSendingKitchenChanges(true);
       setKitchenSendError(null);
@@ -3127,6 +3152,8 @@ const OrdenesContent = () => {
       );
     } finally {
       setSendingKitchenChanges(false);
+      clearBodyPointerLock();
+      window.setTimeout(clearBodyPointerLock, 350);
     }
   };
 
@@ -4353,7 +4380,7 @@ const OrdenesContent = () => {
             type="button"
             variant="outline"
             className="h-12 w-full gap-2 rounded-xl border-slate-200 font-display text-base font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
-            disabled={!orderEditActionsEnabled || sendingKitchenChanges || hasTemporaryDraftItems}
+            disabled={!orderEditCancelEnabled || sendingKitchenChanges || hasTemporaryDraftItems}
             onClick={() => { void handleCancelOrderEdits(); }}
           >
             <X className="h-5 w-5" />
@@ -4363,7 +4390,7 @@ const OrdenesContent = () => {
             type="button"
             className="h-12 w-full gap-2 rounded-xl font-display text-base font-semibold disabled:opacity-50"
             disabled={
-              !orderEditActionsEnabled
+              !orderEditSendEnabled
               || sendingKitchenChanges
               || (isExpressOrder ? sendToDispatch.isPending : sendToKitchen.isPending)
               || hasTemporaryDraftItems
@@ -4377,7 +4404,7 @@ const OrdenesContent = () => {
               <>
                 <Sparkles className="h-5 w-5" />
                 {"Enviar"}
-                {orderEditActionsEnabled ? ` · ${kitchenSendButtonLabel}` : ""}
+                {orderEditSendEnabled ? ` · ${kitchenSendButtonLabel}` : ""}
               </>
             )}
           </Button>
@@ -5225,6 +5252,15 @@ const OrdenesContent = () => {
           setSelectedProductRootName(null);
           setSelectedProductModifiers([]);
           setProductLoadingShell(null);
+          // Evita UI congelada si Radix deja pointer-events:none al desmontar el dialog.
+          if (document.body.style.pointerEvents === "none") {
+            document.body.style.pointerEvents = "";
+          }
+          window.setTimeout(() => {
+            if (document.body.style.pointerEvents === "none") {
+              document.body.style.pointerEvents = "";
+            }
+          }, 350);
           // En móvil permanecer en el menú de productos (no saltar al panel de la orden).
 
           void (async () => {
