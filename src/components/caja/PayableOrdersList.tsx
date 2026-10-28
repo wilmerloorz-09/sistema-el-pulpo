@@ -340,7 +340,7 @@ export default function PayableOrdersList({
                           className={cn(
                             "h-10 shrink-0 gap-1.5 rounded-xl px-5 text-sm font-semibold text-white shadow-md",
                             order.ready_to_collect
-                              ? "bg-orange-600 hover:bg-orange-700"
+                              ? "bg-emerald-600 hover:bg-emerald-700"
                               : "bg-red-600 hover:bg-red-700",
                           )}
                         >
