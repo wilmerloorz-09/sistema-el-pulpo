@@ -328,6 +328,9 @@ export default function PayableOrdersList({
                         <Button
                           type="button"
                           size="sm"
+                          // default = gradiente naranja; hay que usar success/destructive
+                          // (bg-emerald en className no anula from-primary/via-orange).
+                          variant={order.ready_to_collect ? "success" : "destructive"}
                           disabled={readOnly || order.locked_for_editing}
                           onClick={(e) => {
                             e.stopPropagation();
@@ -337,12 +340,7 @@ export default function PayableOrdersList({
                             }
                             setSelectedOrder(order);
                           }}
-                          className={cn(
-                            "h-10 shrink-0 gap-1.5 rounded-xl px-5 text-sm font-semibold text-white shadow-md",
-                            order.ready_to_collect
-                              ? "bg-emerald-600 hover:bg-emerald-700"
-                              : "bg-red-600 hover:bg-red-700",
-                          )}
+                          className="h-10 shrink-0 gap-1.5 rounded-xl px-5 text-sm font-semibold text-white shadow-md"
                         >
                           <CreditCard className="h-4 w-4" />
                           Cobrar
