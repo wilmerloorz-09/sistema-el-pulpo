@@ -1,6 +1,6 @@
 /**
  * Restricción temporal de menú por usuario.
- * Por ahora: admin1 no ve ni entra a FINANZAS, INVENTARIO ni ADMINISTRACIÓN,
+ * Por ahora: admin1 no ve ni entra a FINANZAS, INVENTARIO, GESTIÓN DE PESCADO ni ADMINISTRACIÓN,
  * excepto Turno y Forzar cierre de turno.
  */
 const TEMP_RESTRICTED_USERNAMES = new Set(["admin1"]);
@@ -9,6 +9,7 @@ const TEMP_RESTRICTED_EMAILS = new Set(["admin1@elpulpo.com"]);
 const BLOCKED_NAV_GROUPS = new Set([
   "FINANZAS",
   "INVENTARIO",
+  "GESTIÓN DE PESCADO",
   "ADMINISTRACIÓN",
 ]);
 
@@ -88,6 +89,11 @@ export function isPathBlockedForRestrictedUser(
 
   // INVENTARIO
   if (path === "/inventario" || path.startsWith("/inventario/")) {
+    return true;
+  }
+
+  // GESTIÓN DE PESCADO
+  if (path === "/gestion-pescado" || path.startsWith("/gestion-pescado/")) {
     return true;
   }
 

@@ -61,6 +61,7 @@ import InventarioBodegaGeneral from "./pages/InventarioBodegaGeneral";
 import InventarioBodegaSucursal from "./pages/InventarioBodegaSucursal";
 import InventarioNevera from "./pages/InventarioNevera";
 import InventarioGestionPescado from "./pages/InventarioGestionPescado";
+import GestionPescadoFresco from "./pages/GestionPescadoFresco";
 import MonitoreoGlobal from "./pages/MonitoreoGlobal";
 import NotFound from "./pages/NotFound";
 import PrintCashReport from "./pages/PrintCashReport";
@@ -339,6 +340,7 @@ const HomeRedirect = () => {
   const safeFirstVisible =
     firstVisiblePath
     && !firstVisiblePath.startsWith("/inventario")
+    && !firstVisiblePath.startsWith("/gestion-pescado")
       ? firstVisiblePath
       : null;
 
@@ -705,13 +707,22 @@ const App = () => (
                   }
                 />
                 <Route
-                  path="/inventario/gestion-pescado"
+                  path="/gestion-pescado/fresco"
+                  element={
+                    <ProtectedRoute allowedModules={["gestion_pescado", "bodega_general", "admin_global", "admin_sucursal"]}>
+                      <GestionPescadoFresco />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/gestion-pescado/cocido"
                   element={
                     <ProtectedRoute allowedModules={["gestion_pescado", "bodega_general", "admin_global", "admin_sucursal"]}>
                       <InventarioGestionPescado />
                     </ProtectedRoute>
                   }
                 />
+                <Route path="/inventario/gestion-pescado" element={<Navigate to="/gestion-pescado/cocido" replace />} />
                 {/* Compatibilidad rutas legacy → módulos con pestañas */}
                 <Route path="/inventario/bodega-general/productos" element={<Navigate to="/inventario/bodega-general?tab=productos" replace />} />
                 <Route path="/inventario/bodega-general/movimientos" element={<Navigate to="/inventario/bodega-general?tab=compra" replace />} />

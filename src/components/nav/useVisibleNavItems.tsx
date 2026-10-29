@@ -1,5 +1,5 @@
 import { useMemo, type ReactNode } from "react";
-import { BarChart3, ChefHat, CircleDollarSign, ConciergeBell, LayoutGrid, Package, PackagePlus, Settings, UtensilsCrossed, PlayCircle, ShoppingBag, Sparkles, Zap, Banknote, History, Users, Gift, Megaphone, Search, PowerOff, PackageCheck, ArrowLeftRight, FileText, HandCoins, Warehouse, Fish } from "lucide-react";
+import { BarChart3, ChefHat, CircleDollarSign, ConciergeBell, LayoutGrid, Package, PackagePlus, Settings, UtensilsCrossed, PlayCircle, ShoppingBag, Sparkles, Zap, Banknote, History, Users, Gift, Megaphone, Search, PowerOff, PackageCheck, ArrowLeftRight, FileText, HandCoins, Warehouse, Snowflake, Flame } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
@@ -21,7 +21,14 @@ export interface NavSubItem {
   disabledReason?: string;
 }
 
-export type NavGroupType = "VENTA" | "OPERATIVO" | "FINANZAS" | "PROMOCIONES" | "INVENTARIO" | "ADMINISTRACIÓN";
+export type NavGroupType =
+  | "VENTA"
+  | "OPERATIVO"
+  | "FINANZAS"
+  | "PROMOCIONES"
+  | "INVENTARIO"
+  | "GESTIÓN DE PESCADO"
+  | "ADMINISTRACIÓN";
 
 export interface AppNavItem {
   to: string;
@@ -302,10 +309,28 @@ const NAV_ITEMS: AppNavItem[] = [
       || canView(permissions, "inventario_movimientos"),
   },
   {
-    to: "/inventario/gestion-pescado",
-    label: "Gestión Pescado",
-    icon: <Fish className="h-5 w-5" />,
-    group: "INVENTARIO",
+    to: "/gestion-pescado/fresco",
+    label: "Pescado fresco",
+    icon: <Snowflake className="h-5 w-5" />,
+    group: "GESTIÓN DE PESCADO",
+    tone: {
+      active: "from-cyan-500 to-sky-400",
+      idle: "hover:border-cyan-200 hover:bg-cyan-50/90 hover:text-cyan-700",
+      iconIdle: "bg-cyan-50 text-cyan-600",
+    },
+    visible: (permissions) =>
+      canOperate(permissions, "gestion_pescado")
+      || canView(permissions, "gestion_pescado")
+      || canOperate(permissions, "bodega_general")
+      || canView(permissions, "bodega_general")
+      || canManage(permissions, "admin_global")
+      || canManage(permissions, "admin_sucursal"),
+  },
+  {
+    to: "/gestion-pescado/cocido",
+    label: "Pescado cocido",
+    icon: <Flame className="h-5 w-5" />,
+    group: "GESTIÓN DE PESCADO",
     tone: {
       active: "from-sky-500 to-blue-400",
       idle: "hover:border-sky-200 hover:bg-sky-50/90 hover:text-sky-700",
@@ -449,12 +474,22 @@ export function useVisibleNavItems() {
       if (path === "/inventario/nevera" || path.startsWith("/inventario/nevera/")) {
         return canAccessInventarioNevera;
       }
-      if (path === "/inventario/gestion-pescado" || path.startsWith("/inventario/gestion-pescado/")) {
-        return canAccessGestionPescado;
-      }
       // Rutas legacy
       if (path === "/inventario/productos") return canAccessProductosSucursal;
       if (path === "/inventario/movimientos" || path === "/inventario/historial") return canAccessInventarioNevera;
+      return false;
+    };
+    const canAccessGestionPescadoPath = (path: string) => {
+      if (
+        path === "/gestion-pescado/fresco"
+        || path.startsWith("/gestion-pescado/fresco/")
+        || path === "/gestion-pescado/cocido"
+        || path.startsWith("/gestion-pescado/cocido/")
+        || path === "/inventario/gestion-pescado"
+        || path.startsWith("/inventario/gestion-pescado/")
+      ) {
+        return canAccessGestionPescado;
+      }
       return false;
     };
     const canAccessTurno = canAccessAdmin || canView(permissions, "turno");
@@ -495,6 +530,7 @@ export function useVisibleNavItems() {
         return (
           (item.to === "/admin" && canAccessAdmin)
           || (item.group === "INVENTARIO" && canAccessInventarioPath(item.to))
+          || (item.group === "GESTIÓN DE PESCADO" && canAccessGestionPescadoPath(item.to))
           || (item.to.startsWith("/campanas") && puedeGestionarCampanas)
           || (item.to.startsWith("/promociones/consulta") && (puedeRegistrarPromociones || puedeGestionarCampanas))
           || (item.to.startsWith("/promociones") && (puedeRegistrarPromociones || isGlobalAdmin))
@@ -515,6 +551,10 @@ export function useVisibleNavItems() {
 
       if (item.group === "INVENTARIO") {
         return canAccessInventarioPath(item.to);
+      }
+
+      if (item.group === "GESTIÓN DE PESCADO") {
+        return canAccessGestionPescadoPath(item.to);
       }
 
       if (item.to === "/cierres-caja") {

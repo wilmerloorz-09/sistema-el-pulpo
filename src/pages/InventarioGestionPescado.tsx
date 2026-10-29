@@ -23,7 +23,7 @@ const InventarioGestionPescado = () => {
           <Lock className="mx-auto mb-3 h-10 w-10 text-destructive" />
           <h2 className="font-display text-lg font-black text-destructive">Acceso restringido</h2>
           <p className="mt-2 text-xs text-muted-foreground">
-            Gestión Pescado requiere bodega general, administrador o supervisor de sucursal.
+            Pescado cocido requiere bodega general, administrador o supervisor de sucursal.
           </p>
         </Card>
       </div>
@@ -32,7 +32,7 @@ const InventarioGestionPescado = () => {
 
   return (
     <InventarioModuleShell
-      title="Gestión Pescado"
+      title="Pescado cocido"
       description="Stock por sucursal · ingresos/salidas · movimientos (libras y gramos)"
       icon={<Fish className="h-5 w-5" />}
       iconClassName="border-sky-200 text-sky-700"
