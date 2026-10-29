@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Plus, ShoppingCart, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -43,9 +43,9 @@ const todayLocal = () => {
   return `${yyyy}-${mm}-${dd}`;
 };
 
-const newLinea = (): LineaCompra => ({
+const newLinea = (productoId = ""): LineaCompra => ({
   key: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-  productoId: "",
+  productoId,
   cantidadLb: "",
 });
 
@@ -61,6 +61,17 @@ function soloCantidadLb(raw: string): string {
   const [intPart, ...rest] = cleaned.split(sep);
   const decimals = rest.join("").replace(/\D/g, "").slice(0, 3);
   return `${intPart.replace(/\D/g, "")}${sep}${decimals}`;
+}
+
+/** Orden fijo: Bonito primero, luego Albacora. */
+function ordenProductosFresco(a: ProductoOption, b: ProductoOption): number {
+  const rank = (codigo: string) => {
+    if (codigo === "BONITO") return 0;
+    if (codigo === "ALBACORA") return 1;
+    return 10;
+  };
+  const diff = rank(a.codigo) - rank(b.codigo);
+  return diff !== 0 ? diff : a.nombre.localeCompare(b.nombre, "es");
 }
 
 const CompraPescadoFrescoAdmin = () => {
@@ -97,12 +108,25 @@ const CompraPescadoFrescoAdmin = () => {
       const { data, error: qError } = await supabase
         .from("pescado_fresco_productos" as any)
         .select("id, nombre, codigo")
-        .eq("activo", true)
-        .order("nombre");
+        .eq("activo", true);
       if (qError) throw qError;
-      return (data as ProductoOption[]) ?? [];
+      return ((data as ProductoOption[]) ?? []).slice().sort(ordenProductosFresco);
     },
   });
+
+  const bonitoId = useMemo(
+    () => (productosQuery.data ?? []).find((p) => p.codigo === "BONITO")?.id ?? "",
+    [productosQuery.data],
+  );
+
+  // Primera línea: Bonito por defecto cuando cargan los productos.
+  useEffect(() => {
+    if (!bonitoId) return;
+    setLineas((prev) => {
+      if (prev.length !== 1 || prev[0].productoId) return prev;
+      return [{ ...prev[0], productoId: bonitoId }];
+    });
+  }, [bonitoId]);
 
   const productosUsados = useMemo(
     () => new Set(lineas.map((l) => l.productoId).filter(Boolean)),
@@ -114,7 +138,7 @@ const CompraPescadoFrescoAdmin = () => {
     setNumeroComprobante("");
     setFechaCompra(todayLocal());
     setObservaciones("");
-    setLineas([newLinea()]);
+    setLineas([newLinea(bonitoId)]);
     setError(null);
   };
 
@@ -246,7 +270,12 @@ const CompraPescadoFrescoAdmin = () => {
             variant="outline"
             size="sm"
             className="h-9 rounded-xl"
-            onClick={() => setLineas((prev) => [...prev, newLinea()])}
+            onClick={() => {
+              const used = new Set(lineas.map((l) => l.productoId).filter(Boolean));
+              const siguiente =
+                (productosQuery.data ?? []).find((p) => !used.has(p.id))?.id ?? "";
+              setLineas((prev) => [...prev, newLinea(siguiente)]);
+            }}
           >
             <Plus className="mr-1.5 h-4 w-4" />
             Agregar producto
@@ -280,7 +309,6 @@ const CompraPescadoFrescoAdmin = () => {
                       return (
                         <SelectItem key={p.id} value={p.id} disabled={usedElsewhere}>
                           {p.nombre}
-                          {p.codigo ? ` · ${p.codigo}` : ""}
                         </SelectItem>
                       );
                     })}

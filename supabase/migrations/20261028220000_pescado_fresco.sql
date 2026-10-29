@@ -85,13 +85,18 @@ CREATE INDEX IF NOT EXISTS idx_pescado_fresco_movimientos_producto
   ON public.pescado_fresco_movimientos (producto_id, creado_en DESC);
 
 INSERT INTO public.pescado_fresco_productos (codigo, nombre)
-VALUES ('PESCADO_FRESCO', 'Pescado fresco')
-ON CONFLICT (codigo) DO NOTHING;
+VALUES
+  ('BONITO', 'Bonito'),
+  ('ALBACORA', 'Albacora')
+ON CONFLICT (codigo) DO UPDATE SET
+  nombre = EXCLUDED.nombre,
+  activo = true,
+  actualizado_en = now();
 
 INSERT INTO public.pescado_fresco_stock (producto_id, cantidad_lb)
 SELECT p.id, 0
 FROM public.pescado_fresco_productos p
-WHERE p.codigo = 'PESCADO_FRESCO'
+WHERE p.codigo IN ('BONITO', 'ALBACORA')
 ON CONFLICT (producto_id) DO NOTHING;
 
 ALTER TABLE public.pescado_fresco_productos ENABLE ROW LEVEL SECURITY;
