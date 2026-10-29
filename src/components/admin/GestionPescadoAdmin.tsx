@@ -158,6 +158,31 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
   const [unidadVerificada, setUnidadVerificada] = useState<Unidad>("LIBRAS");
   const [cantBandejas, setCantBandejas] = useState("");
   const [obsIngreso, setObsIngreso] = useState("");
+  const [cantBonitoLb, setCantBonitoLb] = useState("");
+  const [cantAlbacoraLb, setCantAlbacoraLb] = useState("");
+
+  const requierePescadoCrudo =
+    origenIngreso === "PREPARACION_INICIAL" || origenIngreso === "PREPARACION_EXTRA";
+
+  const stockFrescoQuery = useQuery({
+    queryKey: ["stock-pescado-fresco"],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("listar_stock_pescado_fresco" as any);
+      if (error) throw error;
+      return ((data as Array<{ producto_id: string; codigo: string; nombre: string; cantidad_lb: number }>) ?? [])
+        .map((r) => ({ ...r, cantidad_lb: Number(r.cantidad_lb ?? 0) }));
+    },
+    enabled: section === "ingreso-salida" && tipo === "INGRESO",
+  });
+
+  const stockBonitoLb = useMemo(
+    () => Number(stockFrescoQuery.data?.find((r) => r.codigo === "BONITO")?.cantidad_lb ?? 0),
+    [stockFrescoQuery.data],
+  );
+  const stockAlbacoraLb = useMemo(
+    () => Number(stockFrescoQuery.data?.find((r) => r.codigo === "ALBACORA")?.cantidad_lb ?? 0),
+    [stockFrescoQuery.data],
+  );
 
   const bandejasCount = useMemo(() => {
     const n = Number.parseInt(String(cantBandejas ?? "").trim(), 10);
@@ -167,6 +192,13 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
     () => aLibras(parseCantidad(cantVerificada), unidadVerificada),
     [cantVerificada, unidadVerificada],
   );
+  const entregadaLb = useMemo(
+    () => aLibras(parseCantidad(cantEntregada), unidadEntregada),
+    [cantEntregada, unidadEntregada],
+  );
+  const bonitoLb = useMemo(() => parseCantidad(cantBonitoLb) || 0, [cantBonitoLb]);
+  const albacoraLb = useMemo(() => parseCantidad(cantAlbacoraLb) || 0, [cantAlbacoraLb]);
+  const crudoTotalLb = Math.round((bonitoLb + albacoraLb) * 1000) / 1000;
   const descuentoBandejasLb = Math.round(bandejasCount * PESO_BANDEJA_LB * 1000) / 1000;
   const cantidadTotalLb = Math.round((verificadaLb - descuentoBandejasLb) * 1000) / 1000;
   const [cantSalida, setCantSalida] = useState("");
@@ -183,16 +215,53 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
       if (cantidadTotalLb <= 0) {
         throw new Error(`El peso total debe ser mayor a 0 (verificado ${formatLb(verificadaLb)} lb - bandejas ${formatLb(descuentoBandejasLb)} lb)`);
       }
+
+      const entregada = aLibras(entregadaRaw, unidadEntregada);
+      let bonito = 0;
+      let albacora = 0;
+      if (requierePescadoCrudo) {
+        bonito = Math.round((parseCantidad(cantBonitoLb) || 0) * 1000) / 1000;
+        albacora = Math.round((parseCantidad(cantAlbacoraLb) || 0) * 1000) / 1000;
+        const crudo = Math.round((bonito + albacora) * 1000) / 1000;
+        if (crudo <= 0) {
+          throw new Error("Ingresa la cantidad de pescado crudo (Bonito y/o Albacora)");
+        }
+        if (bonito > stockBonitoLb) {
+          throw new Error(`Stock insuficiente de Bonito: hay ${formatLb(stockBonitoLb)} lb y se solicitan ${formatLb(bonito)} lb`);
+        }
+        if (albacora > stockAlbacoraLb) {
+          throw new Error(`Stock insuficiente de Albacora: hay ${formatLb(stockAlbacoraLb)} lb y se solicitan ${formatLb(albacora)} lb`);
+        }
+        if (crudo <= entregada) {
+          throw new Error(
+            `El pescado crudo (${formatLb(crudo)} lb) debe ser mayor que el peso entregado (${formatLb(entregada)} lb)`,
+          );
+        }
+      }
+
       const { error } = await supabase.rpc("registrar_ingreso_pescado" as any, {
         p_origen: origenIngreso,
-        p_cantidad_entregada_lb: aLibras(entregadaRaw, unidadEntregada),
+        p_cantidad_entregada_lb: entregada,
         p_cantidad_verificada_lb: aLibras(verificadaRaw, unidadVerificada),
         p_observacion: obsIngreso.trim() || null,
         p_cantidad_bandejas: bandejasCount,
+        p_bonito_lb: requierePescadoCrudo ? bonito : 0,
+        p_albacora_lb: requierePescadoCrudo ? albacora : 0,
       });
       if (error) throw error;
     },
-    onSuccess: async () => { toast.success("Ingreso registrado en Bodega General."); setCantEntregada(""); setCantVerificada(""); setCantBandejas(""); setObsIngreso(""); await invalidateAll(); },
+    onSuccess: async () => {
+      toast.success("Ingreso registrado en Bodega General.");
+      setCantEntregada("");
+      setCantVerificada("");
+      setCantBandejas("");
+      setObsIngreso("");
+      setCantBonitoLb("");
+      setCantAlbacoraLb("");
+      await invalidateAll();
+      await qc.invalidateQueries({ queryKey: ["stock-pescado-fresco"] });
+      await qc.invalidateQueries({ queryKey: ["historial-pescado-fresco"] });
+    },
     onError: (e: any) => mostrarError(e, "No se pudo registrar el ingreso. Revisa los datos e inténtalo de nuevo."),
   });
 
@@ -368,11 +437,68 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
           <div className="space-y-3">
             <div className="space-y-2">
               <Label>Origen</Label>
-              <Select value={origenIngreso} onValueChange={setOrigenIngreso}>
+              <Select
+                value={origenIngreso}
+                onValueChange={(v) => {
+                  setOrigenIngreso(v);
+                  if (v === "OTROS") {
+                    setCantBonitoLb("");
+                    setCantAlbacoraLb("");
+                  }
+                }}
+              >
                 <SelectTrigger className="rounded-2xl"><SelectValue /></SelectTrigger>
                 <SelectContent><SelectItem value="PREPARACION_INICIAL">Preparación inicial</SelectItem><SelectItem value="PREPARACION_EXTRA">Preparación extra</SelectItem><SelectItem value="OTROS">Otros</SelectItem></SelectContent>
               </Select>
             </div>
+
+            <div className={cn("space-y-3 rounded-2xl border p-3", requierePescadoCrudo ? "border-cyan-200 bg-cyan-50/60" : "border-border/60 bg-muted/20 opacity-70")}>
+              <div>
+                <Label className="text-sm">Pescado crudo (lb)</Label>
+                <p className="text-xs text-muted-foreground">
+                  {requierePescadoCrudo
+                    ? "Obligatorio en preparación. La suma Bonito + Albacora debe ser mayor que el peso entregado y no superar el stock de fresco."
+                    : "Se habilita solo con Preparación inicial o Preparación extra."}
+                </p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Bonito (lb)</Label>
+                  <Input
+                    inputMode="decimal"
+                    value={cantBonitoLb}
+                    disabled={!requierePescadoCrudo}
+                    onChange={(e) => setCantBonitoLb(e.target.value)}
+                    placeholder="0"
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    Stock fresco: {formatLb(stockBonitoLb)} lb
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label>Albacora (lb)</Label>
+                  <Input
+                    inputMode="decimal"
+                    value={cantAlbacoraLb}
+                    disabled={!requierePescadoCrudo}
+                    onChange={(e) => setCantAlbacoraLb(e.target.value)}
+                    placeholder="0"
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    Stock fresco: {formatLb(stockAlbacoraLb)} lb
+                  </p>
+                </div>
+              </div>
+              {requierePescadoCrudo ? (
+                <p className="text-xs text-muted-foreground">
+                  Total crudo: <span className="font-semibold text-foreground">{formatLb(crudoTotalLb)} lb</span>
+                  {entregadaLb > 0 ? (
+                    <> · Entregado: <span className="font-semibold text-foreground">{formatLb(entregadaLb)} lb</span></>
+                  ) : null}
+                </p>
+              ) : null}
+            </div>
+
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-2"><Label>Peso entregado</Label><Input inputMode="decimal" value={cantEntregada} onChange={(e) => setCantEntregada(e.target.value)} placeholder="Ej. 25.5" /></div>
               <div className="space-y-2"><Label>Unidad</Label><UnidadSelect value={unidadEntregada} onChange={setUnidadEntregada} /></div>
