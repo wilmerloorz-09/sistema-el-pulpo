@@ -984,9 +984,54 @@ const OrdenesContent = () => {
           gcTime: 10 * 60_000,
         });
       })
-      .catch((err: any) => {
+      .catch(async (err: any) => {
         if (cancelled || myAttempt !== mesaOpenAttemptRef.current) return;
-        toast.error(err?.message || "Error al abrir la mesa");
+        const msg = String(err?.message || "Error al abrir la mesa");
+        const isBusy = /mesa ya tiene una orden activa/i.test(msg);
+
+        // Si la mesa ya tiene orden, abrir esa en vez de solo mostrar error rojo.
+        if (isBusy && openTableIdForCreate && activeBranchId) {
+          try {
+            const { data: openShift } = await supabase
+              .from("cash_shifts")
+              .select("id")
+              .eq("branch_id", activeBranchId)
+              .eq("status", "OPEN")
+              .order("opened_at", { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            const shiftId = (openShift as { id?: string } | null)?.id;
+            if (shiftId) {
+              const { data: existing } = await supabase
+                .from("orders")
+                .select("id, status, created_at")
+                .eq("table_id", openTableIdForCreate)
+                .eq("branch_id", activeBranchId)
+                .eq("order_type", "DINE_IN")
+                .eq("cash_shift_id", shiftId)
+                .in("status", ["DRAFT", "SENT_TO_KITCHEN", "READY", "PAID", "KITCHEN_DISPATCHED"])
+                .order("created_at", { ascending: false })
+                .limit(1)
+                .maybeSingle();
+              const existingId = (existing as { id?: string } | null)?.id;
+              if (existingId) {
+                toast.message("La mesa ya tenía una orden. Te abrimos la existente.");
+                qc.removeQueries({ queryKey: getOrderQueryKey(orderId) });
+                navigate(`/ordenes?order=${existingId}&origin=${mesasOriginTag}`, { replace: true });
+                invalidateOperationalOrderQueries(qc, {
+                  branchId: activeBranchId,
+                  orderId: existingId,
+                  includeTables: true,
+                });
+                return;
+              }
+            }
+          } catch {
+            /* caer al error normal */
+          }
+        }
+
+        toast.error(msg);
         qc.removeQueries({ queryKey: getOrderQueryKey(orderId) });
         navigate(mesasListPathForOrigin(mesasOriginTag), { replace: true });
       });

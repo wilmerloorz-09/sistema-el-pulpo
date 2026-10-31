@@ -145,10 +145,14 @@ function mapTablesFromOverviewSources(input: {
       && Number(row.total_due ?? 0) <= 0
       && parseSplitTotals(row.split_totals).length === 0;
 
+    // Solo liberar visualmente si no hay otras cuentas en la mesa (split_count).
+    // Si hay KD cobrada + otras con saldo, la mesa debe seguir ocupada.
     const isDispatchedComplete =
       !staleShiftOrder
       && row.active_order_status === "KITCHEN_DISPATCHED"
-      && Number(row.total_due ?? 0) <= 0;
+      && Number(row.total_due ?? 0) <= 0
+      && Number(row.split_count ?? 0) <= 1
+      && parseSplitTotals(row.split_totals).length === 0;
 
     const isFreeTable = staleShiftOrder || isEmptyDraft || isDispatchedComplete;
 
