@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getOrderBoundTableId } from "@/lib/mesasFlow";
+import { getOrderBoundTableId, siblingPlaceholdersFromTableOverview } from "@/lib/mesasFlow";
 
 describe("getOrderBoundTableId", () => {
   it("usa table_id en orden de mesa", () => {
@@ -40,5 +40,19 @@ describe("getOrderBoundTableId", () => {
         special_origin_table_id: null,
       }),
     ).toBeNull();
+  });
+});
+
+describe("siblingPlaceholdersFromTableOverview", () => {
+  it("incluye especial con saldo 0 y la orden activa", () => {
+    const rows = siblingPlaceholdersFromTableOverview({
+      activeOrderId: "normal-1",
+      splitTotals: [
+        { splitId: "esp-1", splitCode: "Especial", totalDue: 0, isSpecial: true },
+        { splitId: "normal-1", splitCode: "Orden 1", totalDue: 5 },
+      ],
+    });
+    expect(rows.map((r) => r.id).sort()).toEqual(["esp-1", "normal-1"]);
+    expect(rows.find((r) => r.id === "esp-1")?.is_special).toBe(true);
   });
 });

@@ -31,6 +31,7 @@ export interface TableWithStatus {
     splitId: string | null;
     splitCode: string | null;
     totalDue: number;
+    isSpecial?: boolean;
   }>;
   itemCount: number;
   elapsedMinutes: number;
@@ -64,13 +65,15 @@ interface TablesOverviewRow {
 function parseSplitTotals(rawValue: unknown): TableWithStatus["splitTotals"] {
   if (!Array.isArray(rawValue)) return [];
 
+  // Conservar también saldo 0 (p. ej. especial sin total aún) para precargar hermanos al abrir.
   return rawValue
     .map((entry) => ({
       splitId: typeof entry?.split_id === "string" ? entry.split_id : null,
       splitCode: typeof entry?.split_code === "string" ? entry.split_code : null,
       totalDue: Number(entry?.total_due ?? 0),
+      isSpecial: Boolean(entry?.is_special) || entry?.split_code === "Especial",
     }))
-    .filter((entry) => entry.totalDue > 0);
+    .filter((entry) => Boolean(entry.splitId));
 }
 
 /** Incluye el turno para no reusar snapshot de otro turno en React Query. */

@@ -49,3 +49,68 @@ export function mesasOrdenesSearch(opts: { order: string; origin: string; mesaCa
 export function mesasV2OrdenesSearch(opts: { order: string; mesaCards?: boolean }): string {
   return mesasOrdenesSearch({ ...opts, origin: MESAS_ORIGIN_V2 });
 }
+
+/** Placeholders de hermanos desde el overview (incluye especial con saldo 0). */
+export function siblingPlaceholdersFromTableOverview(input: {
+  activeOrderId?: string | null;
+  splitTotals: Array<{
+    splitId: string | null;
+    splitCode: string | null;
+    totalDue?: number;
+    isSpecial?: boolean;
+  }>;
+}): Array<{
+  id: string;
+  order_number: null;
+  order_code: null;
+  status: null;
+  split_code: string | null;
+  table_order_position: null;
+  created_at: null;
+  item_count: number;
+  is_special: boolean;
+}> {
+  const byId = new Map<string, {
+    id: string;
+    order_number: null;
+    order_code: null;
+    status: null;
+    split_code: string | null;
+    table_order_position: null;
+    created_at: null;
+    item_count: number;
+    is_special: boolean;
+  }>();
+
+  for (const row of input.splitTotals) {
+    if (!row.splitId) continue;
+    const isSpecial = Boolean(row.isSpecial) || row.splitCode === "Especial";
+    byId.set(row.splitId, {
+      id: row.splitId,
+      order_number: null,
+      order_code: null,
+      status: null,
+      split_code: isSpecial ? "Especial" : (row.splitCode ?? null),
+      table_order_position: null,
+      created_at: null,
+      item_count: isSpecial ? 1 : 1,
+      is_special: isSpecial,
+    });
+  }
+
+  if (input.activeOrderId && !byId.has(input.activeOrderId)) {
+    byId.set(input.activeOrderId, {
+      id: input.activeOrderId,
+      order_number: null,
+      order_code: null,
+      status: null,
+      split_code: null,
+      table_order_position: null,
+      created_at: null,
+      item_count: 1,
+      is_special: false,
+    });
+  }
+
+  return Array.from(byId.values());
+}

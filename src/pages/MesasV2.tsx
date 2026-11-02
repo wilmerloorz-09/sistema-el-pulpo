@@ -13,7 +13,9 @@ import { cn } from "@/lib/utils";
 import {
   MESAS_ORIGIN_V2,
   mesasV2OrdenesSearch,
+  siblingPlaceholdersFromTableOverview,
 } from "@/lib/mesasFlow";
+import type { SiblingOrder } from "@/hooks/useOrder";
 import {
   getOpenCashShiftForBranch,
   orderBelongsToOpenCashShift,
@@ -181,6 +183,16 @@ const MesasV2 = () => {
   const warmTableFlow = (t: NonNullable<typeof tables>[number]) => {
     const orderIdToWarm = t.activeOrderId ?? t.reusableDraftOrderId;
     if (orderIdToWarm) warmOrderId(orderIdToWarm);
+    if (!activeBranchId || t.splitCount <= 1 || !t.activeOrderId) return;
+    void qc.prefetchQuery({
+      queryKey: ["table-orders", t.id],
+      queryFn: async () => {
+        const openShift = await getOpenCashShiftForBranch(activeBranchId, { strict: true });
+        return fetchSiblingOrders(t.id, activeBranchId, t.activeOrderId, openShift ?? undefined);
+      },
+      staleTime: 8_000,
+      gcTime: 2 * 60_000,
+    });
   };
 
   const handleTableClick = async (table: NonNullable<typeof tables>[number]) => {
@@ -299,9 +311,26 @@ const MesasV2 = () => {
       const orderId = table.activeOrderId;
       const tableId = table.id;
       warmOrderId(orderId);
-      if (activeBranchId) {
-        // Navegar al instante; hermanos/mesaCards en segundo plano.
-        navigate(`/ordenes?${mesasV2OrdenesSearch({ order: orderId })}`, { replace: true });
+      if (!activeBranchId) {
+        await openWithCardsIfNeeded(orderId, tableId);
+        return;
+      }
+
+      const cachedSiblings = qc.getQueryData(["table-orders", tableId]) as SiblingOrder[] | undefined;
+      const overviewSiblings = siblingPlaceholdersFromTableOverview({
+        activeOrderId: orderId,
+        splitTotals: table.splitTotals,
+      });
+      const shouldShowCards =
+        table.splitCount > 1
+        || (cachedSiblings?.length ?? 0) > 1
+        || overviewSiblings.length > 1;
+
+      if (shouldShowCards) {
+        if ((cachedSiblings?.length ?? 0) <= 1 && overviewSiblings.length > 1) {
+          qc.setQueryData(["table-orders", tableId], overviewSiblings);
+        }
+        navigate(`/ordenes?${mesasV2OrdenesSearch({ order: orderId, mesaCards: true })}`, { replace: true });
         void qc
           .ensureQueryData({
             queryKey: ["open-cash-shift", activeBranchId],
@@ -314,17 +343,13 @@ const MesasV2 = () => {
             void fetchSiblingOrders(tableId, activeBranchId, orderId, openShift)
               .then((siblings) => {
                 qc.setQueryData(["table-orders", tableId], siblings);
-                if (siblings.length > 1) {
-                  navigate(`/ordenes?${mesasV2OrdenesSearch({ order: orderId, mesaCards: true })}`, {
-                    replace: true,
-                  });
-                }
               })
               .catch(() => {});
           })
           .catch(() => {});
         return;
       }
+
       await openWithCardsIfNeeded(orderId, tableId);
       return;
     }
@@ -414,8 +439,9 @@ const MesasV2 = () => {
               const config = STATUS_CONFIG[table.status];
               const isFreeAndReadonly = table.status === "free" && !canOperateMesas;
               const tableBadge = formatTableBadge(table.name);
+              const moneySplitTotals = table.splitTotals.filter((row) => row.totalDue > 0);
               const visibleSplitTotals =
-                table.splitTotals.length > 0 && table.splitTotals.length <= 2 ? table.splitTotals.slice(0, 2) : [];
+                moneySplitTotals.length > 0 && moneySplitTotals.length <= 2 ? moneySplitTotals.slice(0, 2) : [];
               const showSingleTotal = table.totalDue > 0 && visibleSplitTotals.length === 0;
 
               return (
