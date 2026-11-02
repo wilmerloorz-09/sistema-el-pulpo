@@ -5275,7 +5275,13 @@ const OrdenesContent = () => {
                 unit_price: data.unit_price,
                 total: data.quantity * data.unit_price + (data.quantity > 0 ? (data.tray_container_cost ?? 0) : 0),
                 status: "DRAFT",
-                tray_item_type: isTrayOrder ? effectiveTrayType : shouldCalculateBulkIncludedByAmount ? "C" : null,
+                tray_item_type: isTrayOrder
+                  ? effectiveTrayType
+                  : shouldCalculateBulkIncludedByAmount
+                    ? "C"
+                    : currentMenuScope === "TAKEOUT"
+                      ? "B"
+                      : null,
                 tray_container_cost: 0,
                 quantity_sent: 0,
                 quantity_ready_available: 0,
@@ -5337,7 +5343,13 @@ const OrdenesContent = () => {
                   menu_node_id: menuNodeId,
                   modifier_ids: selectedModifierIds,
                   modifier_snapshots: selectedModifierSnapshots,
-                  tray_item_type: isTrayOrder ? effectiveTrayType : shouldCalculateBulkIncludedByAmount ? "C" : undefined,
+                  tray_item_type: isTrayOrder
+                    ? effectiveTrayType
+                    : shouldCalculateBulkIncludedByAmount
+                      ? "C"
+                      : currentMenuScope === "TAKEOUT"
+                        ? "B"
+                        : undefined,
                   tray_container_cost: 0,
                 },
                 {

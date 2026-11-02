@@ -50,12 +50,15 @@ const Empaquetador = () => {
 
   const counts = useMemo(() => ({
     ALL: orders.length,
-    TAKEOUT: orders.filter((order) => order.order_type === "TAKEOUT").length,
+    TAKEOUT: orders.filter((order) => order.order_type === "TAKEOUT" || order.is_table_envase_packing).length,
     EXPRESS: orders.filter((order) => order.order_type === "EXPRESS").length,
   }), [orders]);
 
   const visibleOrders = useMemo(() => {
     if (activeView === "ALL") return orders;
+    if (activeView === "TAKEOUT") {
+      return orders.filter((order) => order.order_type === "TAKEOUT" || order.is_table_envase_packing);
+    }
     return orders.filter((order) => order.order_type === activeView);
   }, [activeView, orders]);
 
@@ -74,7 +77,7 @@ const Empaquetador = () => {
             <div>
               <h1 className="font-display text-2xl font-bold tracking-tight text-slate-900">Empaquetador</h1>
               <p className="text-sm font-medium text-slate-500">
-                {pendingLabel} {visibleOrders.length === 1 ? "orden" : "órdenes"} Para llevar / Express
+                {pendingLabel} {visibleOrders.length === 1 ? "orden" : "órdenes"} Para llevar / Express / Con envase mesa
               </p>
             </div>
           </div>

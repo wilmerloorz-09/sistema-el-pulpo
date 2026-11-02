@@ -113,42 +113,30 @@ export async function fetchInventarioProductoMap(
 /**
  * Stock vendible para menú/órdenes.
  * P1: solo nevera. Resto: nevera + bodega sucursal.
+ * Usa RPC SECURITY DEFINER (1 round-trip) para evitar RLS por fila.
  */
 export async function fetchInventarioStockVendibleMap(
   branchId: string,
 ): Promise<Map<string, InventarioProductoInfo>> {
-  const map = await fetchInventarioProductoMap(branchId);
-  if (await esInventarioVentaSoloNevera(branchId)) return map;
-
-  const inventarioSucursalId = await resolverSucursalInventario(branchId);
-  const { data: bodegaRows, error } = await supabase
-    .from("inventario_bodega_sucursal" as any)
-    .select("producto_global_id, cantidad_disponible, integra_con_ventas")
-    .eq("sucursal_id", inventarioSucursalId);
+  const { data, error } = await supabase.rpc("get_inventario_stock_vendible_map" as any, {
+    p_branch_id: branchId,
+  });
   if (error) throw error;
 
-  for (const row of (bodegaRows as any[]) ?? []) {
-    const productoId = String(row.producto_global_id ?? "");
+  const map = new Map<string, InventarioProductoInfo>();
+  for (const row of (data as any[]) ?? []) {
+    const productoId = String(row.producto_id ?? "");
     if (!productoId) continue;
-    const stockBodega = Math.max(0, Number(row.cantidad_disponible ?? 0));
-    const existing = map.get(productoId);
-    if (existing) {
-      if (existing.integraConVentas) {
-        existing.cantidadDisponible = Number(existing.cantidadDisponible) + stockBodega;
-      }
-    } else if (row.integra_con_ventas) {
-      map.set(productoId, {
-        productoId,
-        inventarioId: null,
-        cantidadDisponible: stockBodega,
-        tipoProducto: "COMPRADO",
-        activoCatalogo: true,
-        integraConVentas: true,
-        limiteStock: 0,
-      });
-    }
+    map.set(productoId, {
+      productoId,
+      inventarioId: row.inventario_id ? String(row.inventario_id) : null,
+      cantidadDisponible: Math.max(0, Number(row.cantidad_disponible ?? 0)),
+      tipoProducto: row.tipo_producto === "PREPARADO" ? "PREPARADO" : "COMPRADO",
+      activoCatalogo: Boolean(row.is_active ?? true),
+      integraConVentas: Boolean(row.integra_con_ventas),
+      limiteStock: Number(row.limite_stock ?? 0),
+    });
   }
-
   return map;
 }
 

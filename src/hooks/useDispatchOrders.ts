@@ -45,7 +45,12 @@ import {
   useOperationalOrdersRealtime,
   invalidateOperationalOrderQueries,
 } from "@/lib/queryEgress";
-import { orderMatchesDispatchModuleRoute } from "@/lib/dispatchModuleRouting";
+import {
+  isTableLikeOrderType,
+  itemMatchesDispatchModuleRoute,
+  orderMatchesDispatchModuleRoute,
+  type DispatchModuleRoute,
+} from "@/lib/dispatchModuleRouting";
 import { resolveOrderTableName } from "@/lib/orderPresentation";
 
 async function enrichDispatchOrdersTableContext(
@@ -157,6 +162,8 @@ export interface DispatchOrder {
   is_special: boolean;
   is_tray_order?: boolean;
   is_packer_order?: boolean;
+  /** Mesa/extra con líneas Con envase en Empaquetador (no es orden Para llevar). */
+  is_table_envase_packing?: boolean;
   special_total_manual?: number | null;
   /** Valor manual del grupo especial (orden mixta). */
   special_group_total?: number | null;
@@ -488,14 +495,23 @@ function groupItemsIntoDispatchCards(
   filterOutPlatos?: boolean,
   workflowMode?: string,
   trustServerDispatchable?: boolean,
+  moduleRoute: DispatchModuleRoute = "dispatch",
+  hasEnabledPacker = false,
 ): DispatchOrder[] {
   const isExpressOrder = order.order_type === "EXPRESS";
   const isExtraOrder = order.order_type === "EXTRA";
-  const isDispatchFirst = isExpressOrder || (workflowMode === "DISPATCH_THEN_CASH" && order.order_type !== "TAKEOUT");
+  // Con envase de mesa en Empaquetador: despachable sin cobro (como DISPATCH_THEN_CASH).
+  const packingTableEnvase =
+    moduleRoute === "packing" && hasEnabledPacker && isTableLikeOrderType(order.order_type);
+  const isDispatchFirst =
+    packingTableEnvase
+    || isExpressOrder
+    || (workflowMode === "DISPATCH_THEN_CASH" && order.order_type !== "TAKEOUT");
 
   const mappedItems: DispatchOrderItem[] = items
     .filter((item) => {
       if (item.order_id !== order.id) return false;
+      if (!itemMatchesDispatchModuleRoute(order, item, moduleRoute, hasEnabledPacker)) return false;
       if (platosProductIds) {
         const isPlato = isPlatosOrderItem(item.product_id, platosProductIds);
         if (filterOutPlatos && isPlato) return false;
@@ -596,6 +612,7 @@ function groupItemsIntoDispatchCards(
     is_special: Boolean(order.is_special),
     is_tray_order: Boolean(order.is_tray_order),
     is_packer_order: Boolean(order.is_packer_order),
+    is_table_envase_packing: packingTableEnvase,
     special_total_manual: order.special_total_manual == null ? null : Number(order.special_total_manual),
     special_group_total: (order as { special_group_total?: number | null }).special_group_total == null
       ? null
@@ -843,7 +860,8 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
           return baseFiltered;
         };
 
-        let allPermittedOrders = getPermittedForView(isPackingModule ? "TAKEOUT" : "ALL", activeOrders);
+        // Empaquetador: ALL (incluye mesa con Con envase); el filtro de líneas es por ítem.
+        let allPermittedOrders = getPermittedForView("ALL", activeOrders);
         if (allPermittedOrders.length === 0) {
           return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
         }
@@ -907,13 +925,15 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
             filterOutPlatos,
             workflowMode,
             false,
+            queueModule,
+            hasEnabledPacker,
           );
         }).filter((card) => dispatchCardHasWork(card));
 
         const counts = {
           ALL: allCards.length,
-          TABLE: allCards.filter(c => !c.is_special && (c.order_type === "DINE_IN" || c.order_type === "TABLE" || c.order_type === "EXTRA")).length,
-          TAKEOUT: allCards.filter(c => c.order_type === "TAKEOUT" || c.order_type === "EXPRESS").length,
+          TABLE: allCards.filter(c => !c.is_special && (c.order_type === "DINE_IN" || c.order_type === "TABLE" || c.order_type === "EXTRA") && !c.is_table_envase_packing).length,
+          TAKEOUT: allCards.filter(c => c.order_type === "TAKEOUT" || c.order_type === "EXPRESS" || c.is_table_envase_packing).length,
           SPECIAL: allCards.filter(c => c.is_special).length,
         };
 
@@ -1034,7 +1054,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
         return baseFiltered;
       };
 
-      let allPermittedOrders = getPermittedForView(isPackingModule ? "TAKEOUT" : "ALL", activeOrders);
+      let allPermittedOrders = getPermittedForView("ALL", activeOrders);
       if (allPermittedOrders.length === 0) return { orders: [], counts: { ALL: 0, TABLE: 0, TAKEOUT: 0, SPECIAL: 0 } };
 
       const orderIdsToFetch = allPermittedOrders.map((order) => order.id);
@@ -1146,13 +1166,16 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
           platosProductIds,
           filterOutPlatos,
           workflowMode,
+          false,
+          queueModule,
+          hasEnabledPacker,
         );
       }).filter((card) => dispatchCardHasWork(card));
 
       const counts = {
         ALL: allCards.length,
-        TABLE: allCards.filter(c => !c.is_special && (c.order_type === "DINE_IN" || c.order_type === "TABLE" || c.order_type === "EXTRA")).length,
-        TAKEOUT: allCards.filter(c => c.order_type === "TAKEOUT" || c.order_type === "EXPRESS").length,
+        TABLE: allCards.filter(c => !c.is_special && (c.order_type === "DINE_IN" || c.order_type === "TABLE" || c.order_type === "EXTRA") && !c.is_table_envase_packing).length,
+        TAKEOUT: allCards.filter(c => c.order_type === "TAKEOUT" || c.order_type === "EXPRESS" || c.is_table_envase_packing).length,
         SPECIAL: allCards.filter(c => c.is_special).length,
       };
 
