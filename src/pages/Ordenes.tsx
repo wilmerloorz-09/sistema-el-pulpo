@@ -813,23 +813,9 @@ const OrdenesContent = () => {
   const useKitchenStaging = isDispatchFirstFlow && !fromEditar;
   const isTakeoutMenuOrder = isTakeoutOrder || isExpressOrder;
   const isBranchSiblingOrder = isTakeoutOrder || isExpressOrder || isExtraOrder;
-  const frequentProductContext = useMemo((): FrequentProductContext | null => {
-    if (isExtraOrder) return "EXTRA";
-    if (isExpressOrder) return "EXPRESS";
-    if (isTakeoutOrder) return "TAKEOUT";
-    if (order?.order_type === "DINE_IN" && order?.table_id && !order?.is_special && !order?.is_tray_order) {
-      return "MESA";
-    }
-    return null;
-  }, [
-    isExtraOrder,
-    isExpressOrder,
-    isTakeoutOrder,
-    order?.order_type,
-    order?.table_id,
-    order?.is_special,
-    order?.is_tray_order,
-  ]);
+  const isMesaOrderForFrequents = Boolean(
+    order?.order_type === "DINE_IN" && order?.table_id && !order?.is_special && !order?.is_tray_order,
+  );
 
   const inventarioMapQuery = useQuery({
     queryKey: ["inventario-producto-map", activeBranchId],
@@ -1961,6 +1947,23 @@ const OrdenesContent = () => {
     !isTrayOrder && pendingMenuScopeSelection
       ? pendingMenuScopeSelection
       : currentMenuScope;
+
+  const frequentProductContext = useMemo((): FrequentProductContext | null => {
+    if (isExtraOrder) return "EXTRA";
+    if (isExpressOrder) return "EXPRESS";
+    if (isTakeoutOrder) return "TAKEOUT";
+    if (isMesaOrderForFrequents) {
+      // En mesa: Con envase usa los frecuentes de Para llevar; Menu Mesas / A granel usan Mesa.
+      return interactiveMenuScope === "TAKEOUT" ? "TAKEOUT" : "MESA";
+    }
+    return null;
+  }, [
+    isExtraOrder,
+    isExpressOrder,
+    isTakeoutOrder,
+    isMesaOrderForFrequents,
+    interactiveMenuScope,
+  ]);
 
   const buildTakeoutCajaPreview = useCallback((sourceOrder = order): TakeoutCajaPreview | null => {
     if (!sourceOrder) return null;
@@ -3859,7 +3862,7 @@ const OrdenesContent = () => {
         </div>
       ) : null}
 
-      {frequentProductContext === "MESA" ? frequentProductCardsPanel : null}
+      {isMesaOrderForFrequents ? frequentProductCardsPanel : null}
 
       {showMenuScopeTabs ? (
         <div className="scrollbar-none -mx-1 overflow-x-auto px-1 pb-0.5">
@@ -3902,7 +3905,7 @@ const OrdenesContent = () => {
           </Tabs>
         </div>
       ) : null}
-      {frequentProductContext != null && frequentProductContext !== "MESA" ? frequentProductCardsPanel : null}
+      {!isMesaOrderForFrequents && frequentProductContext != null ? frequentProductCardsPanel : null}
       <MenuNavigator
         menuScope={currentMenuScope}
         nodesOverride={currentMenuScope === "TAKEOUT" || currentMenuScope === "BULK" ? scopeCompositeMenuQuery.data ?? null : null}
