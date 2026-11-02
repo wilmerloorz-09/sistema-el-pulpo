@@ -1238,11 +1238,12 @@ const OrdenesContent = () => {
         order_number: order.order_number,
         order_code: order.order_code,
         status: order.status,
-        split_code: order.split_code ?? null,
+        split_code: order.is_special ? "Especial" : (order.split_code ?? null),
         table_order_position: Number(order.table_order_position ?? 0) || null,
         created_at: order.created_at ?? null,
         item_count: orderItems.length,
         item_preview_lines: buildItemPreviewLinesForTableCard(order.items ?? []),
+        is_special: Boolean(order.is_special),
       }
     : null;
 
@@ -1332,6 +1333,10 @@ const OrdenesContent = () => {
     });
   }, [useKitchenStaging, stagedDirty, orderItems, isLoading, kitchenBaselineItems]);
 
+  const mesaSiblingTableId =
+    order?.table_id
+    ?? (order?.is_special ? order?.special_origin_table_id ?? null : null);
+
   const tableOrdersQuery = useQuery({
     queryKey: isExpressOrder
       ? ["express-orders", order?.branch_id ?? null]
@@ -1339,7 +1344,7 @@ const OrdenesContent = () => {
         ? ["extra-orders", order?.branch_id ?? null, user?.id ?? "_"]
         : isTakeoutOrder
           ? ["takeout-orders", order?.branch_id ?? null]
-          : ["table-orders", order?.table_id ?? null],
+          : ["table-orders", mesaSiblingTableId ?? null],
     queryFn: () =>
       isExpressOrder
         ? fetchExpressSiblingOrders(order!.branch_id)
@@ -1347,9 +1352,9 @@ const OrdenesContent = () => {
           ? fetchExtraSiblingOrders(order!.branch_id, user!.id)
           : isTakeoutOrder
             ? fetchTakeoutSiblingOrders(order!.branch_id)
-            : fetchSiblingOrders(order!.table_id!, order!.branch_id, order!.id),
+            : fetchSiblingOrders(mesaSiblingTableId!, order!.branch_id, order!.id),
     // Con el UUID optimista, fetchSiblingOrders purgaria la orden real recien creada (keep = id optimista).
-    enabled: isBranchSiblingOrder ? !!order?.branch_id : !!order?.table_id && !isOpeningFreeTable,
+    enabled: isBranchSiblingOrder ? !!order?.branch_id : !!mesaSiblingTableId && !isOpeningFreeTable,
     staleTime: isBranchSiblingOrder ? 0 : 8_000,
     refetchOnMount: isBranchSiblingOrder ? "always" : true,
     gcTime: 2 * 60_000,
@@ -1358,7 +1363,7 @@ const OrdenesContent = () => {
       if (isBranchSiblingOrder) {
         return currentTableOrder ? [currentTableOrder] : undefined;
       }
-      const tid = order?.table_id;
+      const tid = mesaSiblingTableId;
       if (!tid) return undefined;
       return qc.getQueryData(["table-orders", tid]) as SiblingOrder[] | undefined;
     },
@@ -1366,17 +1371,18 @@ const OrdenesContent = () => {
 
   /** Lista de hermanos en mesa (solo DINE_IN): misma regla que `mergedTableOrders` para gestos táctiles. */
   const mergedTableOrdersForSwipe = useMemo((): SiblingOrder[] => {
-    if (!order || order.order_type !== "DINE_IN" || !order.table_id) return [];
+    if (!order || order.order_type !== "DINE_IN" || !mesaSiblingTableId) return [];
     const ct: SiblingOrder = {
       id: order.id,
       order_number: order.order_number,
       order_code: order.order_code,
       status: order.status,
-      split_code: order.split_code ?? null,
+      split_code: order.is_special ? "Especial" : (order.split_code ?? null),
       table_order_position: Number(order.table_order_position ?? 0) || null,
       created_at: order.created_at ?? null,
       item_count: orderItems.length,
       item_preview_lines: buildItemPreviewLinesForTableCard(order.items ?? []),
+      is_special: Boolean(order.is_special),
     };
     const tableOrders = tableOrdersQuery.data?.length
       ? tableOrdersQuery.data
@@ -1387,6 +1393,8 @@ const OrdenesContent = () => {
   }, [
     order?.id,
     order?.table_id,
+    order?.is_special,
+    order?.special_origin_table_id,
     order?.order_type,
     order?.order_number,
     order?.order_code,
@@ -1394,6 +1402,7 @@ const OrdenesContent = () => {
     order?.table_order_position,
     order?.created_at,
     orderItems.length,
+    mesaSiblingTableId,
     tableOrdersQuery.data,
   ]);
 
@@ -2272,7 +2281,14 @@ const OrdenesContent = () => {
     if (qo > 0) return sum + qo;
     return sum + Math.max(0, Number(i.quantity ?? 0));
   }, 0);
-  const getTableOrderButtonLabel = (tableOrder: { order_code?: string | null; order_number: number | null; table_order_position: number | null }) => {
+  const getTableOrderButtonLabel = (tableOrder: {
+    order_code?: string | null;
+    order_number: number | null;
+    table_order_position: number | null;
+    is_special?: boolean | null;
+    split_code?: string | null;
+  }) => {
+    if (tableOrder.is_special || tableOrder.split_code === "Especial") return "Especial";
     const label = getOrderMesaHeaderNumber({
       orderCode: tableOrder.order_code,
       orderNumber: tableOrder.order_number,
@@ -2340,7 +2356,12 @@ const OrdenesContent = () => {
       : [];
   const visibleTableOrders = isBranchSiblingOrder
     ? tableOrders.filter((tableOrder) => tableOrder.id === currentTableOrder?.id || tableOrder.item_count > 0)
-    : tableOrders;
+    : tableOrders.filter(
+        (tableOrder) =>
+          tableOrder.id === currentTableOrder?.id
+          || tableOrder.item_count > 0
+          || Boolean(tableOrder.is_special),
+      );
   const mergedTableOrders = isBranchSiblingOrder
     ? [...visibleTableOrders].sort(compareSiblingOrderTabs)
     : currentTableOrder
@@ -2353,19 +2374,22 @@ const OrdenesContent = () => {
     mesasChromeActive && order.order_type === "DINE_IN" && Boolean(boundTableId);
   const mesaCardsMode = isMesasChromeUi && searchParams.get(MESAS_V2_CARDS_PARAM) === "1";
   const showMesasV2CardPicker =
-    isMesasChromeUi && mesaCardsMode && Boolean(order.table_id) && mergedTableOrders.length >= 1;
+    isMesasChromeUi && mesaCardsMode && Boolean(mesaSiblingTableId) && mergedTableOrders.length >= 1;
 
   /** Mismo criterio que las pestañas de orden; va tras "Orden #" en la barra de mesa. */
   const getOrdenNumeroParaCabeceraMesa = (o: {
     order_code?: string | null;
     order_number: number | null;
     table_order_position: number | null;
+    is_special?: boolean | null;
   }) =>
-    getOrderMesaHeaderNumber({
-      orderCode: o.order_code,
-      orderNumber: o.order_number,
-      tableOrderPosition: o.table_order_position,
-    });
+    o.is_special
+      ? "Especial"
+      : getOrderMesaHeaderNumber({
+          orderCode: o.order_code,
+          orderNumber: o.order_number,
+          tableOrderPosition: o.table_order_position,
+        });
 
   /** "Orden #…" solo al ver la orden (no en la rejilla de selección de órdenes de la mesa). */
   const renderMesaChromeHeaderTitle = (o: typeof order, withOrdenLabel: boolean) => (

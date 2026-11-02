@@ -88,6 +88,8 @@ export interface SiblingOrder {
   table_name_snapshot?: string | null;
   /** Lineas para vista previa en tarjetas de seleccion de orden (cantidad + descripcion). */
   item_preview_lines?: Array<{ quantity: number; description: string }>;
+  /** Orden especial ligada a la mesa (special_origin_table_id). */
+  is_special?: boolean;
 }
 
 /** Texto compacto para tarjetas de mesa: cantidad + descripcion (snapshot). */
@@ -490,18 +492,41 @@ export async function fetchSiblingOrders(
     p_keep_order_id: keepOrderId ?? null,
   } as any);
 
-  const { data: siblingOrders, error } = await supabase
-    .from("orders")
-    .select("id, order_number, order_code, split_id, table_order_position, status, created_at, sent_to_kitchen_at, cash_shift_id, notes, order_items(id, description_snapshot, quantity, status)")
-    .eq("table_id", tableId)
-    .eq("branch_id", branchId)
-    .eq("order_type", "DINE_IN")
-    .eq("cash_shift_id", openShift.id)
-    .in("status", ["DRAFT", "SENT_TO_KITCHEN", "READY", "PAID", "KITCHEN_DISPATCHED"]);
+  const siblingSelect =
+    "id, order_number, order_code, split_id, table_order_position, status, created_at, sent_to_kitchen_at, cash_shift_id, notes, is_special, table_id, special_origin_table_id, order_items(id, description_snapshot, quantity, status)";
 
-  if (error) throw error;
+  const [{ data: tableBoundOrders, error: tableBoundError }, { data: specialOriginOrders, error: specialOriginError }] =
+    await Promise.all([
+      supabase
+        .from("orders")
+        .select(siblingSelect)
+        .eq("table_id", tableId)
+        .eq("branch_id", branchId)
+        .eq("order_type", "DINE_IN")
+        .eq("cash_shift_id", openShift.id)
+        .in("status", ["DRAFT", "SENT_TO_KITCHEN", "READY", "PAID", "KITCHEN_DISPATCHED"]),
+      supabase
+        .from("orders")
+        .select(siblingSelect)
+        .eq("special_origin_table_id", tableId)
+        .eq("is_special", true)
+        .is("table_id", null)
+        .eq("branch_id", branchId)
+        .eq("order_type", "DINE_IN")
+        .eq("cash_shift_id", openShift.id)
+        .in("status", ["DRAFT", "SENT_TO_KITCHEN", "READY", "PAID", "KITCHEN_DISPATCHED"]),
+    ]);
 
-  if (!siblingOrders || siblingOrders.length === 0) return [];
+  if (tableBoundError) throw tableBoundError;
+  if (specialOriginError) throw specialOriginError;
+
+  const byId = new Map<string, any>();
+  for (const row of [...(tableBoundOrders ?? []), ...(specialOriginOrders ?? [])]) {
+    if (row?.id) byId.set(String(row.id), row);
+  }
+  const siblingOrders = Array.from(byId.values());
+
+  if (siblingOrders.length === 0) return [];
 
   const splitIds = Array.from(new Set(siblingOrders.map((sibling: any) => sibling.split_id).filter(Boolean))) as string[];
   const splits = splitIds.length > 0 
@@ -518,21 +543,26 @@ export async function fetchSiblingOrders(
       const itemCount = Array.isArray(sibling.order_items) ? sibling.order_items.length : 0;
       if (itemCount > 0) return true;
       if (keepOrderId && sibling.id === keepOrderId) return true;
+      if (Boolean(sibling.is_special)) return true;
       if (String(sibling.status ?? "") !== "DRAFT") return true;
       return false;
     })
     .map((sibling) => {
       const rawItems = Array.isArray(sibling.order_items) ? sibling.order_items : [];
+      const isSpecial = Boolean(sibling.is_special);
       return {
         id: sibling.id,
         order_number: sibling.order_number,
         order_code: sibling.order_code ?? null,
         status: String(sibling.status ?? "DRAFT"),
-        split_code: splits?.find((split: any) => split.id === sibling.split_id)?.split_code ?? null,
+        split_code: isSpecial
+          ? "Especial"
+          : (splits?.find((split: any) => split.id === sibling.split_id)?.split_code ?? null),
         table_order_position: Number(sibling.table_order_position ?? 0) || null,
         created_at: sibling.created_at ?? null,
         item_count: rawItems.length,
         item_preview_lines: buildItemPreviewLinesForTableCard(rawItems as any[]),
+        is_special: isSpecial,
       };
     })
     .sort(compareSiblingOrderTabs);
