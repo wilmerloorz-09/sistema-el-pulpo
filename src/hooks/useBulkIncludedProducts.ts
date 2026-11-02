@@ -2,24 +2,6 @@ import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useBranch } from "@/contexts/BranchContext";
 import { supabase } from "@/integrations/supabase/client";
-import { dbSelect } from "@/services/DatabaseService";
-
-interface CategoryRow {
-  id: string;
-  display_order: number | null;
-}
-
-interface SubcategoryRow {
-  id: string;
-  category_id: string;
-}
-
-interface LegacyProductRow {
-  id: string;
-  description: string;
-  subcategory_id: string;
-  display_order: number | null;
-}
 
 interface MenuNodeRow {
   id: string;
@@ -89,7 +71,7 @@ const emptyState = {
   availableProducts: [] as AvailableIncludedProduct[],
 };
 
-const BULK_INCLUDED_PRODUCTS_QUERY_KEY = "bulk-included-products-root-order-v4";
+const BULK_INCLUDED_PRODUCTS_QUERY_KEY = "bulk-included-products-menu-roots-v5";
 
 const normalizeError = (error: unknown) => {
   if (!(error instanceof Error)) return toErrorMessage(error, "No se pudo cargar la configuracion de productos incluidos.");
@@ -185,87 +167,34 @@ export function useBulkIncludedProducts(nodeId: string) {
         return current;
       };
 
-      const eligibleCategories = await dbSelect<CategoryRow>("categories", {
-        select: "id, display_order",
-        branchId: activeBranchId,
-        filters: [{ column: "is_active", op: "eq", value: true }],
-        orderBy: { column: "display_order" },
-      });
-
-      const eligibleRootCategoryIds = new Set(
-        eligibleCategories
-          .filter((row) => {
-            const rootOrder = Number(row.display_order ?? 0);
-            return rootOrder === 2 || rootOrder === 3;
-          })
-          .map((row) => row.id),
-      );
-
-      const eligibleSubcategories = eligibleRootCategoryIds.size > 0
-        ? await dbSelect<SubcategoryRow>("subcategories", {
-            select: "id, category_id",
-            filters: [
-              { column: "is_active", op: "eq", value: true },
-              { column: "category_id", op: "in", value: [...eligibleRootCategoryIds] },
-            ],
-            orderBy: { column: "display_order" },
-          })
-        : [];
-
-      const rootCategoryIdBySubcategoryId = new Map(
-        eligibleSubcategories.map((row) => [row.id, row.category_id]),
-      );
-      const eligibleSubcategoryIds = eligibleSubcategories.map((row) => row.id);
-
-      const eligibleLegacyProducts = eligibleSubcategoryIds.length > 0
-        ? await dbSelect<LegacyProductRow>("products", {
-            select: "id, description, subcategory_id, display_order",
-            filters: [
-              { column: "is_active", op: "eq", value: true },
-              { column: "subcategory_id", op: "in", value: eligibleSubcategoryIds },
-            ],
-            orderBy: { column: "display_order" },
-          })
-        : [];
-
-      const eligibleLegacyProductsById = new Map(
-        eligibleLegacyProducts.map((row) => [row.id, row]),
-      );
+      // Elegibles = productos activos de Menu Mesa bajo raíces con orden 2 o 3
+      // (ej. BEBIDAS / VARIOS). No usar categories legacy: sus IDs no coinciden
+      // con menu_nodes y dejaban el combo vacío.
       const tableCandidatesByLegacyId = new Map<string, TableEligibleProductRow[]>();
-
       for (const row of tableNodeRows) {
         if (row.node_type !== "product" || !row.is_active) continue;
+        const root = getTableRootNode(row.id);
+        const rootOrder = Number(root?.display_order ?? 0);
+        if (rootOrder !== 2 && rootOrder !== 3) continue;
 
         const legacyProductId = row.legacy_product_id ?? row.id;
-        const legacyProduct = eligibleLegacyProductsById.get(legacyProductId);
-        if (!legacyProduct) continue;
-
-        const root = getTableRootNode(row.id);
-        const expectedRootCategoryId = rootCategoryIdBySubcategoryId.get(legacyProduct.subcategory_id) ?? null;
-        if (expectedRootCategoryId && root?.id !== expectedRootCategoryId) continue;
-
         const bucket = tableCandidatesByLegacyId.get(legacyProductId) ?? [];
         bucket.push({
           node_id: row.id,
           legacy_product_id: legacyProductId,
-          name: row.name || legacyProduct.description,
-          display_order: Number(row.display_order ?? legacyProduct.display_order ?? 0),
+          name: row.name,
+          display_order: Number(row.display_order ?? 0),
         });
         tableCandidatesByLegacyId.set(legacyProductId, bucket);
       }
 
-      const eligibleProductRows = eligibleLegacyProducts.flatMap((legacyProduct) => {
-        const candidates = tableCandidatesByLegacyId.get(legacyProduct.id) ?? [];
-        if (candidates.length === 0) return [];
-
-        const selectedCandidate = [...candidates].sort((a, b) => {
+      const eligibleProductRows = [...tableCandidatesByLegacyId.values()].map((candidates) => {
+        return [...candidates].sort((a, b) => {
           if (a.display_order !== b.display_order) {
             return a.display_order - b.display_order;
           }
           return a.name.localeCompare(b.name);
         })[0];
-
-        return [selectedCandidate];
       });
 
       const { data: assignments, error: assignmentsError } = await supabase
