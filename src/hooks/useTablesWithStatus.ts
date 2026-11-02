@@ -174,7 +174,8 @@ function mapTablesFromOverviewSources(input: {
       status: effectiveStatus,
       activeOrderId: effectiveOrderId,
       orderStatus: effectiveOrderStatus,
-      isSpecial: !isFreeTable && isSpecial,
+      // Especial pura no ocupa: la mesa puede estar libre y aun asi avisar que hay especial vinculada.
+      isSpecial: isSpecial,
       splitCount: isFreeTable ? 0 : Number(row.split_count ?? 0),
       totalDue: isFreeTable ? 0 : Number(row.total_due ?? 0),
       splitTotals: effectiveSplitTotals,

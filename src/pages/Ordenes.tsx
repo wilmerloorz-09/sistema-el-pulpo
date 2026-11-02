@@ -54,7 +54,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { AlertTriangle, Loader2, ChefHat, ShoppingBag, CircleDollarSign, BookOpenText, MoreVertical, ArrowRightLeft, Sparkles, ChevronLeft, ChevronRight, Scale, Ban, SquarePlus, X, UserRound, Pencil, Menu, Truck, Zap } from "lucide-react";
 import { sanitizeDecimalInput } from "@/lib/numericInput";
 import { cn } from "@/lib/utils";
-import { isMesasListOrigin, mesasListPathForOrigin, MESAS_V2_CARDS_PARAM, formatTableBadge, getOrderBoundTableId } from "@/lib/mesasFlow";
+import { isMesasListOrigin, mesasListPathForOrigin, MESAS_ORIGIN_LEGACY, MESAS_V2_CARDS_PARAM, formatTableBadge, getOrderBoundTableId } from "@/lib/mesasFlow";
 import { toast } from "sonner";
 import type { OrderSummary } from "@/hooks/useOrdersByStatus";
 import { canManage, canOperate } from "@/lib/permissions";
@@ -2416,12 +2416,16 @@ const OrdenesContent = () => {
       item.status === "PAID"
     );
   });
+  const canSplitFromSpecialOrigin =
+    Boolean(order.is_special)
+    && Boolean(order.special_origin_table_id)
+    && !order.table_id;
   const canSplit =
     canOperateOrders &&
-    ((order.order_type === "DINE_IN" && !!order.table_id) || isBranchSiblingOrder) &&
+    ((order.order_type === "DINE_IN" && !!order.table_id) || isBranchSiblingOrder || canSplitFromSpecialOrigin) &&
     order.status !== "CANCELLED" &&
     !isLockedFromEditar &&
-    orderItems.length > 0 &&
+    (orderItems.length > 0 || canSplitFromSpecialOrigin) &&
     shiftOkForSiblingOrder;
   const canDeleteSplit =
     canOperateOrders &&
@@ -2692,9 +2696,13 @@ const OrdenesContent = () => {
 
   const handleSplit = async () => {
     if (!user || !canOperateOrders) return;
-    if (!((order.order_type === "DINE_IN" && order.table_id) || isBranchSiblingOrder)) return;
+    const splitFromSpecialOrigin =
+      Boolean(order.is_special)
+      && Boolean(order.special_origin_table_id)
+      && !order.table_id;
+    if (!((order.order_type === "DINE_IN" && order.table_id) || isBranchSiblingOrder || splitFromSpecialOrigin)) return;
     if (order.status === "CANCELLED") return;
-    if (orderItems.length <= 0) {
+    if (orderItems.length <= 0 && !splitFromSpecialOrigin) {
       toast.error("La orden actual debe tener al menos un item");
       return;
     }
@@ -2724,6 +2732,16 @@ const OrdenesContent = () => {
         const { data, error } = await supabase.rpc("create_takeout_order" as any, {
           p_branch_id: order.branch_id,
           p_created_by: user.id,
+        } as any);
+        if (error) throw error;
+        newOrderId = String(data);
+      } else if (splitFromSpecialOrigin) {
+        const originTableId = order.special_origin_table_id!;
+        const { data, error } = await supabase.rpc("create_dine_in_order" as any, {
+          p_branch_id: order.branch_id,
+          p_created_by: user.id,
+          p_table_id: originTableId,
+          p_is_special: false,
         } as any);
         if (error) throw error;
         newOrderId = String(data);
@@ -2808,7 +2826,8 @@ const OrdenesContent = () => {
           ].sort(compareSiblingOrderTabs),
         );
       }
-      if (!isTakeoutOrder && !isExtraOrder && !reusedEmptyTableOrder) {
+      const splitTableId = order.table_id ?? (splitFromSpecialOrigin ? order.special_origin_table_id : null);
+      if (!isTakeoutOrder && !isExtraOrder && !reusedEmptyTableOrder && splitTableId) {
         const newSibling: SiblingOrder = {
           id: newOrderId,
           order_number: null,
@@ -2821,12 +2840,18 @@ const OrdenesContent = () => {
         };
         seedDineInDraftOrderCache(qc, newOrderId, {
           branchId: order.branch_id,
-          tableId: order.table_id!,
+          tableId: splitTableId,
           tableName: order.table_name,
           createdAt: nowIso,
           tableOrderPosition: mergedTableOrders.length + 1,
           siblings: [...mergedTableOrders, newSibling].sort(compareSiblingOrderTabs),
         });
+        if (splitFromSpecialOrigin) {
+          qc.setQueryData(
+            ["table-orders", splitTableId],
+            [newSibling].sort(compareSiblingOrderTabs),
+          );
+        }
       }
       void qc.prefetchQuery({
         queryKey: getOrderQueryKey(newOrderId),
@@ -2834,7 +2859,10 @@ const OrdenesContent = () => {
         staleTime: 15_000,
         gcTime: 10 * 60_000,
       });
-      navigate(`/ordenes?order=${newOrderId}${sourceParamsNoMesaCards}`, { replace: true });
+      const navigateParams = splitFromSpecialOrigin
+        ? `?order=${newOrderId}&origin=${MESAS_ORIGIN_LEGACY}`
+        : `?order=${newOrderId}${sourceParamsNoMesaCards}`;
+      navigate(`/ordenes${navigateParams}`, { replace: true });
 
       invalidateOperationalOrderQueries(qc, {
         branchId: order.branch_id,
@@ -4977,10 +5005,10 @@ const OrdenesContent = () => {
                       ? "La orden actual debe tener al menos un item"
                       : !shiftOkForSiblingOrder
                         ? "Abre turno en caja para crear otra orden"
-                        : order.is_special && !order.table_id
-                          ? "La orden especial no abre cuentas adicionales en la mesa"
                         : !canSplit
                           ? "La mesa debe seguir activa para crear otra orden"
+                          : order.is_special && !order.table_id
+                            ? "Abrir cuenta normal en la misma mesa"
                           : "Nueva orden"
                 }
               >

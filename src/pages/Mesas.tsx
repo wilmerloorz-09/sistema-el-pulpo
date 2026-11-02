@@ -185,10 +185,6 @@ const Mesas = () => {
       navigate(`/ordenes?${mesasOrdenesSearch({ order: orderId, origin: MESAS_ORIGIN_LEGACY, mesaCards: opts?.mesaCards })}`, { replace: true });
     };
 
-    const goOrdenEspecial = (orderId: string) => {
-      navigate(`/ordenes?order=${orderId}&origin=orden-especial`, { replace: true });
-    };
-
     const orderBelongsToCurrentShift = async (orderId: string) => {
       if (!activeBranchId) return false;
       return orderIdBelongsToOpenBranchShift(activeBranchId, orderId, fetchOrderShiftGateFields);
@@ -212,10 +208,11 @@ const Mesas = () => {
       }
     };
 
-    if (table.status === "free") {
+      if (table.status === "free") {
       if (!canOperateMesas) return;
       // activeOrderId / reusableDraftOrderId pueden quedar obsoletos en caché tras purgar un borrador vacío al salir de Órdenes.
-      if (table.activeOrderId && activeBranchId) {
+      // No reusar activeOrderId de una especial vinculada: la mesa libre debe abrir cuenta normal.
+      if (table.activeOrderId && !table.isSpecial && activeBranchId) {
         try {
           const [gateFields, openShift] = await Promise.all([
             fetchOrderShiftGateFields(table.activeOrderId),
@@ -289,14 +286,11 @@ const Mesas = () => {
     }
 
     // Mesa ocupada: activeOrderId ya filtrado por turno en useTablesWithStatus.
+    // isSpecial aquí solo indica especial vinculada (no ocupa); la cuenta activa es dine-in.
     if (table.activeOrderId) {
       const orderId = table.activeOrderId;
       const tableId = table.id;
       warmOrderId(orderId);
-      if (table.isSpecial) {
-        goOrdenEspecial(orderId);
-        return;
-      }
       if (activeBranchId) {
         // Navegar al instante; hermanos/mesaCards en segundo plano.
         goOrdenesMesas(orderId);
@@ -453,15 +447,20 @@ const Mesas = () => {
                           </span>
                         </div>
                       )}
-                      {table.status === "free" && canOperateMesas && (
+                      {table.status === "free" && canOperateMesas && !table.isSpecial && (
                         <div className="absolute left-2 top-2 rounded-full bg-primary/10 p-1 sm:left-3 sm:top-3">
                           <Plus className="h-3.5 w-3.5 text-primary" />
                         </div>
                       )}
+                      {table.status === "free" && table.isSpecial && (
+                        <span className="absolute left-2 top-2 rounded-full border border-violet-300 bg-violet-50 px-1.5 py-0.5 text-[10px] font-bold text-violet-800 shadow-sm dark:border-violet-700 dark:bg-violet-950/70 dark:text-violet-200">
+                          Especial
+                        </span>
+                      )}
                       {table.status === "free" && (
                         <div className="flex items-center gap-1 rounded-full border border-sky-200 bg-white/85 px-2 py-1 text-[8px] font-semibold text-sky-700 shadow-sm sm:text-[10px] dark:border-sky-800 dark:bg-card/85 dark:text-sky-400">
                           <Sparkles className="h-3 w-3" />
-                          Lista para abrir
+                          {table.isSpecial ? "Libre + especial" : "Lista para abrir"}
                         </div>
                       )}
                       {showSingleTotal && (
