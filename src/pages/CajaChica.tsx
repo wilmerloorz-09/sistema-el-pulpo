@@ -86,19 +86,24 @@ type FormState = {
   previewUrl: string | null;
   tieneFotoActual: boolean;
   quitarFoto: boolean;
+  /** Para editar: monto/tipo originales liberan saldo al recalcular. */
+  originalTipo: CajaChicaTipo | null;
+  originalMonto: number | null;
 };
 
 const emptyForm = (tipo: CajaChicaTipo): FormState => ({
   movimientoId: null,
   tipo,
   monto: "",
-  conceptoId: tipo === "REPOSICION" ? null : null,
+  conceptoId: null,
   conceptoLabel: tipo === "REPOSICION" ? CAJA_CHICA_CONCEPTO_REPOSICION : "",
   observacion: "",
   archivo: null,
   previewUrl: null,
   tieneFotoActual: false,
   quitarFoto: false,
+  originalTipo: null,
+  originalMonto: null,
 });
 
 function ConceptoCombobox({
@@ -235,6 +240,29 @@ export default function CajaChica() {
     return lista.map((b) => b.name).join(" · ");
   }, [estadoQuery.data?.comparten]);
 
+  const saldoActual = Number(estadoQuery.data?.saldo ?? 0);
+
+  /** Al editar un egreso, su monto original vuelve a estar disponible. */
+  const saldoDisponibleParaEgreso = useMemo(() => {
+    let disponible = saldoActual;
+    if (form.originalTipo === "EGRESO" && form.originalMonto != null) {
+      disponible += Number(form.originalMonto);
+    }
+    if (form.originalTipo === "REPOSICION" && form.originalMonto != null && form.tipo === "EGRESO") {
+      // Si el movimiento era reposición y ahora será egreso, se pierde ese ingreso.
+      disponible -= Number(form.originalMonto);
+    }
+    return Math.max(0, disponible);
+  }, [saldoActual, form.originalTipo, form.originalMonto, form.tipo]);
+
+  const montoFormulario = Number(String(form.monto).replace(",", "."));
+  const gastoExcedeSaldo =
+    form.tipo === "EGRESO"
+    && Number.isFinite(montoFormulario)
+    && montoFormulario > 0
+    && montoFormulario > saldoDisponibleParaEgreso;
+  const sinSaldoParaGasto = saldoActual <= 0;
+
   const invalidate = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["caja-chica-estado", activeBranchId] }),
@@ -286,10 +314,17 @@ export default function CajaChica() {
         }
       }
 
-      if (!form.movimientoId) {
-        if (form.tipo === "EGRESO" && monto > Number(estadoQuery.data.saldo ?? 0)) {
-          throw new Error(`Saldo insuficiente (disponible: ${money(Number(estadoQuery.data.saldo))})`);
+      if (form.tipo === "EGRESO") {
+        const disponible = saldoDisponibleParaEgreso;
+        if (disponible <= 0) {
+          throw new Error("No hay saldo disponible para registrar un gasto");
         }
+        if (monto > disponible) {
+          throw new Error(`El gasto no puede ser mayor al saldo (disponible: ${money(disponible)})`);
+        }
+      }
+
+      if (!form.movimientoId) {
         return registrarMovimientoCajaChica({
           sucursalId: activeBranchId,
           sucursalEfectivaId: estadoQuery.data.sucursal_efectiva_id,
@@ -401,6 +436,8 @@ export default function CajaChica() {
       previewUrl: null,
       tieneFotoActual: Boolean(m.ruta_objeto),
       quitarFoto: false,
+      originalTipo: m.tipo,
+      originalMonto: Number(m.monto),
     });
     setDialogOpen(true);
   };
@@ -461,7 +498,7 @@ export default function CajaChica() {
     );
   }
 
-  const saldo = Number(estadoQuery.data?.saldo ?? 0);
+  const saldo = saldoActual;
   const sucursalNombre =
     activeBranch?.name
     ?? branches.find((b) => b.id === activeBranchId)?.name
@@ -530,9 +567,10 @@ export default function CajaChica() {
               </div>
               <div className="flex flex-wrap gap-2">
                 <Button
-                  className="rounded-xl bg-rose-600 hover:bg-rose-700"
+                  className="rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50"
                   onClick={() => openCreate("EGRESO")}
-                  disabled={estadoQuery.isLoading}
+                  disabled={estadoQuery.isLoading || sinSaldoParaGasto}
+                  title={sinSaldoParaGasto ? "No hay saldo para registrar un gasto" : undefined}
                 >
                   <Camera className="mr-2 h-4 w-4" />
                   Registrar gasto
@@ -816,8 +854,15 @@ export default function CajaChica() {
                 placeholder="0.00"
                 value={form.monto}
                 onChange={(e) => setForm((p) => ({ ...p, monto: e.target.value }))}
-                className="rounded-xl"
+                className={cn("rounded-xl", gastoExcedeSaldo && "border-rose-400 focus-visible:ring-rose-300")}
               />
+              {form.tipo === "EGRESO" ? (
+                <p className={cn("text-xs", gastoExcedeSaldo ? "font-medium text-rose-700" : "text-muted-foreground")}>
+                  {gastoExcedeSaldo
+                    ? `El gasto no puede ser mayor al saldo (disponible: ${money(saldoDisponibleParaEgreso)}).`
+                    : `Saldo disponible: ${money(saldoDisponibleParaEgreso)}`}
+                </p>
+              ) : null}
             </div>
             <div className="space-y-1.5">
               <Label>Concepto</Label>
@@ -903,7 +948,7 @@ export default function CajaChica() {
                 "w-full rounded-xl",
                 form.tipo === "EGRESO" ? "bg-rose-600 hover:bg-rose-700" : "bg-emerald-600 hover:bg-emerald-700",
               )}
-              disabled={saving}
+              disabled={saving || gastoExcedeSaldo || (form.tipo === "EGRESO" && saldoDisponibleParaEgreso <= 0)}
               onClick={() => guardar.mutate()}
             >
               {saving ? "Guardando…" : isEdit ? "Guardar cambios" : "Guardar"}
