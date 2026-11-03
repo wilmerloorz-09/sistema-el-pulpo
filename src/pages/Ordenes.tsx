@@ -5639,7 +5639,7 @@ const OrdenesContent = () => {
         initialSourceOption={{
           id: order.id,
           orderId: order.id,
-          label: `${order.table_name ?? "Mesa"} (${String(order.order_number ?? 0).padStart(4, "0").slice(-4)})`,
+          label: `${order.table_name ?? "Mesa"} (${getOrderRef(order.order_code, order.order_number).replace(/^#/, "")})`,
           orderCode: order.order_code,
           tableName: order.table_name ?? "Mesa",
           tableId: boundTableId,

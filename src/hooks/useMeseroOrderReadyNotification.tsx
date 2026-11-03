@@ -5,11 +5,13 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useBranch } from "@/contexts/BranchContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
+import { getOrderRef } from "@/lib/orderPresentation";
 
 export interface OrderReadyNotification {
   id?: string;
   order_id: string;
   order_number: number | null;
+  order_code?: string | null;
   order_type: "DINE_IN" | "TAKEOUT";
   branch_id: string;
   created_by: string;
@@ -30,6 +32,7 @@ type ReadyOrderRow = {
   notification_id: string;
   order_id: string;
   order_number: number | null;
+  order_code: string | null;
   order_type: "DINE_IN" | "TAKEOUT";
   branch_id: string;
   created_by: string;
@@ -169,6 +172,7 @@ async function fetchMeseroReadyAlerts(
     id: row.notification_id,
     order_id: row.order_id,
     order_number: row.order_number,
+    order_code: row.order_code ?? null,
     order_type: row.order_type,
     branch_id: row.branch_id,
     created_by: row.created_by,
@@ -363,7 +367,7 @@ export function OrderReadyNotificationBanner({
             <Bell className="mt-0.5 h-5 w-5 shrink-0 animate-bounce" />
             <div>
               <AlertDescription className="font-semibold text-base">
-                Orden {notification.order_number ? `#${notification.order_number}` : ''} lista para despachar
+                Orden {getOrderRef(notification.order_code, notification.order_number)} lista para despachar
               </AlertDescription>
               <AlertDescription className="mt-1 text-sm opacity-90">
                 {label}

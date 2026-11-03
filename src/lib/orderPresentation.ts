@@ -116,10 +116,23 @@ export function cleanOrderCode(code: string | null | undefined): string | null {
   return code.replace(/-V[a-f0-9]{4}$/i, "");
 }
 
+/** Sufijo visible nuevo: M001 / L001 / E001 (por tipo, sucursal y día). */
+export function getOrderSeriesRef(orderCode: string | null | undefined): string | null {
+  const clean = cleanOrderCode(orderCode);
+  const suffix = clean?.split("-").pop()?.trim();
+  if (!suffix || !/^[MLE]\d+$/i.test(suffix)) return null;
+  const letter = suffix[0]!.toUpperCase();
+  const digits = suffix.slice(1);
+  return `${letter}${digits.padStart(3, "0")}`;
+}
+
 export function getOrderRef(
   orderCode: string | null | undefined,
   orderNumber: number | null | undefined,
 ): string {
+  const seriesRef = getOrderSeriesRef(orderCode);
+  if (seriesRef) return seriesRef;
+
   const n = Number(orderNumber ?? 0);
   if (n > 0) {
     return `#${String(n).padStart(4, "0")}`;
@@ -133,12 +146,15 @@ export function getOrderRef(
   return "Borrador";
 }
 
-/** Número corto para cabeceras/pestañas de mesa (p. ej. "0001"). */
+/** Número corto para cabeceras/pestañas de mesa (p. ej. "M001" o "0001"). */
 export function getOrderMesaHeaderNumber(params: {
   orderCode?: string | null;
   orderNumber?: number | null;
   tableOrderPosition?: number | null;
 }): string {
+  const seriesRef = getOrderSeriesRef(params.orderCode);
+  if (seriesRef) return seriesRef;
+
   const orderNumber = Number(params.orderNumber ?? 0);
   if (orderNumber > 0) {
     return String(orderNumber).padStart(4, "0");

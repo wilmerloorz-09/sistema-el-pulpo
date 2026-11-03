@@ -21,6 +21,12 @@ describe("getOrderRef", () => {
   it("usa order_number aunque order_code sea null (histórica)", () => {
     expect(getOrderRef(null, 1)).toBe("#0001");
   });
+
+  it("muestra serie M/L/E cuando el order_code ya trae prefijo", () => {
+    expect(getOrderRef("SUC001261103-M001", 1)).toBe("M001");
+    expect(getOrderRef("SUC001261103-L012-Vabcd", 12)).toBe("L012");
+    expect(getOrderRef("SUC001261103-E003", 3)).toBe("E003");
+  });
 });
 
 describe("getOrderOriginLabel", () => {
@@ -74,6 +80,16 @@ describe("getOrderMesaHeaderNumber", () => {
         tableOrderPosition: 2,
       }),
     ).toBe("0042");
+  });
+
+  it("usa serie M/L/E cuando el order_code la trae", () => {
+    expect(
+      getOrderMesaHeaderNumber({
+        orderCode: "SUC001261103-M007",
+        orderNumber: 7,
+        tableOrderPosition: 1,
+      }),
+    ).toBe("M007");
   });
 
   it("usa posición de mesa si no hay número operativo", () => {

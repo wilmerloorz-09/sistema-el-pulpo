@@ -20,7 +20,7 @@ import { getOpenCashShiftIdForBranch } from "@/lib/openCashShift";
 import { useBranch } from "@/contexts/BranchContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { fetchOrderDetail } from "@/hooks/useOrder";
-import { getOrderOriginLabel } from "@/lib/orderPresentation";
+import { getOrderOriginLabel, getOrderRef } from "@/lib/orderPresentation";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Check, ChevronsDown, ChevronsUp, Loader2, X } from "lucide-react";
@@ -66,10 +66,18 @@ interface DisplayTransferRow {
 
 const clampQty = (value: number, max: number) => Math.max(0, Math.min(max, Math.floor(Number.isFinite(value) ? value : 0)));
 
-function formatCompactOrderLabel(tableName: string, orderNumber: number | null) {
+function formatCompactOrderLabel(
+  tableName: string,
+  orderNumber: number | null,
+  orderCode?: string | null,
+) {
   const cleanTableName = tableName.trim() || "Mesa";
-  if (orderNumber == null || Number.isNaN(Number(orderNumber))) return cleanTableName;
-  return `${cleanTableName} (${String(orderNumber).padStart(4, "0").slice(-4)})`;
+  const ref = getOrderRef(orderCode, orderNumber);
+  if (!ref || ref === "Borrador") {
+    if (orderNumber == null || Number.isNaN(Number(orderNumber))) return cleanTableName;
+    return `${cleanTableName} (${String(orderNumber).padStart(4, "0").slice(-4)})`;
+  }
+  return `${cleanTableName} (${ref.replace(/^#/, "")})`;
 }
 
 function filterOrdersByMode(items: TransferableOrderOption[], filter: "ALL" | "ACTIVE" | "FREE") {
@@ -304,7 +312,7 @@ export default function MergeSplitOrdersDialog({
             splitCode,
             isSpecial: false,
           });
-          const label = formatCompactOrderLabel(tableName, order.order_number) || fallbackLabel;
+          const label = formatCompactOrderLabel(tableName, order.order_number, order.order_code) || fallbackLabel;
 
           return {
             id: order.id,
