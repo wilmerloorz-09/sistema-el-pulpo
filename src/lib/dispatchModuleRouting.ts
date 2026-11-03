@@ -64,13 +64,12 @@ export function orderMatchesDispatchModuleRoute(
     return orderMayAppearInPackingModule(order, hasEnabledPacker);
   }
 
-  if (moduleRoute === "dispatch") {
-    // Órdenes enteras Para llevar/Express se reservan; mesas siguen en Despacho
-    // (las líneas Con envase se excluyen a nivel ítem).
+  if (moduleRoute === "dispatch" || moduleRoute === "servir") {
+    // Con empaquetador activo, Para llevar/Express van a Empaquetador.
+    // Mesas siguen en Despacho/Servir (líneas Con envase se excluyen a nivel ítem).
     return !shouldReserveOrderForPacking(order, hasEnabledPacker);
   }
 
-  // Servir: la orden puede traer platos; las líneas Con envase se excluyen a nivel ítem.
   return true;
 }
 
@@ -87,8 +86,7 @@ export function itemMatchesDispatchModuleRoute(
 ): boolean {
   const packingLine = itemBelongsToPackingRoute(order, item, hasEnabledPacker);
   if (moduleRoute === "packing") return packingLine;
-  if (packingLine && hasEnabledPacker && isTableLikeOrderType(order.order_type)) {
-    return false;
-  }
+  // Con empacador: Para llevar/Express y Con envase de mesa solo en Empaquetador.
+  if (hasEnabledPacker && packingLine) return false;
   return true;
 }

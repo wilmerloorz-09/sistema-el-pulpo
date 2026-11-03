@@ -24,12 +24,17 @@ describe("dispatch module routing", () => {
     expect(shouldReserveOrderForPacking({ order_type: "TAKEOUT" }, false)).toBe(false);
   });
 
-  it("oculta para llevar de despacho cuando hay empacador habilitado", () => {
+  it("oculta para llevar de despacho y servir cuando hay empacador habilitado", () => {
     expect(orderMatchesDispatchModuleRoute({ order_type: "TAKEOUT" }, "dispatch", true)).toBe(false);
     expect(orderMatchesDispatchModuleRoute({ order_type: "EXPRESS" }, "dispatch", true)).toBe(false);
     expect(orderMatchesDispatchModuleRoute({ order_type: "TABLE" }, "dispatch", true)).toBe(true);
     expect(orderMatchesDispatchModuleRoute({ order_type: "DINE_IN" }, "dispatch", true)).toBe(true);
     expect(orderMatchesDispatchModuleRoute({ order_type: "TAKEOUT" }, "dispatch", false)).toBe(true);
+
+    expect(orderMatchesDispatchModuleRoute({ order_type: "TAKEOUT" }, "servir", true)).toBe(false);
+    expect(orderMatchesDispatchModuleRoute({ order_type: "EXPRESS" }, "servir", true)).toBe(false);
+    expect(orderMatchesDispatchModuleRoute({ order_type: "DINE_IN" }, "servir", true)).toBe(true);
+    expect(orderMatchesDispatchModuleRoute({ order_type: "TAKEOUT" }, "servir", false)).toBe(true);
   });
 
   it("permite mesa en empaquetador solo si hay empacador (lineas Con envase)", () => {
