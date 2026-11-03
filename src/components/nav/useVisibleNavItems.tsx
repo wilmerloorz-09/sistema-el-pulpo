@@ -1,5 +1,5 @@
 import { useMemo, type ReactNode } from "react";
-import { BarChart3, ChefHat, CircleDollarSign, ConciergeBell, LayoutGrid, Package, PackagePlus, Settings, UtensilsCrossed, PlayCircle, ShoppingBag, Sparkles, Zap, Banknote, History, Users, Gift, Megaphone, Search, PowerOff, PackageCheck, ArrowLeftRight, FileText, HandCoins, Warehouse, Snowflake, Flame } from "lucide-react";
+import { BarChart3, ChefHat, CircleDollarSign, ConciergeBell, LayoutGrid, Package, PackagePlus, Settings, UtensilsCrossed, PlayCircle, ShoppingBag, Sparkles, Zap, Banknote, History, Users, Gift, Megaphone, Search, PowerOff, PackageCheck, ArrowLeftRight, FileText, HandCoins, Warehouse, Snowflake, Flame, Wallet } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
@@ -408,6 +408,22 @@ const NAV_ITEMS: AppNavItem[] = [
     },
     visible: (permissions) => canView(permissions, "admin_sucursal") || canView(permissions, "admin_global"),
   },
+  {
+    to: "/caja-chica",
+    label: "Caja Chica",
+    icon: <Wallet className="h-5 w-5" />,
+    group: "ADMINISTRACIÓN",
+    tone: {
+      active: "from-lime-600 to-emerald-500",
+      idle: "hover:border-lime-200 hover:bg-lime-50/90 hover:text-lime-800",
+      iconIdle: "bg-lime-50 text-lime-700",
+    },
+    visible: (permissions) =>
+      canOperate(permissions, "caja_chica")
+      || canView(permissions, "caja_chica")
+      || canView(permissions, "admin_sucursal")
+      || canView(permissions, "admin_global"),
+  },
 ];
 
 export function useVisibleNavItems() {
@@ -540,6 +556,7 @@ export function useVisibleNavItems() {
           || (item.to === "/forzar-cierre-turno" && item.visible(permissions))
           || (item.to === "/reportes" && canAccessAdmin)
           || (item.to === "/personal" && item.visible(permissions))
+          || (item.to === "/caja-chica" && item.visible(permissions))
           || (item.to === "/cierres-caja" && canAccessAdmin)
           || (item.to === "/monitoreo-global" && isGlobalAdmin)
         );

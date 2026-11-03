@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAuth } from "@/contexts/AuthContext";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { Building2, Camera, Check, KeyRound, Loader2, Shield, Package, Warehouse } from "lucide-react";
+import { Building2, Camera, Check, KeyRound, Loader2, Shield, Package, Warehouse, Wallet } from "lucide-react";
 import ChangePasswordDialog from "@/components/ChangePasswordDialog";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -102,6 +102,7 @@ const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }
     () => user.global_roles.some((r) => r.code === "bodeguero_general"),
   );
   const [bodegaSucursalEnabled, setBodegaSucursalEnabled] = useState(false);
+  const [cajaChicaEnabled, setCajaChicaEnabled] = useState(false);
   const displayName = getUserRealName(user) || user.first_name || user.full_name || getUserAlias(user);
 
   const isNewAdmin = selectedUserType === "administrador";
@@ -123,13 +124,13 @@ const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }
       const { data: moduleRows, error: moduleError } = await supabase
         .from("modules")
         .select("id, code")
-        .in("code", ["inventario_movimientos", "bodega_sucursal"])
+        .in("code", ["inventario_movimientos", "bodega_sucursal", "caja_chica"])
         .eq("is_active", true);
       if (moduleError) throw moduleError;
 
       const moduleIds = (moduleRows ?? []).map((row) => row.id);
       if (moduleIds.length === 0) {
-        return { inventario_movimientos: false, bodega_sucursal: false };
+        return { inventario_movimientos: false, bodega_sucursal: false, caja_chica: false };
       }
 
       const { data, error } = await supabase
@@ -150,6 +151,7 @@ const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }
           activeByModuleId.get(codeToId.get("inventario_movimientos") ?? ""),
         ),
         bodega_sucursal: Boolean(activeByModuleId.get(codeToId.get("bodega_sucursal") ?? "")),
+        caja_chica: Boolean(activeByModuleId.get(codeToId.get("caja_chica") ?? "")),
       };
     },
   });
@@ -163,11 +165,13 @@ const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }
     if (!open || isNewAdmin || !selectedBranchId) {
       setInventarioMovimientosEnabled(false);
       setBodegaSucursalEnabled(false);
+      setCajaChicaEnabled(false);
       return;
     }
     if (!branchModulesQuery.isLoading && branchModulesQuery.data) {
       setInventarioMovimientosEnabled(Boolean(branchModulesQuery.data.inventario_movimientos));
       setBodegaSucursalEnabled(Boolean(branchModulesQuery.data.bodega_sucursal));
+      setCajaChicaEnabled(Boolean(branchModulesQuery.data.caja_chica));
     }
   }, [
     open,
@@ -351,6 +355,15 @@ const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }
           p_reason: "Permiso bodeguero de sucursal desde administracion",
         });
         if (bodegaSucursalError) throw bodegaSucursalError;
+
+        const { error: cajaChicaError } = await supabase.rpc("upsert_user_branch_module", {
+          p_target_user_id: user.id,
+          p_branch_id: selectedBranchId,
+          p_module_code: "caja_chica",
+          p_is_active: cajaChicaEnabled,
+          p_reason: "Permiso caja chica desde administracion",
+        });
+        if (cajaChicaError) throw cajaChicaError;
       }
     },
     onSuccess: () => {
@@ -721,6 +734,28 @@ const EditUserDialog = ({ user, open, onClose, onRefresh, branchesMap, catalog }
                         id="inventario-movimientos"
                         checked={inventarioMovimientosEnabled}
                         onCheckedChange={setInventarioMovimientosEnabled}
+                        disabled={isProtected || saveUser.isPending || branchModulesQuery.isLoading}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-1.5">
+                          <Wallet className="h-3.5 w-3.5 text-primary" />
+                          <Label htmlFor="caja-chica" className="text-xs font-bold text-slate-800">
+                            Caja Chica
+                          </Label>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground">
+                          Registra gastos y reposiciones del fondo de caja chica en la sucursal.
+                        </p>
+                      </div>
+                      <Switch
+                        id="caja-chica"
+                        checked={cajaChicaEnabled}
+                        onCheckedChange={setCajaChicaEnabled}
                         disabled={isProtected || saveUser.isPending || branchModulesQuery.isLoading}
                       />
                     </div>

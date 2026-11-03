@@ -53,6 +53,7 @@ import CambioMonedasBilletes from "./pages/CambioMonedasBilletes";
 import CierresCaja from "./pages/CierresCaja";
 import Reportes from "./pages/Reportes";
 import PersonalLaboral from "./pages/PersonalLaboral";
+import CajaChica from "./pages/CajaChica";
 import Admin from "./pages/Admin";
 import Turno from "./pages/Turno";
 import ForzarCierreTurno from "./pages/ForzarCierreTurno";
@@ -654,6 +655,14 @@ const App = () => (
                   element={
                     <ProtectedRoute allowedModules={["admin_sucursal", "admin_global"]}>
                       <PersonalLaboral />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/caja-chica"
+                  element={
+                    <ProtectedRoute allowedModules={["caja_chica", "admin_sucursal", "admin_global"]}>
+                      <CajaChica />
                     </ProtectedRoute>
                   }
                 />
