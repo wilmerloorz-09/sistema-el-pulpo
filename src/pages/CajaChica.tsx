@@ -470,7 +470,7 @@ export default function CajaChica() {
   const saving = guardar.isPending;
 
   return (
-    <div className="mx-auto w-full max-w-[1600px] space-y-4 p-3 sm:p-5">
+    <div className="mx-auto w-full max-w-5xl space-y-4 p-3 sm:p-4 lg:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="font-display text-2xl font-black tracking-tight text-slate-900">Caja Chica</h1>
@@ -556,46 +556,46 @@ export default function CajaChica() {
                   Aún no hay movimientos. Empieza con una reposición para fondear la caja.
                 </p>
               ) : (
-                <div className="w-full">
-                  <table className="w-full table-fixed border-collapse text-sm">
+                <div className="w-full overflow-hidden">
+                  <table className="w-full table-fixed border-collapse text-[13px]">
                     <colgroup>
-                      <col className="w-[14%]" />
-                      <col className="w-[10%]" />
-                      <col className="w-[18%]" />
-                      <col className="w-[18%]" />
-                      <col className="w-[10%]" />
-                      <col className="w-[10%]" />
-                      <col className="w-[10%]" />
-                      <col className="w-[10%]" />
+                      <col className="w-[15%]" />
+                      <col className="w-[11%]" />
+                      <col className="w-[17%]" />
+                      <col className="w-[17%]" />
+                      <col className="w-[11%]" />
+                      <col className="w-[11%]" />
+                      <col className="w-[9%]" />
+                      <col className="w-[9%]" />
                     </colgroup>
                     <thead>
-                      <tr className="border-b text-left text-xs font-medium text-muted-foreground">
-                        <th className="px-2 py-2">Fecha</th>
-                        <th className="px-2 py-2">Tipo</th>
-                        <th className="px-2 py-2">Concepto</th>
-                        <th className="px-2 py-2">Observación</th>
-                        <th className="px-2 py-2 text-right">Monto</th>
-                        <th className="px-2 py-2 text-right">Saldo</th>
-                        <th className="px-2 py-2">Comprobante</th>
-                        <th className="px-2 py-2 text-right">Acciones</th>
+                      <tr className="border-b text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                        <th className="px-1.5 py-2 sm:px-2">Fecha</th>
+                        <th className="px-1.5 py-2 sm:px-2">Tipo</th>
+                        <th className="px-1.5 py-2 sm:px-2">Concepto</th>
+                        <th className="px-1.5 py-2 sm:px-2">Observación</th>
+                        <th className="px-1.5 py-2 text-right sm:px-2">Monto</th>
+                        <th className="px-1.5 py-2 text-right sm:px-2">Saldo</th>
+                        <th className="px-1.5 py-2 sm:px-2">Foto</th>
+                        <th className="px-1.5 py-2 text-right sm:px-2">Acciones</th>
                       </tr>
                     </thead>
                     <tbody>
                       {(movimientosQuery.data ?? []).map((m) => (
                         <tr key={m.id} className="border-b last:border-0 hover:bg-muted/40">
-                          <td className="px-2 py-2 align-middle text-xs text-muted-foreground">
-                            <span className="block">{fechaHora(m.creado_en)}</span>
+                          <td className="px-1.5 py-2 align-middle text-[11px] text-muted-foreground sm:px-2">
+                            <span className="block leading-tight">{fechaHora(m.creado_en)}</span>
                             {m.registrado_por_nombre ? (
-                              <span className="mt-0.5 block truncate text-[11px]" title={m.registrado_por_nombre}>
+                              <span className="mt-0.5 block truncate text-[10px]" title={m.registrado_por_nombre}>
                                 {nombreCorto(m.registrado_por_nombre)}
                               </span>
                             ) : null}
                           </td>
-                          <td className="px-2 py-2 align-middle">
+                          <td className="px-1.5 py-2 align-middle sm:px-2">
                             <Badge
                               variant="outline"
                               className={cn(
-                                "rounded-md px-1.5 py-0 text-[11px] font-semibold",
+                                "rounded-md px-1.5 py-0 text-[10px] font-semibold",
                                 m.tipo === "EGRESO"
                                   ? "border-rose-200 bg-rose-50 text-rose-700"
                                   : "border-emerald-200 bg-emerald-50 text-emerald-700",
@@ -604,12 +604,12 @@ export default function CajaChica() {
                               {m.tipo === "EGRESO" ? "Egreso" : "Reposición"}
                             </Badge>
                           </td>
-                          <td className="px-2 py-2 align-middle">
-                            <p className="truncate text-sm font-medium" title={m.concepto}>{m.concepto}</p>
+                          <td className="px-1.5 py-2 align-middle sm:px-2">
+                            <p className="truncate text-[13px] font-medium" title={m.concepto}>{m.concepto}</p>
                           </td>
-                          <td className="px-2 py-2 align-middle">
+                          <td className="px-1.5 py-2 align-middle sm:px-2">
                             <p
-                              className="truncate text-xs text-muted-foreground"
+                              className="truncate text-[11px] text-muted-foreground"
                               title={m.tipo === "EGRESO" ? (m.observacion || undefined) : undefined}
                             >
                               {m.tipo === "EGRESO" ? (m.observacion || "—") : "—"}
@@ -617,33 +617,33 @@ export default function CajaChica() {
                           </td>
                           <td
                             className={cn(
-                              "px-2 py-2 text-right align-middle font-semibold tabular-nums",
+                              "px-1.5 py-2 text-right align-middle text-[13px] font-semibold tabular-nums sm:px-2",
                               m.tipo === "EGRESO" ? "text-rose-700" : "text-emerald-700",
                             )}
                           >
                             {m.tipo === "EGRESO" ? "−" : "+"}
                             {money(m.monto)}
                           </td>
-                          <td className="px-2 py-2 text-right align-middle tabular-nums text-sm">
+                          <td className="px-1.5 py-2 text-right align-middle text-[13px] tabular-nums sm:px-2">
                             {money(m.saldo_despues)}
                           </td>
-                          <td className="px-2 py-2 align-middle">
+                          <td className="px-1.5 py-2 align-middle sm:px-2">
                             {m.ruta_objeto ? (
                               <Button
                                 size="sm"
                                 variant="ghost"
-                                className="h-7 rounded-lg px-2 text-xs"
+                                className="h-7 rounded-lg px-1.5 text-[11px]"
                                 disabled={fotoLoading}
                                 onClick={() => void verFoto(m.ruta_objeto, m.nombre_bucket)}
                               >
                                 Ver
                               </Button>
                             ) : (
-                              <span className="text-xs text-muted-foreground">—</span>
+                              <span className="text-[11px] text-muted-foreground">—</span>
                             )}
                           </td>
-                          <td className="px-2 py-2 text-right align-middle">
-                            <div className="inline-flex gap-0.5">
+                          <td className="px-1.5 py-2 text-right align-middle sm:px-2">
+                            <div className="inline-flex justify-end gap-0.5">
                               <Button
                                 size="sm"
                                 variant="ghost"
