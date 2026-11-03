@@ -349,8 +349,8 @@ export function DispatchCardBase({
               )}
             </div>
             
-            <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium text-slate-500">
-              <span className="font-mono font-bold text-slate-700 tracking-wider">
+            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium text-slate-500">
+              <span className="font-mono text-lg font-black tracking-wide text-slate-950 lg:text-xl">
                 {getOrderRef(order.order_code, order.order_number)}
               </span>
               {order.created_by_name && (
