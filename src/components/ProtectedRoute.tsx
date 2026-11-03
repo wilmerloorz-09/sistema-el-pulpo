@@ -11,7 +11,7 @@ import {
   isTemporarilyMenuRestrictedUser,
   safeHomePathForRestrictedUser,
 } from "@/lib/menuAccessRestrictions";
-import { hasPermission, canManage, type AccessLevel } from "@/lib/permissions";
+import { hasPermission, canManage, canOperate, canView, type AccessLevel } from "@/lib/permissions";
 
 interface Props {
   children: React.ReactNode;
@@ -179,8 +179,10 @@ const ProtectedRoute = ({
     location.pathname.startsWith("/admin") ||
     location.pathname.startsWith("/reportes") ||
     location.pathname.startsWith("/personal") ||
+    location.pathname.startsWith("/caja-chica") ||
     location.pathname.startsWith("/monitoreo-global") ||
     location.pathname.startsWith("/inventario") ||
+    location.pathname.startsWith("/gestion-pescado") ||
     location.pathname.startsWith("/promociones") ||
     location.pathname.startsWith("/campanas") ||
     location.pathname.startsWith("/clientes");
@@ -246,29 +248,39 @@ const ProtectedRoute = ({
     return <Navigate to={fallback} replace />;
   }
 
+  const canAccessCajaChicaSinTurno =
+    isGlobalAdmin
+    || canOperate(permissions, "caja_chica")
+    || canView(permissions, "caja_chica")
+    || canView(permissions, "admin_sucursal")
+    || canView(permissions, "admin_global");
+
   if (isPersonnelOnlyOnShift) {
-    return (
-      <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center p-4">
-        <div className="w-full max-w-lg rounded-[28px] border border-orange-200 bg-white/90 p-6 text-center shadow-[0_22px_55px_-42px_rgba(249,115,22,0.55)]">
-          <h2 className="font-display text-xl font-black text-foreground">
-            Acceso no disponible
-          </h2>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Tu usuario esta registrado solo como Operativo en este turno (control de personal). No tienes acceso al sistema.
-          </p>
-          <div className="mt-6">
-            <Button
-              type="button"
-              variant="outline"
-              className="rounded-2xl"
-              onClick={() => void signOut()}
-            >
-              Cerrar sesion
-            </Button>
+    // Caja Chica no depende del turno operativo.
+    if (!(location.pathname.startsWith("/caja-chica") && canAccessCajaChicaSinTurno)) {
+      return (
+        <div className="flex min-h-[calc(100vh-8rem)] items-center justify-center p-4">
+          <div className="w-full max-w-lg rounded-[28px] border border-orange-200 bg-white/90 p-6 text-center shadow-[0_22px_55px_-42px_rgba(249,115,22,0.55)]">
+            <h2 className="font-display text-xl font-black text-foreground">
+              Acceso no disponible
+            </h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Tu usuario esta registrado solo como Operativo en este turno (control de personal). No tienes acceso al sistema.
+            </p>
+            <div className="mt-6">
+              <Button
+                type="button"
+                variant="outline"
+                className="rounded-2xl"
+                onClick={() => void signOut()}
+              >
+                Cerrar sesion
+              </Button>
+            </div>
           </div>
         </div>
-      </div>
-    );
+      );
+    }
   }
 
   if (isStaleShift && !isAllowedModulePath) {

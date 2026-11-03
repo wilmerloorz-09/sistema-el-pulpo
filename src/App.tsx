@@ -20,7 +20,7 @@ import { initSyncListeners } from "@/services/SyncService";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
 import { useAuxiliaryCashAssignment } from "@/hooks/useAuxiliaryCash";
 import { useOpenCashRegister } from "@/hooks/useOpenCashRegister";
-import { canManage } from "@/lib/permissions";
+import { canManage, canOperate, canView } from "@/lib/permissions";
 import { isTemporarilyMenuRestrictedUser } from "@/lib/menuAccessRestrictions";
 import { logBackgroundTaskError } from "@/lib/benignAsyncErrors";
 import { guardarSesionTurno, leerSesionTurno, turnoDeSesionTerminado } from "@/lib/sesionTurno";
@@ -201,12 +201,17 @@ const CierreSesionPorTurno = () => {
     Boolean(isGlobalAdmin)
     || canManage(permissions, "admin_sucursal")
     || canManage(permissions, "admin_global");
+  // Usuarios de Caja Chica pueden operar sin turno abierto; no cerrarles sesión al cerrar el turno.
+  const canKeepSessionWithoutShift =
+    isBranchAdmin
+    || canOperate(permissions, "caja_chica")
+    || canView(permissions, "caja_chica");
 
   const gate = shiftGateQuery.isPlaceholderData ? undefined : shiftGateQuery.data;
   const userId = user?.id ?? null;
 
   useEffect(() => {
-    if (isBranchAdmin || !gate || !userId || !activeBranchId || cerrandoRef.current) return;
+    if (canKeepSessionWithoutShift || !gate || !userId || !activeBranchId || cerrandoRef.current) return;
 
     const actual = {
       userId,
@@ -233,7 +238,7 @@ const CierreSesionPorTurno = () => {
     if (gate.shiftOpen && gate.shiftId) {
       guardarSesionTurno({ userId, branchId: activeBranchId, shiftId: gate.shiftId });
     }
-  }, [activeBranchId, gate, isBranchAdmin, signOut, userId]);
+  }, [activeBranchId, canKeepSessionWithoutShift, gate, signOut, userId]);
 
   return null;
 };

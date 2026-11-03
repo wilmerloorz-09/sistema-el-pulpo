@@ -105,6 +105,8 @@ export function isPathBlockedForRestrictedUser(
     || path.startsWith("/admin/")
     || path === "/personal"
     || path.startsWith("/personal/")
+    || path === "/caja-chica"
+    || path.startsWith("/caja-chica/")
     || path === "/monitoreo-global"
     || path.startsWith("/monitoreo-global/")
   ) {
