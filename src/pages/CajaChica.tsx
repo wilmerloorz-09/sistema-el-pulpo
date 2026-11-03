@@ -1,16 +1,29 @@
 import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Camera, Lock, PiggyBank, PlusCircle, RefreshCw, Wallet } from "lucide-react";
+import { Camera, Lock, Pencil, PiggyBank, PlusCircle, RefreshCw, Trash2, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import { useBranch } from "@/contexts/BranchContext";
 import { canOperate, canView } from "@/lib/permissions";
 import {
+  actualizarMovimientoCajaChica,
+  eliminarMovimientoCajaChica,
   listarMovimientosCajaChica,
   obtenerEstadoCajaChica,
   registrarMovimientoCajaChica,
   urlFirmadaComprobanteCajaChica,
+  type CajaChicaMovimiento,
   type CajaChicaTipo,
 } from "@/lib/cajaChica";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -40,21 +53,27 @@ const fechaHora = (iso: string) =>
   });
 
 type FormState = {
+  movimientoId: string | null;
   tipo: CajaChicaTipo;
   monto: string;
   concepto: string;
   notas: string;
   archivo: File | null;
   previewUrl: string | null;
+  tieneFotoActual: boolean;
+  quitarFoto: boolean;
 };
 
 const emptyForm = (tipo: CajaChicaTipo): FormState => ({
+  movimientoId: null,
   tipo,
   monto: "",
   concepto: tipo === "REPOSICION" ? "Reposición de fondo" : "",
   notas: "",
   archivo: null,
   previewUrl: null,
+  tieneFotoActual: false,
+  quitarFoto: false,
 });
 
 export default function CajaChica() {
@@ -65,6 +84,7 @@ export default function CajaChica() {
   const [form, setForm] = useState<FormState>(() => emptyForm("EGRESO"));
   const [fotoUrl, setFotoUrl] = useState<string | null>(null);
   const [fotoLoading, setFotoLoading] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<CajaChicaMovimiento | null>(null);
 
   const hasAccess =
     isGlobalAdmin
@@ -91,7 +111,20 @@ export default function CajaChica() {
     return lista.map((b) => b.name).join(" · ");
   }, [estadoQuery.data?.comparten]);
 
-  const registrar = useMutation({
+  const invalidate = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["caja-chica-estado", activeBranchId] }),
+      queryClient.invalidateQueries({ queryKey: ["caja-chica-movimientos", activeBranchId] }),
+    ]);
+  };
+
+  const closeForm = () => {
+    if (form.previewUrl) URL.revokeObjectURL(form.previewUrl);
+    setForm(emptyForm("EGRESO"));
+    setDialogOpen(false);
+  };
+
+  const guardar = useMutation({
     mutationFn: async () => {
       if (!activeBranchId || !estadoQuery.data?.sucursal_efectiva_id) {
         throw new Error("Selecciona una sucursal activa");
@@ -102,38 +135,80 @@ export default function CajaChica() {
       }
       const concepto = form.concepto.trim();
       if (!concepto) throw new Error("El concepto es obligatorio");
-      if (form.tipo === "EGRESO" && monto > Number(estadoQuery.data.saldo ?? 0)) {
-        throw new Error(`Saldo insuficiente (disponible: ${money(Number(estadoQuery.data.saldo))})`);
+
+      if (!form.movimientoId) {
+        if (form.tipo === "EGRESO" && monto > Number(estadoQuery.data.saldo ?? 0)) {
+          throw new Error(`Saldo insuficiente (disponible: ${money(Number(estadoQuery.data.saldo))})`);
+        }
+        return registrarMovimientoCajaChica({
+          sucursalId: activeBranchId,
+          sucursalEfectivaId: estadoQuery.data.sucursal_efectiva_id,
+          tipo: form.tipo,
+          monto,
+          concepto,
+          notas: form.notas.trim() || undefined,
+          archivo: form.archivo,
+        });
       }
 
-      return registrarMovimientoCajaChica({
-        sucursalId: activeBranchId,
+      const comprobante = form.archivo
+        ? "replace"
+        : form.quitarFoto
+          ? "clear"
+          : "keep";
+
+      return actualizarMovimientoCajaChica({
+        movimientoId: form.movimientoId,
         sucursalEfectivaId: estadoQuery.data.sucursal_efectiva_id,
         tipo: form.tipo,
         monto,
         concepto,
         notas: form.notas.trim() || undefined,
+        comprobante,
         archivo: form.archivo,
       });
     },
     onSuccess: async () => {
-      toast.success(form.tipo === "EGRESO" ? "Egreso registrado" : "Reposición registrada");
-      if (form.previewUrl) URL.revokeObjectURL(form.previewUrl);
-      setDialogOpen(false);
-      setForm(emptyForm("EGRESO"));
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["caja-chica-estado", activeBranchId] }),
-        queryClient.invalidateQueries({ queryKey: ["caja-chica-movimientos", activeBranchId] }),
-      ]);
+      toast.success(form.movimientoId ? "Movimiento actualizado" : form.tipo === "EGRESO" ? "Egreso registrado" : "Reposición registrada");
+      closeForm();
+      await invalidate();
     },
     onError: (err: Error) => {
-      toast.error(err.message || "No se pudo registrar el movimiento");
+      toast.error(err.message || "No se pudo guardar el movimiento");
     },
   });
 
-  const openForm = (tipo: CajaChicaTipo) => {
+  const eliminar = useMutation({
+    mutationFn: async (movimientoId: string) => eliminarMovimientoCajaChica(movimientoId),
+    onSuccess: async () => {
+      toast.success("Movimiento eliminado");
+      setDeleteTarget(null);
+      await invalidate();
+    },
+    onError: (err: Error) => {
+      toast.error(err.message || "No se pudo eliminar el movimiento");
+    },
+  });
+
+  const openCreate = (tipo: CajaChicaTipo) => {
     if (form.previewUrl) URL.revokeObjectURL(form.previewUrl);
     setForm(emptyForm(tipo));
+    setDialogOpen(true);
+  };
+
+  const openEdit = (m: CajaChicaMovimiento) => {
+    if (form.previewUrl) URL.revokeObjectURL(form.previewUrl);
+    setForm({
+      movimientoId: m.id,
+      tipo: m.tipo,
+      monto: String(m.monto),
+      concepto: m.concepto,
+      notas: m.notas ?? "",
+      archivo: null,
+      previewUrl: null,
+      tieneFotoActual: Boolean(m.ruta_objeto),
+      quitarFoto: false,
+    });
     setDialogOpen(true);
   };
 
@@ -151,6 +226,7 @@ export default function CajaChica() {
       ...prev,
       archivo: file,
       previewUrl: URL.createObjectURL(file),
+      quitarFoto: false,
     }));
   };
 
@@ -197,6 +273,8 @@ export default function CajaChica() {
     activeBranch?.name
     ?? branches.find((b) => b.id === activeBranchId)?.name
     ?? "Sucursal";
+  const isEdit = Boolean(form.movimientoId);
+  const saving = guardar.isPending;
 
   return (
     <div className="mx-auto max-w-5xl space-y-4 p-4 sm:p-6">
@@ -241,7 +319,7 @@ export default function CajaChica() {
           <div className="flex flex-wrap gap-2">
             <Button
               className="rounded-xl bg-rose-600 hover:bg-rose-700"
-              onClick={() => openForm("EGRESO")}
+              onClick={() => openCreate("EGRESO")}
               disabled={estadoQuery.isLoading}
             >
               <Camera className="mr-2 h-4 w-4" />
@@ -250,7 +328,7 @@ export default function CajaChica() {
             <Button
               variant="outline"
               className="rounded-xl border-emerald-300 text-emerald-800 hover:bg-emerald-50"
-              onClick={() => openForm("REPOSICION")}
+              onClick={() => openCreate("REPOSICION")}
               disabled={estadoQuery.isLoading}
             >
               <PlusCircle className="mr-2 h-4 w-4" />
@@ -285,6 +363,7 @@ export default function CajaChica() {
                     <TableHead className="text-right">Monto</TableHead>
                     <TableHead className="text-right">Saldo</TableHead>
                     <TableHead>Comprobante</TableHead>
+                    <TableHead className="text-right">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -344,6 +423,28 @@ export default function CajaChica() {
                           <span className="text-xs text-muted-foreground">—</span>
                         )}
                       </TableCell>
+                      <TableCell className="text-right">
+                        <div className="inline-flex gap-1">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-8 w-8 rounded-lg p-0"
+                            title="Editar"
+                            onClick={() => openEdit(m)}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-8 w-8 rounded-lg p-0 text-rose-700 hover:text-rose-800"
+                            title="Eliminar"
+                            onClick={() => setDeleteTarget(m)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -356,18 +457,46 @@ export default function CajaChica() {
       <Dialog
         open={dialogOpen}
         onOpenChange={(open) => {
-          if (!open && form.previewUrl) URL.revokeObjectURL(form.previewUrl);
-          if (!open) setForm(emptyForm("EGRESO"));
-          setDialogOpen(open);
+          if (!open) closeForm();
+          else setDialogOpen(true);
         }}
       >
         <DialogContent className="max-w-md rounded-[28px]">
           <DialogHeader>
             <DialogTitle>
-              {form.tipo === "EGRESO" ? "Registrar gasto" : "Reposición de fondo"}
+              {isEdit
+                ? "Editar movimiento"
+                : form.tipo === "EGRESO"
+                  ? "Registrar gasto"
+                  : "Reposición de fondo"}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
+            {isEdit ? (
+              <div className="space-y-1.5">
+                <Label>Tipo</Label>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={form.tipo === "EGRESO" ? "default" : "outline"}
+                    className={cn("rounded-xl", form.tipo === "EGRESO" && "bg-rose-600 hover:bg-rose-700")}
+                    onClick={() => setForm((p) => ({ ...p, tipo: "EGRESO" }))}
+                  >
+                    Egreso
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={form.tipo === "REPOSICION" ? "default" : "outline"}
+                    className={cn("rounded-xl", form.tipo === "REPOSICION" && "bg-emerald-600 hover:bg-emerald-700")}
+                    onClick={() => setForm((p) => ({ ...p, tipo: "REPOSICION" }))}
+                  >
+                    Reposición
+                  </Button>
+                </div>
+              </div>
+            ) : null}
             <div className="space-y-1.5">
               <Label htmlFor="cc-monto">Monto</Label>
               <Input
@@ -419,14 +548,22 @@ export default function CajaChica() {
                   onClick={() => fileRef.current?.click()}
                 >
                   <Camera className="mr-2 h-4 w-4" />
-                  {form.archivo ? "Cambiar foto" : "Tomar / subir foto"}
+                  {form.archivo || form.tieneFotoActual ? "Cambiar foto" : "Tomar / subir foto"}
                 </Button>
-                {form.archivo ? (
+                {(form.archivo || (form.tieneFotoActual && !form.quitarFoto)) ? (
                   <Button
                     type="button"
                     variant="ghost"
                     className="rounded-xl text-rose-700"
-                    onClick={() => onPickFile(null)}
+                    onClick={() => {
+                      onPickFile(null);
+                      setForm((prev) => ({
+                        ...prev,
+                        archivo: null,
+                        previewUrl: null,
+                        quitarFoto: prev.tieneFotoActual,
+                      }));
+                    }}
                   >
                     Quitar
                   </Button>
@@ -438,6 +575,10 @@ export default function CajaChica() {
                   alt="Vista previa comprobante"
                   className="mt-2 max-h-48 w-full rounded-2xl border object-cover"
                 />
+              ) : form.tieneFotoActual && !form.quitarFoto ? (
+                <p className="text-xs text-muted-foreground">Ya hay una foto guardada. Puedes cambiarla o quitarla.</p>
+              ) : form.quitarFoto ? (
+                <p className="text-xs text-rose-700">Se quitará la foto al guardar.</p>
               ) : null}
             </div>
             <Button
@@ -445,10 +586,10 @@ export default function CajaChica() {
                 "w-full rounded-xl",
                 form.tipo === "EGRESO" ? "bg-rose-600 hover:bg-rose-700" : "bg-emerald-600 hover:bg-emerald-700",
               )}
-              disabled={registrar.isPending}
-              onClick={() => registrar.mutate()}
+              disabled={saving}
+              onClick={() => guardar.mutate()}
             >
-              {registrar.isPending ? "Guardando…" : "Guardar"}
+              {saving ? "Guardando…" : isEdit ? "Guardar cambios" : "Guardar"}
             </Button>
           </div>
         </DialogContent>
@@ -466,6 +607,32 @@ export default function CajaChica() {
           ) : null}
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={Boolean(deleteTarget)} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent className="rounded-[28px]">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Eliminar movimiento</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteTarget
+                ? `Se eliminará ${deleteTarget.tipo === "EGRESO" ? "el egreso" : "la reposición"} de ${money(deleteTarget.monto)} (${deleteTarget.concepto}) y se recalculará el saldo.`
+                : null}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded-xl" disabled={eliminar.isPending}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="rounded-xl bg-rose-600 hover:bg-rose-700"
+              disabled={eliminar.isPending || !deleteTarget}
+              onClick={(e) => {
+                e.preventDefault();
+                if (deleteTarget) eliminar.mutate(deleteTarget.id);
+              }}
+            >
+              {eliminar.isPending ? "Eliminando…" : "Eliminar"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

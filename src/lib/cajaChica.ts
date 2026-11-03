@@ -77,6 +77,29 @@ export async function urlFirmadaComprobanteCajaChica(
   return data?.signedUrl ?? null;
 }
 
+async function subirComprobante(params: {
+  sucursalEfectivaId: string;
+  movimientoId: string;
+  archivo: File | Blob;
+  upsert?: boolean;
+}): Promise<{ rutaObjeto: string; tamanoBytes: number }> {
+  const comprimido = await comprimirImagenComprobante(params.archivo);
+  const rutaObjeto = construirRutaComprobanteCajaChica({
+    sucursalEfectivaId: params.sucursalEfectivaId,
+    movimientoId: params.movimientoId,
+  });
+  const { error: uploadError } = await supabase.storage
+    .from(BUCKET_COMPROBANTES_CAJA_CHICA)
+    .upload(rutaObjeto, comprimido, {
+      contentType: "image/jpeg",
+      upsert: Boolean(params.upsert),
+    });
+  if (uploadError) {
+    throw new Error(uploadError.message || "No se pudo subir el comprobante");
+  }
+  return { rutaObjeto, tamanoBytes: comprimido.size };
+}
+
 export async function registrarMovimientoCajaChica(params: {
   sucursalId: string;
   sucursalEfectivaId: string;
@@ -93,23 +116,15 @@ export async function registrarMovimientoCajaChica(params: {
   let tamanoBytes: number | null = null;
 
   if (params.archivo) {
-    const comprimido = await comprimirImagenComprobante(params.archivo);
-    rutaObjeto = construirRutaComprobanteCajaChica({
+    const uploaded = await subirComprobante({
       sucursalEfectivaId: params.sucursalEfectivaId,
       movimientoId,
+      archivo: params.archivo,
     });
-    const { error: uploadError } = await supabase.storage
-      .from(BUCKET_COMPROBANTES_CAJA_CHICA)
-      .upload(rutaObjeto, comprimido, {
-        contentType: "image/jpeg",
-        upsert: false,
-      });
-    if (uploadError) {
-      throw new Error(uploadError.message || "No se pudo subir el comprobante");
-    }
+    rutaObjeto = uploaded.rutaObjeto;
     nombreArchivo = "comprobante.jpg";
     tipoMime = "image/jpeg";
-    tamanoBytes = comprimido.size;
+    tamanoBytes = uploaded.tamanoBytes;
   }
 
   const { data, error } = await supabase.rpc("caja_chica_registrar_movimiento" as any, {
@@ -134,4 +149,62 @@ export async function registrarMovimientoCajaChica(params: {
 
   const row = data as { id: string; saldo_despues: number };
   return { id: row.id, saldo_despues: Number(row.saldo_despues) };
+}
+
+export async function actualizarMovimientoCajaChica(params: {
+  movimientoId: string;
+  sucursalEfectivaId: string;
+  tipo: CajaChicaTipo;
+  monto: number;
+  concepto: string;
+  notas?: string;
+  /** keep = no tocar; replace = nueva foto; clear = quitar */
+  comprobante: "keep" | "replace" | "clear";
+  archivo?: File | Blob | null;
+}): Promise<{ id: string; saldo: number }> {
+  let rutaObjeto: string | null = null;
+  let nombreArchivo: string | null = null;
+  let tipoMime: string | null = null;
+  let tamanoBytes: number | null = null;
+  const actualizarComprobante = params.comprobante !== "keep";
+
+  if (params.comprobante === "replace") {
+    if (!params.archivo) throw new Error("Selecciona una foto para reemplazar el comprobante");
+    const uploaded = await subirComprobante({
+      sucursalEfectivaId: params.sucursalEfectivaId,
+      movimientoId: params.movimientoId,
+      archivo: params.archivo,
+      upsert: true,
+    });
+    rutaObjeto = uploaded.rutaObjeto;
+    nombreArchivo = "comprobante.jpg";
+    tipoMime = "image/jpeg";
+    tamanoBytes = uploaded.tamanoBytes;
+  }
+
+  const { data, error } = await supabase.rpc("caja_chica_actualizar_movimiento" as any, {
+    p_movimiento_id: params.movimientoId,
+    p_tipo: params.tipo,
+    p_monto: params.monto,
+    p_concepto: params.concepto,
+    p_notas: params.notas ?? null,
+    p_actualizar_comprobante: actualizarComprobante,
+    p_ruta_objeto: rutaObjeto,
+    p_nombre_archivo: nombreArchivo,
+    p_tipo_mime: tipoMime,
+    p_tamano_bytes: tamanoBytes,
+  } as any);
+
+  if (error) throw error;
+  const row = data as { id: string; saldo: number };
+  return { id: row.id, saldo: Number(row.saldo) };
+}
+
+export async function eliminarMovimientoCajaChica(movimientoId: string): Promise<{ id: string; saldo: number }> {
+  const { data, error } = await supabase.rpc("caja_chica_eliminar_movimiento" as any, {
+    p_movimiento_id: movimientoId,
+  } as any);
+  if (error) throw error;
+  const row = data as { id: string; saldo: number };
+  return { id: row.id, saldo: Number(row.saldo) };
 }
