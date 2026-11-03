@@ -498,10 +498,19 @@ export default function CajaChica() {
       </div>
 
       <Tabs value={tab} onValueChange={setTab} className="space-y-4">
-        <TabsList className="rounded-2xl bg-slate-100 p-1">
-          <TabsTrigger value="movimientos" className="rounded-xl">Movimientos</TabsTrigger>
+        <TabsList
+          className={cn(
+            "h-11 w-full rounded-2xl bg-slate-100 p-1",
+            canAdminConceptos ? "grid max-w-lg grid-cols-2" : "max-w-xs",
+          )}
+        >
+          <TabsTrigger value="movimientos" className="h-9 rounded-xl px-8 text-sm font-semibold">
+            Movimientos
+          </TabsTrigger>
           {canAdminConceptos ? (
-            <TabsTrigger value="conceptos" className="rounded-xl">Conceptos</TabsTrigger>
+            <TabsTrigger value="conceptos" className="h-9 rounded-xl px-8 text-sm font-semibold">
+              Conceptos
+            </TabsTrigger>
           ) : null}
         </TabsList>
 
