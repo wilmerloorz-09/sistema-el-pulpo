@@ -29,45 +29,44 @@ function isTransientDbError(message: string): boolean {
   );
 }
 
+/** Escapa comodines de ILIKE para igualdad exacta sin distinguir mayúsculas. */
+function escapeIlikeExact(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
+}
+
 /**
- * Lookup barato: eq exacto (usa índice) en vez de ilike.
+ * Lookup case-insensitive de username/alias → email.
  * Reintentos cortos bajo saturación de BD.
  */
 async function lookupProfileEmail(
   adminClient: SupabaseClient,
   identifier: string,
 ): Promise<{ email: string | null; error: string | null }> {
-  const candidates = Array.from(
-    new Set([identifier, identifier.toLowerCase()].filter(Boolean)),
-  );
-
+  const pattern = escapeIlikeExact(identifier.trim());
   let lastError: string | null = null;
 
   for (let attempt = 0; attempt < 3; attempt++) {
     if (attempt > 0) await sleep(250 * attempt);
 
-    for (const candidate of candidates) {
-      const byUsername = await adminClient
-        .from("profiles")
-        .select("email")
-        .eq("username", candidate)
-        .limit(1);
+    const byUsername = await adminClient
+      .from("profiles")
+      .select("email")
+      .ilike("username", pattern)
+      .limit(1);
 
-      if (byUsername.error) {
-        lastError = byUsername.error.message ?? "error username";
-        if (!isTransientDbError(lastError)) {
-          return { email: null, error: lastError };
-        }
-        continue;
+    if (byUsername.error) {
+      lastError = byUsername.error.message ?? "error username";
+      if (!isTransientDbError(lastError)) {
+        return { email: null, error: lastError };
       }
-
+    } else {
       const emailFromUser = byUsername.data?.[0]?.email;
       if (emailFromUser) return { email: String(emailFromUser), error: null };
 
       const byAlias = await adminClient
         .from("profiles")
         .select("email")
-        .eq("alias", candidate)
+        .ilike("alias", pattern)
         .limit(1);
 
       if (byAlias.error) {
@@ -75,11 +74,12 @@ async function lookupProfileEmail(
         if (!isTransientDbError(lastError)) {
           return { email: null, error: lastError };
         }
-        continue;
+      } else {
+        const emailFromAlias = byAlias.data?.[0]?.email;
+        if (emailFromAlias) return { email: String(emailFromAlias), error: null };
+        // Sin match y sin error transitorio: no seguir reintentando en vacío.
+        if (!lastError || !isTransientDbError(lastError)) break;
       }
-
-      const emailFromAlias = byAlias.data?.[0]?.email;
-      if (emailFromAlias) return { email: String(emailFromAlias), error: null };
     }
 
     if (lastError && isTransientDbError(lastError)) continue;
