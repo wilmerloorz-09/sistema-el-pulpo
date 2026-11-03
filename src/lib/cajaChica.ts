@@ -110,8 +110,6 @@ export async function registrarMovimientoCajaChica(params: {
     nombreArchivo = "comprobante.jpg";
     tipoMime = "image/jpeg";
     tamanoBytes = comprimido.size;
-  } else if (params.tipo === "EGRESO") {
-    throw new Error("El egreso requiere foto del comprobante");
   }
 
   const { data, error } = await supabase.rpc("caja_chica_registrar_movimiento" as any, {

@@ -102,9 +102,6 @@ export default function CajaChica() {
       }
       const concepto = form.concepto.trim();
       if (!concepto) throw new Error("El concepto es obligatorio");
-      if (form.tipo === "EGRESO" && !form.archivo) {
-        throw new Error("Adjunta la foto del comprobante");
-      }
       if (form.tipo === "EGRESO" && monto > Number(estadoQuery.data.saldo ?? 0)) {
         throw new Error(`Saldo insuficiente (disponible: ${money(Number(estadoQuery.data.saldo))})`);
       }
@@ -404,11 +401,7 @@ export default function CajaChica() {
             <div className="space-y-2">
               <Label>
                 Foto del comprobante
-                {form.tipo === "EGRESO" ? (
-                  <span className="text-rose-600"> *</span>
-                ) : (
-                  <span className="text-muted-foreground"> (opcional)</span>
-                )}
+                <span className="text-muted-foreground"> (opcional)</span>
               </Label>
               <input
                 ref={fileRef}
