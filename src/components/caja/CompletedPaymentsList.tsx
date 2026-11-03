@@ -398,17 +398,27 @@ export default function CompletedPaymentsList({
 
     const grouped = Array.from(map.values());
 
-    // Si la misma orden ya tiene un cobro vigente, no mostrar filas Anulado/Reversado:
-    // anular + re-cobrar debe dejar una sola fila (Pagado), no dos con el mismo código.
-    const ordersWithActivePayment = new Set(
+    // Void parcial: el cobro vigente lleva REPLACEMENT_FOR_VOID:<pagoAnulado> → mostrar ambas filas.
+    // Anular + re-cobrar (cobro nuevo sin ese vínculo): ocultar Anulado y dejar solo Pagado.
+    const replacementOfPaymentIds = new Set(
       grouped
         .filter((payment) => payment.status === "APPLIED" || payment.status === "PARTIAL")
+        .map((payment) => String(payment.notes ?? "").match(/REPLACEMENT_FOR_VOID:([a-f0-9-]+)/i)?.[1] ?? null)
+        .filter((id): id is string => Boolean(id)),
+    );
+    const ordersWithFreshActivePayment = new Set(
+      grouped
+        .filter((payment) => {
+          if (payment.status !== "APPLIED" && payment.status !== "PARTIAL") return false;
+          return !/REPLACEMENT_FOR_VOID:/i.test(String(payment.notes ?? ""));
+        })
         .map((payment) => payment.order.id),
     );
     const visibleGrouped = grouped.filter((payment) => {
       const isVoidedOrReversed = payment.status === "VOIDED" || payment.status === "REVERSED";
       if (!isVoidedOrReversed) return true;
-      return !ordersWithActivePayment.has(payment.order.id);
+      if (replacementOfPaymentIds.has(payment.paymentId)) return true;
+      return !ordersWithFreshActivePayment.has(payment.order.id);
     });
 
     // Calculate the most recent activity timestamp for each order group (by order.id, code or number)
