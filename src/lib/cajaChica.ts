@@ -3,6 +3,9 @@ import { comprimirImagenComprobante } from "@/lib/comprobantePagoTransferencia";
 import { generateUUID } from "@/lib/uuid";
 
 export const BUCKET_COMPROBANTES_CAJA_CHICA = "comprobantes-caja-chica";
+export const CAJA_CHICA_CONCEPTO_OTROS = "Otros";
+export const CAJA_CHICA_CONCEPTO_REPOSICION = "Reposición de fondos";
+export const CAJA_CHICA_CONCEPTO_OTROS_ID = "__OTROS__";
 
 export type CajaChicaTipo = "EGRESO" | "REPOSICION";
 
@@ -14,12 +17,23 @@ export type CajaChicaEstado = {
   comparten: { id: string; name: string }[];
 };
 
+export type CajaChicaConcepto = {
+  id: string;
+  sucursal_id: string;
+  nombre: string;
+  activo: boolean;
+  creado_en: string;
+  actualizado_en: string;
+};
+
 export type CajaChicaMovimiento = {
   id: string;
   sucursal_id: string;
   tipo: CajaChicaTipo;
   monto: number;
   concepto: string;
+  concepto_id: string | null;
+  observacion: string | null;
   notas: string | null;
   saldo_antes: number;
   saldo_despues: number;
@@ -65,7 +79,42 @@ export async function listarMovimientosCajaChica(
     monto: Number(row.monto),
     saldo_antes: Number(row.saldo_antes),
     saldo_despues: Number(row.saldo_despues),
+    concepto_id: row.concepto_id ?? null,
+    observacion: row.observacion ?? null,
   }));
+}
+
+export async function listarConceptosCajaChica(
+  sucursalId: string,
+  incluirInactivos = false,
+): Promise<CajaChicaConcepto[]> {
+  const { data, error } = await supabase.rpc("caja_chica_listar_conceptos" as any, {
+    p_sucursal_id: sucursalId,
+    p_incluir_inactivos: incluirInactivos,
+  } as any);
+  if (error) throw error;
+  return (data as CajaChicaConcepto[]) ?? [];
+}
+
+export async function guardarConceptoCajaChica(params: {
+  sucursalId: string;
+  nombre: string;
+  conceptoId?: string | null;
+}): Promise<{ id: string; nombre: string }> {
+  const { data, error } = await supabase.rpc("caja_chica_guardar_concepto" as any, {
+    p_sucursal_id: params.sucursalId,
+    p_nombre: params.nombre,
+    p_concepto_id: params.conceptoId ?? null,
+  } as any);
+  if (error) throw error;
+  return data as { id: string; nombre: string };
+}
+
+export async function eliminarConceptoCajaChica(conceptoId: string): Promise<void> {
+  const { error } = await supabase.rpc("caja_chica_eliminar_concepto" as any, {
+    p_concepto_id: conceptoId,
+  } as any);
+  if (error) throw error;
 }
 
 export async function urlFirmadaComprobanteCajaChica(
@@ -106,6 +155,8 @@ export async function registrarMovimientoCajaChica(params: {
   tipo: CajaChicaTipo;
   monto: number;
   concepto: string;
+  conceptoId?: string | null;
+  observacion?: string;
   notas?: string;
   archivo?: File | Blob | null;
 }): Promise<{ id: string; saldo_despues: number }> {
@@ -138,6 +189,8 @@ export async function registrarMovimientoCajaChica(params: {
     p_nombre_archivo: nombreArchivo,
     p_tipo_mime: tipoMime,
     p_tamano_bytes: tamanoBytes,
+    p_observacion: params.observacion ?? null,
+    p_concepto_id: params.conceptoId ?? null,
   } as any);
 
   if (error) {
@@ -157,8 +210,9 @@ export async function actualizarMovimientoCajaChica(params: {
   tipo: CajaChicaTipo;
   monto: number;
   concepto: string;
+  conceptoId?: string | null;
+  observacion?: string;
   notas?: string;
-  /** keep = no tocar; replace = nueva foto; clear = quitar */
   comprobante: "keep" | "replace" | "clear";
   archivo?: File | Blob | null;
 }): Promise<{ id: string; saldo: number }> {
@@ -193,6 +247,8 @@ export async function actualizarMovimientoCajaChica(params: {
     p_nombre_archivo: nombreArchivo,
     p_tipo_mime: tipoMime,
     p_tamano_bytes: tamanoBytes,
+    p_observacion: params.observacion ?? null,
+    p_concepto_id: params.conceptoId ?? null,
   } as any);
 
   if (error) throw error;

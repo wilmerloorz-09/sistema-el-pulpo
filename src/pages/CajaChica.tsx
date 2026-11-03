@@ -1,16 +1,23 @@
 import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Camera, Lock, Pencil, PiggyBank, PlusCircle, RefreshCw, Trash2, Wallet } from "lucide-react";
+import { Camera, Check, ChevronsUpDown, Lock, Pencil, PiggyBank, PlusCircle, RefreshCw, Trash2, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import { useBranch } from "@/contexts/BranchContext";
-import { canOperate, canView } from "@/lib/permissions";
+import { canManage, canOperate, canView } from "@/lib/permissions";
 import {
+  CAJA_CHICA_CONCEPTO_OTROS,
+  CAJA_CHICA_CONCEPTO_OTROS_ID,
+  CAJA_CHICA_CONCEPTO_REPOSICION,
   actualizarMovimientoCajaChica,
+  eliminarConceptoCajaChica,
   eliminarMovimientoCajaChica,
+  guardarConceptoCajaChica,
+  listarConceptosCajaChica,
   listarMovimientosCajaChica,
   obtenerEstadoCajaChica,
   registrarMovimientoCajaChica,
   urlFirmadaComprobanteCajaChica,
+  type CajaChicaConcepto,
   type CajaChicaMovimiento,
   type CajaChicaTipo,
 } from "@/lib/cajaChica";
@@ -28,6 +35,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -35,6 +50,8 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
@@ -56,8 +73,9 @@ type FormState = {
   movimientoId: string | null;
   tipo: CajaChicaTipo;
   monto: string;
-  concepto: string;
-  notas: string;
+  conceptoId: string | null;
+  conceptoLabel: string;
+  observacion: string;
   archivo: File | null;
   previewUrl: string | null;
   tieneFotoActual: boolean;
@@ -68,23 +86,107 @@ const emptyForm = (tipo: CajaChicaTipo): FormState => ({
   movimientoId: null,
   tipo,
   monto: "",
-  concepto: tipo === "REPOSICION" ? "Reposición de fondo" : "",
-  notas: "",
+  conceptoId: tipo === "REPOSICION" ? null : null,
+  conceptoLabel: tipo === "REPOSICION" ? CAJA_CHICA_CONCEPTO_REPOSICION : "",
+  observacion: "",
   archivo: null,
   previewUrl: null,
   tieneFotoActual: false,
   quitarFoto: false,
 });
 
+function ConceptoCombobox({
+  conceptos,
+  valueId,
+  valueLabel,
+  onChange,
+  disabled,
+}: {
+  conceptos: CajaChicaConcepto[];
+  valueId: string | null;
+  valueLabel: string;
+  onChange: (id: string | null, label: string) => void;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const selectedLabel =
+    valueId === CAJA_CHICA_CONCEPTO_OTROS_ID
+      ? CAJA_CHICA_CONCEPTO_OTROS
+      : (conceptos.find((c) => c.id === valueId)?.nombre ?? valueLabel);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          disabled={disabled}
+          className="h-10 w-full justify-between rounded-xl font-normal"
+        >
+          <span className={cn("truncate", !selectedLabel && "text-muted-foreground")}>
+            {selectedLabel || "Buscar concepto..."}
+          </span>
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[var(--radix-popover-trigger-width)] rounded-xl p-0" align="start">
+        <Command>
+          <CommandInput placeholder="Escribir para buscar..." />
+          <CommandList>
+            <CommandEmpty>Sin resultados</CommandEmpty>
+            <CommandGroup>
+              {conceptos.map((c) => (
+                <CommandItem
+                  key={c.id}
+                  value={c.nombre}
+                  onSelect={() => {
+                    onChange(c.id, c.nombre);
+                    setOpen(false);
+                  }}
+                >
+                  <Check className={cn("mr-2 h-4 w-4", valueId === c.id ? "opacity-100" : "opacity-0")} />
+                  {c.nombre}
+                </CommandItem>
+              ))}
+              <CommandItem
+                value={CAJA_CHICA_CONCEPTO_OTROS}
+                onSelect={() => {
+                  onChange(CAJA_CHICA_CONCEPTO_OTROS_ID, CAJA_CHICA_CONCEPTO_OTROS);
+                  setOpen(false);
+                }}
+              >
+                <Check
+                  className={cn(
+                    "mr-2 h-4 w-4",
+                    valueId === CAJA_CHICA_CONCEPTO_OTROS_ID ? "opacity-100" : "opacity-0",
+                  )}
+                />
+                {CAJA_CHICA_CONCEPTO_OTROS}
+              </CommandItem>
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 export default function CajaChica() {
   const { permissions, isGlobalAdmin, activeBranchId, activeBranch, branches } = useBranch();
   const queryClient = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
+  const [tab, setTab] = useState("movimientos");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState<FormState>(() => emptyForm("EGRESO"));
   const [fotoUrl, setFotoUrl] = useState<string | null>(null);
   const [fotoLoading, setFotoLoading] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<CajaChicaMovimiento | null>(null);
+  const [conceptoDialogOpen, setConceptoDialogOpen] = useState(false);
+  const [conceptoEdit, setConceptoEdit] = useState<CajaChicaConcepto | null>(null);
+  const [conceptoNombre, setConceptoNombre] = useState("");
+  const [deleteConcepto, setDeleteConcepto] = useState<CajaChicaConcepto | null>(null);
 
   const hasAccess =
     isGlobalAdmin
@@ -92,6 +194,11 @@ export default function CajaChica() {
     || canView(permissions, "caja_chica")
     || canView(permissions, "admin_sucursal")
     || canView(permissions, "admin_global");
+
+  const canAdminConceptos =
+    isGlobalAdmin
+    || canManage(permissions, "admin_sucursal")
+    || canManage(permissions, "admin_global");
 
   const estadoQuery = useQuery({
     queryKey: ["caja-chica-estado", activeBranchId],
@@ -105,6 +212,17 @@ export default function CajaChica() {
     queryFn: () => listarMovimientosCajaChica(activeBranchId!, 80, 0),
   });
 
+  const conceptosQuery = useQuery({
+    queryKey: ["caja-chica-conceptos", activeBranchId, canAdminConceptos],
+    enabled: hasAccess && Boolean(activeBranchId),
+    queryFn: () => listarConceptosCajaChica(activeBranchId!, canAdminConceptos),
+  });
+
+  const conceptosActivos = useMemo(
+    () => (conceptosQuery.data ?? []).filter((c) => c.activo),
+    [conceptosQuery.data],
+  );
+
   const compartirLabel = useMemo(() => {
     const lista = estadoQuery.data?.comparten ?? [];
     if (lista.length <= 1) return null;
@@ -115,6 +233,7 @@ export default function CajaChica() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["caja-chica-estado", activeBranchId] }),
       queryClient.invalidateQueries({ queryKey: ["caja-chica-movimientos", activeBranchId] }),
+      queryClient.invalidateQueries({ queryKey: ["caja-chica-conceptos", activeBranchId] }),
     ]);
   };
 
@@ -133,8 +252,33 @@ export default function CajaChica() {
       if (!Number.isFinite(monto) || monto <= 0) {
         throw new Error("Ingresa un monto válido");
       }
-      const concepto = form.concepto.trim();
-      if (!concepto) throw new Error("El concepto es obligatorio");
+
+      let concepto = form.conceptoLabel.trim();
+      let conceptoId: string | null = form.conceptoId;
+
+      if (form.tipo === "REPOSICION") {
+        concepto = CAJA_CHICA_CONCEPTO_REPOSICION;
+        conceptoId = null;
+      } else {
+        if (!form.conceptoId && !concepto) {
+          throw new Error("Selecciona un concepto");
+        }
+        if (form.conceptoId === CAJA_CHICA_CONCEPTO_OTROS_ID) {
+          concepto = CAJA_CHICA_CONCEPTO_OTROS;
+          conceptoId = null;
+        } else if (form.conceptoId) {
+          const found = conceptosActivos.find((c) => c.id === form.conceptoId);
+          concepto = found?.nombre ?? concepto;
+          if (!found && form.movimientoId) {
+            // Edición conservando concepto histórico
+            conceptoId = form.conceptoId;
+          } else if (!found) {
+            throw new Error("Selecciona un concepto válido");
+          }
+        } else {
+          throw new Error("Selecciona un concepto");
+        }
+      }
 
       if (!form.movimientoId) {
         if (form.tipo === "EGRESO" && monto > Number(estadoQuery.data.saldo ?? 0)) {
@@ -146,7 +290,8 @@ export default function CajaChica() {
           tipo: form.tipo,
           monto,
           concepto,
-          notas: form.notas.trim() || undefined,
+          conceptoId,
+          observacion: form.tipo === "EGRESO" ? form.observacion.trim() || undefined : undefined,
           archivo: form.archivo,
         });
       }
@@ -163,7 +308,8 @@ export default function CajaChica() {
         tipo: form.tipo,
         monto,
         concepto,
-        notas: form.notas.trim() || undefined,
+        conceptoId,
+        observacion: form.tipo === "EGRESO" ? form.observacion.trim() || undefined : undefined,
         comprobante,
         archivo: form.archivo,
       });
@@ -190,6 +336,41 @@ export default function CajaChica() {
     },
   });
 
+  const guardarConcepto = useMutation({
+    mutationFn: async () => {
+      if (!activeBranchId) throw new Error("Selecciona una sucursal activa");
+      const nombre = conceptoNombre.trim();
+      if (!nombre) throw new Error("Ingresa el nombre del concepto");
+      return guardarConceptoCajaChica({
+        sucursalId: activeBranchId,
+        nombre,
+        conceptoId: conceptoEdit?.id ?? null,
+      });
+    },
+    onSuccess: async () => {
+      toast.success(conceptoEdit ? "Concepto actualizado" : "Concepto creado");
+      setConceptoDialogOpen(false);
+      setConceptoEdit(null);
+      setConceptoNombre("");
+      await invalidate();
+    },
+    onError: (err: Error) => {
+      toast.error(err.message || "No se pudo guardar el concepto");
+    },
+  });
+
+  const borrarConcepto = useMutation({
+    mutationFn: async (id: string) => eliminarConceptoCajaChica(id),
+    onSuccess: async () => {
+      toast.success("Concepto eliminado");
+      setDeleteConcepto(null);
+      await invalidate();
+    },
+    onError: (err: Error) => {
+      toast.error(err.message || "No se pudo eliminar el concepto");
+    },
+  });
+
   const openCreate = (tipo: CajaChicaTipo) => {
     if (form.previewUrl) URL.revokeObjectURL(form.previewUrl);
     setForm(emptyForm(tipo));
@@ -198,12 +379,18 @@ export default function CajaChica() {
 
   const openEdit = (m: CajaChicaMovimiento) => {
     if (form.previewUrl) URL.revokeObjectURL(form.previewUrl);
+    const isOtros = !m.concepto_id && m.concepto.trim().toLowerCase() === "otros";
     setForm({
       movimientoId: m.id,
       tipo: m.tipo,
       monto: String(m.monto),
-      concepto: m.concepto,
-      notas: m.notas ?? "",
+      conceptoId: m.tipo === "REPOSICION"
+        ? null
+        : isOtros
+          ? CAJA_CHICA_CONCEPTO_OTROS_ID
+          : (m.concepto_id ?? null),
+      conceptoLabel: m.tipo === "REPOSICION" ? CAJA_CHICA_CONCEPTO_REPOSICION : m.concepto,
+      observacion: m.observacion ?? "",
       archivo: null,
       previewUrl: null,
       tieneFotoActual: Boolean(m.ruta_objeto),
@@ -295,6 +482,7 @@ export default function CajaChica() {
           onClick={() => {
             void estadoQuery.refetch();
             void movimientosQuery.refetch();
+            void conceptosQuery.refetch();
           }}
           disabled={estadoQuery.isFetching || movimientosQuery.isFetching}
         >
@@ -303,156 +491,238 @@ export default function CajaChica() {
         </Button>
       </div>
 
-      <Card className="rounded-[28px] border-emerald-200/80 bg-gradient-to-br from-emerald-50 to-white shadow-sm">
-        <CardContent className="flex flex-wrap items-center justify-between gap-4 p-5 sm:p-6">
-          <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-600 text-white shadow-sm">
-              <Wallet className="h-6 w-6" />
-            </div>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800/70">Saldo actual</p>
-              <p className="font-display text-3xl font-black text-emerald-900">
-                {estadoQuery.isLoading ? "…" : money(saldo)}
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              className="rounded-xl bg-rose-600 hover:bg-rose-700"
-              onClick={() => openCreate("EGRESO")}
-              disabled={estadoQuery.isLoading}
-            >
-              <Camera className="mr-2 h-4 w-4" />
-              Registrar gasto
-            </Button>
-            <Button
-              variant="outline"
-              className="rounded-xl border-emerald-300 text-emerald-800 hover:bg-emerald-50"
-              onClick={() => openCreate("REPOSICION")}
-              disabled={estadoQuery.isLoading}
-            >
-              <PlusCircle className="mr-2 h-4 w-4" />
-              Reposición
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      <Tabs value={tab} onValueChange={setTab} className="space-y-4">
+        <TabsList className="rounded-2xl bg-slate-100 p-1">
+          <TabsTrigger value="movimientos" className="rounded-xl">Movimientos</TabsTrigger>
+          {canAdminConceptos ? (
+            <TabsTrigger value="conceptos" className="rounded-xl">Conceptos</TabsTrigger>
+          ) : null}
+        </TabsList>
 
-      <Card className="rounded-[28px] border-border/80 shadow-sm">
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base font-bold">
-            <PiggyBank className="h-4 w-4 text-emerald-700" />
-            Movimientos
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {movimientosQuery.isLoading ? (
-            <p className="text-sm text-muted-foreground">Cargando…</p>
-          ) : (movimientosQuery.data?.length ?? 0) === 0 ? (
-            <p className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-4 py-8 text-center text-sm text-muted-foreground">
-              Aún no hay movimientos. Empieza con una reposición para fondear la caja.
-            </p>
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Fecha</TableHead>
-                    <TableHead>Tipo</TableHead>
-                    <TableHead>Concepto</TableHead>
-                    <TableHead className="text-right">Monto</TableHead>
-                    <TableHead className="text-right">Saldo</TableHead>
-                    <TableHead>Comprobante</TableHead>
-                    <TableHead className="text-right">Acciones</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {(movimientosQuery.data ?? []).map((m) => (
-                    <TableRow key={m.id}>
-                      <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
-                        {fechaHora(m.creado_en)}
-                        {m.registrado_por_nombre ? (
-                          <span className="mt-0.5 block text-[11px]">{m.registrado_por_nombre}</span>
-                        ) : null}
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          variant="outline"
-                          className={cn(
-                            "rounded-lg font-semibold",
-                            m.tipo === "EGRESO"
-                              ? "border-rose-200 bg-rose-50 text-rose-700"
-                              : "border-emerald-200 bg-emerald-50 text-emerald-700",
-                          )}
-                        >
-                          {m.tipo === "EGRESO" ? "Egreso" : "Reposición"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <div className="max-w-[220px]">
-                          <p className="truncate text-sm font-medium">{m.concepto}</p>
-                          {m.notas ? (
-                            <p className="truncate text-[11px] text-muted-foreground">{m.notas}</p>
-                          ) : null}
-                        </div>
-                      </TableCell>
-                      <TableCell
-                        className={cn(
-                          "text-right font-semibold tabular-nums",
-                          m.tipo === "EGRESO" ? "text-rose-700" : "text-emerald-700",
-                        )}
-                      >
-                        {m.tipo === "EGRESO" ? "−" : "+"}
-                        {money(m.monto)}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums text-sm">
-                        {money(m.saldo_despues)}
-                      </TableCell>
-                      <TableCell>
-                        {m.ruta_objeto ? (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-8 rounded-lg px-2 text-xs"
-                            disabled={fotoLoading}
-                            onClick={() => void verFoto(m.ruta_objeto, m.nombre_bucket)}
+        <TabsContent value="movimientos" className="space-y-4">
+          <Card className="rounded-[28px] border-emerald-200/80 bg-gradient-to-br from-emerald-50 to-white shadow-sm">
+            <CardContent className="flex flex-wrap items-center justify-between gap-4 p-5 sm:p-6">
+              <div className="flex items-center gap-3">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-600 text-white shadow-sm">
+                  <Wallet className="h-6 w-6" />
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800/70">Saldo actual</p>
+                  <p className="font-display text-3xl font-black text-emerald-900">
+                    {estadoQuery.isLoading ? "…" : money(saldo)}
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  className="rounded-xl bg-rose-600 hover:bg-rose-700"
+                  onClick={() => openCreate("EGRESO")}
+                  disabled={estadoQuery.isLoading}
+                >
+                  <Camera className="mr-2 h-4 w-4" />
+                  Registrar gasto
+                </Button>
+                <Button
+                  variant="outline"
+                  className="rounded-xl border-emerald-300 text-emerald-800 hover:bg-emerald-50"
+                  onClick={() => openCreate("REPOSICION")}
+                  disabled={estadoQuery.isLoading}
+                >
+                  <PlusCircle className="mr-2 h-4 w-4" />
+                  Reposición
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="rounded-[28px] border-border/80 shadow-sm">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base font-bold">
+                <PiggyBank className="h-4 w-4 text-emerald-700" />
+                Movimientos
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {movimientosQuery.isLoading ? (
+                <p className="text-sm text-muted-foreground">Cargando…</p>
+              ) : (movimientosQuery.data?.length ?? 0) === 0 ? (
+                <p className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-4 py-8 text-center text-sm text-muted-foreground">
+                  Aún no hay movimientos. Empieza con una reposición para fondear la caja.
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Fecha</TableHead>
+                        <TableHead>Tipo</TableHead>
+                        <TableHead>Concepto</TableHead>
+                        <TableHead>Observación</TableHead>
+                        <TableHead className="text-right">Monto</TableHead>
+                        <TableHead className="text-right">Saldo</TableHead>
+                        <TableHead>Comprobante</TableHead>
+                        <TableHead className="text-right">Acciones</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {(movimientosQuery.data ?? []).map((m) => (
+                        <TableRow key={m.id}>
+                          <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                            {fechaHora(m.creado_en)}
+                            {m.registrado_por_nombre ? (
+                              <span className="mt-0.5 block text-[11px]">{m.registrado_por_nombre}</span>
+                            ) : null}
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant="outline"
+                              className={cn(
+                                "rounded-lg font-semibold",
+                                m.tipo === "EGRESO"
+                                  ? "border-rose-200 bg-rose-50 text-rose-700"
+                                  : "border-emerald-200 bg-emerald-50 text-emerald-700",
+                              )}
+                            >
+                              {m.tipo === "EGRESO" ? "Egreso" : "Reposición"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <p className="max-w-[180px] truncate text-sm font-medium">{m.concepto}</p>
+                          </TableCell>
+                          <TableCell>
+                            <p className="max-w-[180px] truncate text-xs text-muted-foreground">
+                              {m.tipo === "EGRESO" ? (m.observacion || "—") : "—"}
+                            </p>
+                          </TableCell>
+                          <TableCell
+                            className={cn(
+                              "text-right font-semibold tabular-nums",
+                              m.tipo === "EGRESO" ? "text-rose-700" : "text-emerald-700",
+                            )}
                           >
-                            Ver foto
-                          </Button>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">—</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="inline-flex gap-1">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-8 w-8 rounded-lg p-0"
-                            title="Editar"
-                            onClick={() => openEdit(m)}
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-8 w-8 rounded-lg p-0 text-rose-700 hover:text-rose-800"
-                            title="Eliminar"
-                            onClick={() => setDeleteTarget(m)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                            {m.tipo === "EGRESO" ? "−" : "+"}
+                            {money(m.monto)}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums text-sm">
+                            {money(m.saldo_despues)}
+                          </TableCell>
+                          <TableCell>
+                            {m.ruta_objeto ? (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-8 rounded-lg px-2 text-xs"
+                                disabled={fotoLoading}
+                                onClick={() => void verFoto(m.ruta_objeto, m.nombre_bucket)}
+                              >
+                                Ver foto
+                              </Button>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="inline-flex gap-1">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-8 w-8 rounded-lg p-0"
+                                title="Editar"
+                                onClick={() => openEdit(m)}
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-8 w-8 rounded-lg p-0 text-rose-700 hover:text-rose-800"
+                                title="Eliminar"
+                                onClick={() => setDeleteTarget(m)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {canAdminConceptos ? (
+          <TabsContent value="conceptos" className="space-y-4">
+            <Card className="rounded-[28px] border-border/80 shadow-sm">
+              <CardHeader className="flex flex-row items-center justify-between gap-3 pb-3">
+                <CardTitle className="text-base font-bold">Conceptos / productos</CardTitle>
+                <Button
+                  className="rounded-xl"
+                  onClick={() => {
+                    setConceptoEdit(null);
+                    setConceptoNombre("");
+                    setConceptoDialogOpen(true);
+                  }}
+                >
+                  <PlusCircle className="mr-2 h-4 w-4" />
+                  Nuevo concepto
+                </Button>
+              </CardHeader>
+              <CardContent>
+                {conceptosQuery.isLoading ? (
+                  <p className="text-sm text-muted-foreground">Cargando…</p>
+                ) : conceptosActivos.length === 0 ? (
+                  <p className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-4 py-8 text-center text-sm text-muted-foreground">
+                    No hay conceptos. Crea los que usarás al registrar gastos.
+                  </p>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Nombre</TableHead>
+                        <TableHead className="text-right">Acciones</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {conceptosActivos.map((c) => (
+                        <TableRow key={c.id}>
+                          <TableCell className="font-medium">{c.nombre}</TableCell>
+                          <TableCell className="text-right">
+                            <div className="inline-flex gap-1">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-8 w-8 rounded-lg p-0"
+                                onClick={() => {
+                                  setConceptoEdit(c);
+                                  setConceptoNombre(c.nombre);
+                                  setConceptoDialogOpen(true);
+                                }}
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-8 w-8 rounded-lg p-0 text-rose-700"
+                                onClick={() => setDeleteConcepto(c)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        ) : null}
+      </Tabs>
 
       <Dialog
         open={dialogOpen}
@@ -481,7 +751,12 @@ export default function CajaChica() {
                     size="sm"
                     variant={form.tipo === "EGRESO" ? "default" : "outline"}
                     className={cn("rounded-xl", form.tipo === "EGRESO" && "bg-rose-600 hover:bg-rose-700")}
-                    onClick={() => setForm((p) => ({ ...p, tipo: "EGRESO" }))}
+                    onClick={() => setForm((p) => ({
+                      ...p,
+                      tipo: "EGRESO",
+                      conceptoId: null,
+                      conceptoLabel: "",
+                    }))}
                   >
                     Egreso
                   </Button>
@@ -490,7 +765,13 @@ export default function CajaChica() {
                     size="sm"
                     variant={form.tipo === "REPOSICION" ? "default" : "outline"}
                     className={cn("rounded-xl", form.tipo === "REPOSICION" && "bg-emerald-600 hover:bg-emerald-700")}
-                    onClick={() => setForm((p) => ({ ...p, tipo: "REPOSICION" }))}
+                    onClick={() => setForm((p) => ({
+                      ...p,
+                      tipo: "REPOSICION",
+                      conceptoId: null,
+                      conceptoLabel: CAJA_CHICA_CONCEPTO_REPOSICION,
+                      observacion: "",
+                    }))}
                   >
                     Reposición
                   </Button>
@@ -509,24 +790,30 @@ export default function CajaChica() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="cc-concepto">Concepto</Label>
-              <Input
-                id="cc-concepto"
-                value={form.concepto}
-                onChange={(e) => setForm((p) => ({ ...p, concepto: e.target.value }))}
-                placeholder={form.tipo === "EGRESO" ? "Ej. Compra de insumos" : "Reposición de fondo"}
-                className="rounded-xl"
-              />
+              <Label>Concepto</Label>
+              {form.tipo === "REPOSICION" ? (
+                <Input value={CAJA_CHICA_CONCEPTO_REPOSICION} disabled className="rounded-xl bg-slate-50" />
+              ) : (
+                <ConceptoCombobox
+                  conceptos={conceptosActivos}
+                  valueId={form.conceptoId}
+                  valueLabel={form.conceptoLabel}
+                  onChange={(id, label) => setForm((p) => ({ ...p, conceptoId: id, conceptoLabel: label }))}
+                />
+              )}
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="cc-notas">Notas (opcional)</Label>
-              <Textarea
-                id="cc-notas"
-                value={form.notas}
-                onChange={(e) => setForm((p) => ({ ...p, notas: e.target.value }))}
-                className="min-h-[72px] rounded-xl"
-              />
-            </div>
+            {form.tipo === "EGRESO" ? (
+              <div className="space-y-1.5">
+                <Label htmlFor="cc-obs">Observación</Label>
+                <Textarea
+                  id="cc-obs"
+                  value={form.observacion}
+                  onChange={(e) => setForm((p) => ({ ...p, observacion: e.target.value }))}
+                  className="min-h-[72px] rounded-xl"
+                  placeholder="Detalle opcional del gasto"
+                />
+              </div>
+            ) : null}
             <div className="space-y-2">
               <Label>
                 Foto del comprobante
@@ -595,6 +882,33 @@ export default function CajaChica() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={conceptoDialogOpen} onOpenChange={setConceptoDialogOpen}>
+        <DialogContent className="max-w-md rounded-[28px]">
+          <DialogHeader>
+            <DialogTitle>{conceptoEdit ? "Editar concepto" : "Nuevo concepto"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="cc-concepto-nombre">Nombre</Label>
+              <Input
+                id="cc-concepto-nombre"
+                value={conceptoNombre}
+                onChange={(e) => setConceptoNombre(e.target.value)}
+                className="rounded-xl"
+                placeholder="Ej. Útiles de limpieza"
+              />
+            </div>
+            <Button
+              className="w-full rounded-xl"
+              disabled={guardarConcepto.isPending}
+              onClick={() => guardarConcepto.mutate()}
+            >
+              {guardarConcepto.isPending ? "Guardando…" : "Guardar"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={Boolean(fotoUrl) || fotoLoading} onOpenChange={(open) => !open && setFotoUrl(null)}>
         <DialogContent className="max-w-lg rounded-[28px]">
           <DialogHeader>
@@ -629,6 +943,32 @@ export default function CajaChica() {
               }}
             >
               {eliminar.isPending ? "Eliminando…" : "Eliminar"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={Boolean(deleteConcepto)} onOpenChange={(open) => !open && setDeleteConcepto(null)}>
+        <AlertDialogContent className="rounded-[28px]">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Eliminar concepto</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteConcepto
+                ? `Se desactivará "${deleteConcepto.nombre}". Ya no aparecerá en el combo, pero se conservará en el historial de movimientos.`
+                : null}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded-xl" disabled={borrarConcepto.isPending}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="rounded-xl bg-rose-600 hover:bg-rose-700"
+              disabled={borrarConcepto.isPending || !deleteConcepto}
+              onClick={(e) => {
+                e.preventDefault();
+                if (deleteConcepto) borrarConcepto.mutate(deleteConcepto.id);
+              }}
+            >
+              {borrarConcepto.isPending ? "Eliminando…" : "Eliminar"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -83,6 +83,8 @@ export function isPathBlockedForRestrictedUser(
     || path.startsWith("/cambio-monedas/")
     || path === "/cierres-caja"
     || path.startsWith("/cierres-caja/")
+    || path === "/caja-chica"
+    || path.startsWith("/caja-chica/")
   ) {
     return true;
   }

@@ -228,6 +228,22 @@ const NAV_ITEMS: AppNavItem[] = [
       canView(permissions, "admin_sucursal") || canView(permissions, "admin_global"),
   },
   {
+    to: "/caja-chica",
+    label: "Caja Chica",
+    icon: <Wallet className="h-5 w-5" />,
+    group: "FINANZAS",
+    tone: {
+      active: "from-lime-600 to-emerald-500",
+      idle: "hover:border-lime-200 hover:bg-lime-50/90 hover:text-lime-800",
+      iconIdle: "bg-lime-50 text-lime-700",
+    },
+    visible: (permissions) =>
+      canOperate(permissions, "caja_chica")
+      || canView(permissions, "caja_chica")
+      || canView(permissions, "admin_sucursal")
+      || canView(permissions, "admin_global"),
+  },
+  {
     to: "/promociones?origin=promociones",
     label: "Registrar participante",
     icon: <Gift className="h-5 w-5" />,
@@ -408,22 +424,6 @@ const NAV_ITEMS: AppNavItem[] = [
     },
     visible: (permissions) => canView(permissions, "admin_sucursal") || canView(permissions, "admin_global"),
   },
-  {
-    to: "/caja-chica",
-    label: "Caja Chica",
-    icon: <Wallet className="h-5 w-5" />,
-    group: "ADMINISTRACIÓN",
-    tone: {
-      active: "from-lime-600 to-emerald-500",
-      idle: "hover:border-lime-200 hover:bg-lime-50/90 hover:text-lime-800",
-      iconIdle: "bg-lime-50 text-lime-700",
-    },
-    visible: (permissions) =>
-      canOperate(permissions, "caja_chica")
-      || canView(permissions, "caja_chica")
-      || canView(permissions, "admin_sucursal")
-      || canView(permissions, "admin_global"),
-  },
 ];
 
 export function useVisibleNavItems() {
@@ -535,6 +535,8 @@ export function useVisibleNavItems() {
       }
 
       if (isAuxiliaryCashier && !canAccessAdmin && item.group === "FINANZAS") {
+        // Auxiliar con permiso de Caja Chica sí puede verla sin ser admin.
+        if (item.to === "/caja-chica" && item.visible(permissions)) return true;
         return false;
       }
 
