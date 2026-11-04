@@ -825,9 +825,10 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
         }
 
         creatorNameMap = buildUserDisplayMap(bundle.profiles);
-        packerUserIds = isServirModule
-          ? new Set(bundle.packer_user_ids ?? [])
-          : await fetchEnabledPackerUserIds(openShift.id);
+        // Importante: hasEnabledPacker debe mirar TODOS los empacadores del turno.
+        // bundle.packer_user_ids solo lista creadores de la cola que también empacan;
+        // si el empacador no creó órdenes, Servir dejaría “Con envase” en platos.
+        packerUserIds = await fetchEnabledPackerUserIds(openShift.id);
         const hasEnabledPacker = packerUserIds.size > 0;
         tablesMap = Object.fromEntries((bundle.tables ?? []).map((t) => [t.id, t.name]));
         splitsMap = Object.fromEntries((bundle.splits ?? []).map((s) => [s.id, s.split_code]));
@@ -1021,7 +1022,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
               filters: [{ column: "id", op: "in", value: creatorIds }],
             })
           : Promise.resolve([] as any[]),
-        isServirModule ? Promise.resolve(new Set<string>()) : fetchEnabledPackerUserIds(openShift.id),
+        fetchEnabledPackerUserIds(openShift.id),
       ]);
       creatorNameMap = buildUserDisplayMap(creatorProfiles);
       packerUserIds = enabledPackerUserIds;
