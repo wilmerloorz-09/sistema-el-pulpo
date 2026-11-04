@@ -647,10 +647,15 @@ function filterDispatchCardsByScope(cards: DispatchOrder[], scope: DispatchView)
   if (scope === "ALL") return cards;
   if (scope === "SPECIAL") return cards.filter((card) => Boolean(card.is_special));
   if (scope === "TABLE") {
-    return cards.filter((card) => !card.is_special && matchesScope(card.order_type, "TABLE"));
+    // Con envase de mesa va a Empaquetador (TAKEOUT), no al tab Mesa.
+    return cards.filter(
+      (card) => !card.is_special && matchesScope(card.order_type, "TABLE") && !card.is_table_envase_packing,
+    );
   }
   if (scope === "TAKEOUT") {
-    return cards.filter((card) => matchesScope(card.order_type, "TAKEOUT"));
+    return cards.filter(
+      (card) => matchesScope(card.order_type, "TAKEOUT") || Boolean(card.is_table_envase_packing),
+    );
   }
   return cards;
 }

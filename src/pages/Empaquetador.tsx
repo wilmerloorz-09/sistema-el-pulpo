@@ -8,7 +8,8 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Button } from "@/components/ui/button";
 import { useBranch } from "@/contexts/BranchContext";
 
-const PACKING_SCOPE: DispatchView = "TAKEOUT";
+/** La cola packing ya trae solo líneas de empaque; el tab filtra en cliente. */
+const PACKING_SCOPE: DispatchView = "ALL";
 type PackingView = "ALL" | "TAKEOUT" | "EXPRESS";
 
 const PACKING_VIEWS: PackingView[] = ["ALL", "TAKEOUT", "EXPRESS"];
