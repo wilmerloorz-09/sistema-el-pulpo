@@ -86,6 +86,8 @@ type FormState = {
   previewUrl: string | null;
   tieneFotoActual: boolean;
   quitarFoto: boolean;
+  /** Fecha del movimiento (alta = ahora; edición = creado_en). */
+  creadoEn: string;
   /** Para editar: monto/tipo originales liberan saldo al recalcular. */
   originalTipo: CajaChicaTipo | null;
   originalMonto: number | null;
@@ -102,6 +104,7 @@ const emptyForm = (tipo: CajaChicaTipo): FormState => ({
   previewUrl: null,
   tieneFotoActual: false,
   quitarFoto: false,
+  creadoEn: new Date().toISOString(),
   originalTipo: null,
   originalMonto: null,
 });
@@ -436,6 +439,7 @@ export default function CajaChica() {
       previewUrl: null,
       tieneFotoActual: Boolean(m.ruta_objeto),
       quitarFoto: false,
+      creadoEn: m.creado_en,
       originalTipo: m.tipo,
       originalMonto: Number(m.monto),
     });
@@ -603,25 +607,28 @@ export default function CajaChica() {
                   Aún no hay movimientos. Empieza con una reposición para fondear la caja.
                 </p>
               ) : (
-                <div className="w-full overflow-hidden">
-                  <table className="w-full table-fixed border-collapse text-[13px]">
+                <div className="w-full overflow-x-auto">
+                  <table className="w-full min-w-[640px] table-fixed border-collapse text-[13px]">
                     <colgroup>
-                      <col className="w-[15%]" />
-                      <col className="w-[11%]" />
-                      <col className="w-[17%]" />
-                      <col className="w-[17%]" />
-                      <col className="w-[11%]" />
-                      <col className="w-[11%]" />
+                      <col className="w-[12%]" />
+                      <col className="w-[18%]" />
+                      <col className="w-[16%]" />
+                      <col className="w-[24%]" />
+                      <col className="w-[12%]" />
                       <col className="w-[9%]" />
                       <col className="w-[9%]" />
                     </colgroup>
                     <thead>
                       <tr className="border-b text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                        <th className="px-1.5 py-2 sm:px-2">Fecha</th>
                         <th className="px-1.5 py-2 sm:px-2">Tipo</th>
                         <th className="px-1.5 py-2 sm:px-2">Concepto</th>
                         <th className="px-1.5 py-2 sm:px-2">Observación</th>
-                        <th className="px-1.5 py-2 text-right sm:px-2">Monto</th>
+                        <th className="px-1.5 py-2 sm:px-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <span>Fecha</span>
+                            <span className="text-right">Monto</span>
+                          </div>
+                        </th>
                         <th className="px-1.5 py-2 text-right sm:px-2">Saldo</th>
                         <th className="px-1.5 py-2 sm:px-2">Foto</th>
                         <th className="px-1.5 py-2 text-right sm:px-2">Acciones</th>
@@ -630,14 +637,6 @@ export default function CajaChica() {
                     <tbody>
                       {(movimientosQuery.data ?? []).map((m) => (
                         <tr key={m.id} className="border-b last:border-0 hover:bg-muted/40">
-                          <td className="px-1.5 py-2 align-middle text-[11px] text-muted-foreground sm:px-2">
-                            <span className="block leading-tight">{fechaHora(m.creado_en)}</span>
-                            {m.registrado_por_nombre ? (
-                              <span className="mt-0.5 block truncate text-[10px]" title={m.registrado_por_nombre}>
-                                {nombreCorto(m.registrado_por_nombre)}
-                              </span>
-                            ) : null}
-                          </td>
                           <td className="px-1.5 py-2 align-middle sm:px-2">
                             <Badge
                               variant="outline"
@@ -653,6 +652,11 @@ export default function CajaChica() {
                           </td>
                           <td className="px-1.5 py-2 align-middle sm:px-2">
                             <p className="truncate text-[13px] font-medium" title={m.concepto}>{m.concepto}</p>
+                            {m.registrado_por_nombre ? (
+                              <p className="mt-0.5 truncate text-[10px] text-muted-foreground" title={m.registrado_por_nombre}>
+                                {nombreCorto(m.registrado_por_nombre)}
+                              </p>
+                            ) : null}
                           </td>
                           <td className="px-1.5 py-2 align-middle sm:px-2">
                             <p
@@ -662,14 +666,21 @@ export default function CajaChica() {
                               {m.tipo === "EGRESO" ? (m.observacion || "—") : "—"}
                             </p>
                           </td>
-                          <td
-                            className={cn(
-                              "px-1.5 py-2 text-right align-middle text-[13px] font-semibold tabular-nums sm:px-2",
-                              m.tipo === "EGRESO" ? "text-rose-700" : "text-emerald-700",
-                            )}
-                          >
-                            {m.tipo === "EGRESO" ? "−" : "+"}
-                            {money(m.monto)}
+                          <td className="px-1.5 py-2 align-middle sm:px-2">
+                            <div className="flex items-baseline justify-between gap-2">
+                              <span className="whitespace-nowrap text-[11px] leading-tight text-muted-foreground">
+                                {fechaHora(m.creado_en)}
+                              </span>
+                              <span
+                                className={cn(
+                                  "whitespace-nowrap text-[13px] font-semibold tabular-nums",
+                                  m.tipo === "EGRESO" ? "text-rose-700" : "text-emerald-700",
+                                )}
+                              >
+                                {m.tipo === "EGRESO" ? "−" : "+"}
+                                {money(m.monto)}
+                              </span>
+                            </div>
                           </td>
                           <td className="px-1.5 py-2 text-right align-middle text-[13px] tabular-nums sm:px-2">
                             {money(m.saldo_despues)}
@@ -846,24 +857,35 @@ export default function CajaChica() {
                 </div>
               </div>
             ) : null}
-            <div className="space-y-1.5">
-              <Label htmlFor="cc-monto">Monto</Label>
-              <Input
-                id="cc-monto"
-                inputMode="decimal"
-                placeholder="0.00"
-                value={form.monto}
-                onChange={(e) => setForm((p) => ({ ...p, monto: e.target.value }))}
-                className={cn("rounded-xl", gastoExcedeSaldo && "border-rose-400 focus-visible:ring-rose-300")}
-              />
-              {form.tipo === "EGRESO" ? (
-                <p className={cn("text-xs", gastoExcedeSaldo ? "font-medium text-rose-700" : "text-muted-foreground")}>
-                  {gastoExcedeSaldo
-                    ? `El gasto no puede ser mayor al saldo (disponible: ${money(saldoDisponibleParaEgreso)}).`
-                    : `Saldo disponible: ${money(saldoDisponibleParaEgreso)}`}
-                </p>
-              ) : null}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="cc-fecha">Fecha</Label>
+                <Input
+                  id="cc-fecha"
+                  value={fechaHora(form.creadoEn)}
+                  disabled
+                  className="rounded-xl bg-slate-50"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="cc-monto">Monto</Label>
+                <Input
+                  id="cc-monto"
+                  inputMode="decimal"
+                  placeholder="0.00"
+                  value={form.monto}
+                  onChange={(e) => setForm((p) => ({ ...p, monto: e.target.value }))}
+                  className={cn("rounded-xl", gastoExcedeSaldo && "border-rose-400 focus-visible:ring-rose-300")}
+                />
+              </div>
             </div>
+            {form.tipo === "EGRESO" ? (
+              <p className={cn("text-xs", gastoExcedeSaldo ? "font-medium text-rose-700" : "text-muted-foreground")}>
+                {gastoExcedeSaldo
+                  ? `El gasto no puede ser mayor al saldo (disponible: ${money(saldoDisponibleParaEgreso)}).`
+                  : `Saldo disponible: ${money(saldoDisponibleParaEgreso)}`}
+              </p>
+            ) : null}
             <div className="space-y-1.5">
               <Label>Concepto</Label>
               {form.tipo === "REPOSICION" ? (
