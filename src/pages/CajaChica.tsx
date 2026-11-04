@@ -69,6 +69,27 @@ const fechaHora = (iso: string) =>
     minute: "2-digit",
   });
 
+/** Valor para input datetime-local en zona America/Guayaquil. */
+const isoToDatetimeLocal = (iso: string) => {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Guayaquil",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date(iso));
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "00";
+  return `${get("year")}-${get("month")}-${get("day")}T${get("hour")}:${get("minute")}`;
+};
+
+/** Interpreta datetime-local como hora de Ecuador (UTC-5). */
+const datetimeLocalToIso = (value: string) => {
+  const normalized = value.length === 16 ? `${value}:00` : value;
+  return new Date(`${normalized}-05:00`).toISOString();
+};
+
 const nombreCorto = (nombre: string | null | undefined) => {
   const parts = String(nombre ?? "").trim().split(/\s+/).filter(Boolean);
   if (parts.length <= 2) return parts.join(" ");
@@ -327,6 +348,11 @@ export default function CajaChica() {
         }
       }
 
+      if (!form.creadoEn) {
+        throw new Error("Ingresa la fecha del movimiento");
+      }
+      const fechaMovimiento = form.creadoEn;
+
       if (!form.movimientoId) {
         return registrarMovimientoCajaChica({
           sucursalId: activeBranchId,
@@ -336,6 +362,7 @@ export default function CajaChica() {
           concepto,
           conceptoId,
           observacion: form.tipo === "EGRESO" ? form.observacion.trim() || undefined : undefined,
+          fecha: fechaMovimiento,
           archivo: form.archivo,
         });
       }
@@ -354,6 +381,7 @@ export default function CajaChica() {
         concepto,
         conceptoId,
         observacion: form.tipo === "EGRESO" ? form.observacion.trim() || undefined : undefined,
+        fecha: fechaMovimiento,
         comprobante,
         archivo: form.archivo,
       });
@@ -862,9 +890,14 @@ export default function CajaChica() {
                 <Label htmlFor="cc-fecha">Fecha</Label>
                 <Input
                   id="cc-fecha"
-                  value={fechaHora(form.creadoEn)}
-                  disabled
-                  className="rounded-xl bg-slate-50"
+                  type="datetime-local"
+                  value={isoToDatetimeLocal(form.creadoEn)}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    if (!next) return;
+                    setForm((p) => ({ ...p, creadoEn: datetimeLocalToIso(next) }));
+                  }}
+                  className="rounded-xl"
                 />
               </div>
               <div className="space-y-1.5">

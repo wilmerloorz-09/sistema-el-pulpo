@@ -158,6 +158,7 @@ export async function registrarMovimientoCajaChica(params: {
   conceptoId?: string | null;
   observacion?: string;
   notas?: string;
+  fecha?: string | null;
   archivo?: File | Blob | null;
 }): Promise<{ id: string; saldo_despues: number }> {
   const movimientoId = generateUUID();
@@ -191,6 +192,7 @@ export async function registrarMovimientoCajaChica(params: {
     p_tamano_bytes: tamanoBytes,
     p_observacion: params.observacion ?? null,
     p_concepto_id: params.conceptoId ?? null,
+    p_fecha: params.fecha ?? null,
   } as any);
 
   if (error) {
@@ -213,6 +215,7 @@ export async function actualizarMovimientoCajaChica(params: {
   conceptoId?: string | null;
   observacion?: string;
   notas?: string;
+  fecha?: string | null;
   comprobante: "keep" | "replace" | "clear";
   archivo?: File | Blob | null;
 }): Promise<{ id: string; saldo: number }> {
@@ -249,6 +252,7 @@ export async function actualizarMovimientoCajaChica(params: {
     p_tamano_bytes: tamanoBytes,
     p_observacion: params.observacion ?? null,
     p_concepto_id: params.conceptoId ?? null,
+    p_fecha: params.fecha ?? null,
   } as any);
 
   if (error) throw error;
