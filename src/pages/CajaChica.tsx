@@ -89,8 +89,13 @@ type ConceptoLinea = {
 type FormState = {
   movimientoId: string | null;
   tipo: CajaChicaTipo;
-  /** Solo reposición: un monto único. En egreso se usan lineasConcepto. */
+  /**
+   * Reposición: monto único.
+   * Egreso: total del gasto (se calcula de las líneas, pero es editable y puede diferir).
+   */
   monto: string;
+  /** Si true, no sobrescribir el total al cambiar montos de líneas. */
+  totalEditado: boolean;
   lineasConcepto: ConceptoLinea[];
   observacion: string;
   archivo: File | null;
@@ -108,6 +113,7 @@ const emptyForm = (tipo: CajaChicaTipo): FormState => ({
   movimientoId: null,
   tipo,
   monto: "",
+  totalEditado: false,
   lineasConcepto: [],
   observacion: "",
   archivo: null,
@@ -120,6 +126,64 @@ const emptyForm = (tipo: CajaChicaTipo): FormState => ({
 });
 
 const parseMonto = (raw: string) => Number(String(raw).replace(",", "."));
+
+const sumarLineasConcepto = (lineas: ConceptoLinea[]) =>
+  lineas.reduce((sum, linea) => {
+    const n = parseMonto(linea.monto);
+    return sum + (Number.isFinite(n) && n > 0 ? n : 0);
+  }, 0);
+
+const formatMontoCampo = (value: number) => {
+  if (!Number.isFinite(value) || value <= 0) return "";
+  return String(Math.round(value * 100) / 100);
+};
+
+/** Reparte `total` entre líneas según sus montos (o en partes iguales). */
+function repartirTotalEnLineas(
+  lineas: ConceptoLinea[],
+  total: number,
+): Array<{ concepto: string; conceptoId: string | null; monto: number }> {
+  const n = lineas.length;
+  if (n === 0) return [];
+  const pesos = lineas.map((l) => {
+    const m = parseMonto(l.monto);
+    return Number.isFinite(m) && m > 0 ? m : 0;
+  });
+  const pesoTotal = pesos.reduce((a, b) => a + b, 0);
+  const montos: number[] = [];
+  let acumulado = 0;
+  for (let i = 0; i < n; i += 1) {
+    if (i === n - 1) {
+      montos.push(Math.round((total - acumulado) * 100) / 100);
+      break;
+    }
+    const parte = pesoTotal > 0
+      ? Math.round((total * (pesos[i] / pesoTotal)) * 100) / 100
+      : Math.round((total / n) * 100) / 100;
+    montos.push(parte);
+    acumulado += parte;
+  }
+
+  const result = lineas.map((l, i) => {
+    const isOtros = l.conceptoId === CAJA_CHICA_CONCEPTO_OTROS_ID;
+    return {
+      concepto: isOtros ? CAJA_CHICA_CONCEPTO_OTROS : l.nombre,
+      conceptoId: isOtros ? null : l.conceptoId,
+      monto: montos[i] ?? 0,
+    };
+  }).filter((l) => l.monto > 0);
+
+  if (result.length === 0) {
+    const first = lineas[0];
+    const isOtros = first.conceptoId === CAJA_CHICA_CONCEPTO_OTROS_ID;
+    return [{
+      concepto: isOtros ? CAJA_CHICA_CONCEPTO_OTROS : first.nombre,
+      conceptoId: isOtros ? null : first.conceptoId,
+      monto: total,
+    }];
+  }
+  return result;
+}
 
 function ConceptosDualList({
   conceptos,
@@ -218,7 +282,7 @@ function ConceptosDualList({
               Suelta aquí uno o más conceptos
             </p>
           ) : (
-            <ul className="max-h-56 space-y-2 overflow-y-auto">
+            <ul className="max-h-56 space-y-1.5 overflow-y-auto">
               {seleccionados.map((l) => (
                 <li
                   key={l.key}
@@ -227,29 +291,27 @@ function ConceptosDualList({
                     e.dataTransfer.setData("text/cc-remove-key", l.key);
                     e.dataTransfer.effectAllowed = "move";
                   }}
-                  className="rounded-xl border border-emerald-100 bg-white p-2 shadow-sm"
+                  className="flex items-center gap-1.5 rounded-xl border border-emerald-100 bg-white px-2 py-1.5 shadow-sm"
                 >
-                  <div className="mb-1.5 flex items-center justify-between gap-2">
-                    <div className="flex min-w-0 items-center gap-1.5">
-                      <GripVertical className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                      <span className="truncate text-sm font-semibold text-slate-800">{l.nombre}</span>
-                    </div>
-                    <button
-                      type="button"
-                      className="rounded-lg p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-700"
-                      onClick={() => removeConcepto(l.key)}
-                      aria-label={`Quitar ${l.nombre}`}
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
+                  <GripVertical className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                  <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-800">{l.nombre}</span>
                   <Input
                     inputMode="decimal"
-                    placeholder="Monto"
+                    placeholder="0.00"
                     value={l.monto}
                     onChange={(e) => setMonto(l.key, e.target.value)}
-                    className="h-8 rounded-lg text-sm"
+                    onClick={(e) => e.stopPropagation()}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    className="h-8 w-[5.5rem] shrink-0 rounded-lg px-2 text-right text-sm tabular-nums"
                   />
+                  <button
+                    type="button"
+                    className="shrink-0 rounded-lg p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-700"
+                    onClick={() => removeConcepto(l.key)}
+                    aria-label={`Quitar ${l.nombre}`}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
                 </li>
               ))}
             </ul>
@@ -331,12 +393,8 @@ export default function CajaChica() {
     return Math.max(0, disponible);
   }, [saldoActual, form.originalTipo, form.originalMonto, form.tipo]);
 
-  const montoFormulario = form.tipo === "EGRESO"
-    ? form.lineasConcepto.reduce((sum, linea) => {
-        const n = parseMonto(linea.monto);
-        return sum + (Number.isFinite(n) && n > 0 ? n : 0);
-      }, 0)
-    : parseMonto(form.monto);
+  const sumaLineas = sumarLineasConcepto(form.lineasConcepto);
+  const montoFormulario = parseMonto(form.monto);
   const gastoExcedeSaldo =
     form.tipo === "EGRESO"
     && Number.isFinite(montoFormulario)
@@ -409,24 +467,19 @@ export default function CajaChica() {
         throw new Error("Arrastra al menos un concepto al gasto");
       }
 
-      const lineas = form.lineasConcepto.map((linea) => {
-        const monto = parseMonto(linea.monto);
-        if (!Number.isFinite(monto) || monto <= 0) {
-          throw new Error(`Ingresa un monto válido para “${linea.nombre}”`);
-        }
+      const total = parseMonto(form.monto);
+      if (!Number.isFinite(total) || total <= 0) {
+        throw new Error("Ingresa el total del gasto");
+      }
+
+      for (const linea of form.lineasConcepto) {
         const isOtros = linea.conceptoId === CAJA_CHICA_CONCEPTO_OTROS_ID;
         const found = conceptosActivos.find((c) => c.id === linea.conceptoId);
         if (!isOtros && !found && !form.movimientoId) {
           throw new Error(`Concepto no válido: ${linea.nombre}`);
         }
-        return {
-          monto,
-          concepto: isOtros ? CAJA_CHICA_CONCEPTO_OTROS : (found?.nombre ?? linea.nombre),
-          conceptoId: isOtros ? null : linea.conceptoId,
-        };
-      });
+      }
 
-      const total = lineas.reduce((sum, l) => sum + l.monto, 0);
       const disponible = saldoDisponibleParaEgreso;
       if (disponible <= 0) {
         throw new Error("No hay saldo disponible para registrar un gasto");
@@ -435,10 +488,12 @@ export default function CajaChica() {
         throw new Error(`El gasto no puede ser mayor al saldo (disponible: ${money(disponible)})`);
       }
 
+      // El total editable manda; se reparte entre conceptos (por sus montos o en partes iguales).
+      const lineas = repartirTotalEnLineas(form.lineasConcepto, total);
+
       // Alta: un movimiento por concepto.
       if (!form.movimientoId) {
-        for (let i = 0; i < lineas.length; i += 1) {
-          const linea = lineas[i];
+        for (const linea of lineas) {
           await registrarMovimientoCajaChica({
             sucursalId: activeBranchId,
             sucursalEfectivaId,
@@ -448,7 +503,6 @@ export default function CajaChica() {
             conceptoId: linea.conceptoId,
             observacion,
             fecha: fechaMovimiento,
-            // Misma foto en todas las líneas del registro.
             archivo: form.archivo,
           });
         }
@@ -567,7 +621,8 @@ export default function CajaChica() {
     setForm({
       movimientoId: m.id,
       tipo: m.tipo,
-      monto: m.tipo === "REPOSICION" ? String(m.monto) : "",
+      monto: String(m.monto),
+      totalEditado: m.tipo === "EGRESO",
       lineasConcepto: m.tipo === "EGRESO"
         ? [{
             key: m.id,
@@ -1041,19 +1096,58 @@ export default function CajaChica() {
                 <ConceptosDualList
                   conceptos={conceptosActivos}
                   seleccionados={form.lineasConcepto}
-                  onChange={(lineasConcepto) => setForm((p) => ({ ...p, lineasConcepto }))}
+                  onChange={(lineasConcepto) => setForm((p) => {
+                    const suma = sumarLineasConcepto(lineasConcepto);
+                    return {
+                      ...p,
+                      lineasConcepto,
+                      monto: p.totalEditado ? p.monto : formatMontoCampo(suma),
+                    };
+                  })}
                 />
-                <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Total gasto</p>
-                    <p className={cn("text-lg font-black tabular-nums", gastoExcedeSaldo ? "text-rose-700" : "text-slate-900")}>
-                      {money(montoFormulario)}
-                    </p>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+                  <div className="flex items-end gap-3">
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <Label htmlFor="cc-total" className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        Total gasto
+                      </Label>
+                      <Input
+                        id="cc-total"
+                        inputMode="decimal"
+                        placeholder="0.00"
+                        value={form.monto}
+                        onChange={(e) => setForm((p) => ({
+                          ...p,
+                          monto: e.target.value,
+                          totalEditado: true,
+                        }))}
+                        className={cn(
+                          "h-10 rounded-xl text-base font-black tabular-nums",
+                          gastoExcedeSaldo && "border-rose-400 focus-visible:ring-rose-300",
+                        )}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      className="shrink-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                      onClick={() => setForm((p) => ({
+                        ...p,
+                        totalEditado: false,
+                        monto: formatMontoCampo(sumarLineasConcepto(p.lineasConcepto)),
+                      }))}
+                      title="Usar la suma de los conceptos"
+                    >
+                      = suma
+                    </button>
                   </div>
-                  <p className={cn("text-xs", gastoExcedeSaldo ? "font-medium text-rose-700" : "text-muted-foreground")}>
+                  <p className={cn("mt-1.5 text-xs", gastoExcedeSaldo ? "font-medium text-rose-700" : "text-muted-foreground")}>
                     {gastoExcedeSaldo
                       ? `Excede el saldo (disponible: ${money(saldoDisponibleParaEgreso)})`
-                      : `Saldo disponible: ${money(saldoDisponibleParaEgreso)}`}
+                      : `Saldo disponible: ${money(saldoDisponibleParaEgreso)}${
+                          form.totalEditado && Math.abs(sumaLineas - (Number.isFinite(montoFormulario) ? montoFormulario : 0)) > 0.009
+                            ? ` · Suma conceptos: ${money(sumaLineas)}`
+                            : ""
+                        }`}
                   </p>
                 </div>
               </>
@@ -1137,7 +1231,11 @@ export default function CajaChica() {
               disabled={
                 saving
                 || gastoExcedeSaldo
-                || (form.tipo === "EGRESO" && (saldoDisponibleParaEgreso <= 0 || form.lineasConcepto.length === 0))
+                || (form.tipo === "EGRESO" && (
+                  saldoDisponibleParaEgreso <= 0
+                  || form.lineasConcepto.length === 0
+                  || !(Number.isFinite(montoFormulario) && montoFormulario > 0)
+                ))
               }
               onClick={() => guardar.mutate()}
             >
