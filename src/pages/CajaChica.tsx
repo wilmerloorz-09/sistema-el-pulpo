@@ -302,7 +302,7 @@ function ConceptosDualList({
                     onChange={(e) => setMonto(l.key, e.target.value)}
                     onClick={(e) => e.stopPropagation()}
                     onMouseDown={(e) => e.stopPropagation()}
-                    className="h-8 w-[5.5rem] shrink-0 rounded-lg px-2 text-right text-sm tabular-nums"
+                    className="h-7 w-[3.75rem] shrink-0 rounded-md px-1.5 text-right text-xs tabular-nums"
                   />
                   <button
                     type="button"
