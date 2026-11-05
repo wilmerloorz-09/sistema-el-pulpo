@@ -441,7 +441,6 @@ export default function CajaChica() {
     return Math.max(0, disponible);
   }, [saldoActual, form.originalTipo, form.originalMonto, form.tipo]);
 
-  const sumaLineas = sumarLineasConcepto(form.lineasConcepto);
   const montoFormulario = parseMonto(form.monto);
   const gastoExcedeSaldo =
     form.tipo === "EGRESO"
