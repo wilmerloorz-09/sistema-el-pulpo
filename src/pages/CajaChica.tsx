@@ -488,70 +488,56 @@ export default function CajaChica() {
         throw new Error(`El gasto no puede ser mayor al saldo (disponible: ${money(disponible)})`);
       }
 
-      // El total editable manda; se reparte entre conceptos (por sus montos o en partes iguales).
+      // Un solo movimiento: total editable + detalle de conceptos en items.
       const lineas = repartirTotalEnLineas(form.lineasConcepto, total);
+      const items = lineas.map((l) => ({
+        concepto_id: l.conceptoId,
+        concepto: l.concepto,
+        monto: l.monto,
+      }));
+      const conceptoLabel = lineas.map((l) => l.concepto).join(" · ");
+      const conceptoId = lineas.length === 1 ? lineas[0].conceptoId : null;
 
-      // Alta: un movimiento por concepto.
       if (!form.movimientoId) {
-        for (const linea of lineas) {
-          await registrarMovimientoCajaChica({
-            sucursalId: activeBranchId,
-            sucursalEfectivaId,
-            tipo: "EGRESO",
-            monto: linea.monto,
-            concepto: linea.concepto,
-            conceptoId: linea.conceptoId,
-            observacion,
-            fecha: fechaMovimiento,
-            archivo: form.archivo,
-          });
-        }
-        return { count: lineas.length };
+        return registrarMovimientoCajaChica({
+          sucursalId: activeBranchId,
+          sucursalEfectivaId,
+          tipo: "EGRESO",
+          monto: total,
+          concepto: conceptoLabel,
+          conceptoId,
+          observacion,
+          fecha: fechaMovimiento,
+          items,
+          archivo: form.archivo,
+        });
       }
 
-      // Edición: actualiza el movimiento actual con la 1ª línea; crea el resto.
-      const [primera, ...rest] = lineas;
       const comprobante = form.archivo
         ? "replace"
         : form.quitarFoto
           ? "clear"
           : "keep";
-      await actualizarMovimientoCajaChica({
+      return actualizarMovimientoCajaChica({
         movimientoId: form.movimientoId,
         sucursalEfectivaId,
         tipo: "EGRESO",
-        monto: primera.monto,
-        concepto: primera.concepto,
-        conceptoId: primera.conceptoId,
+        monto: total,
+        concepto: conceptoLabel,
+        conceptoId,
         observacion,
         fecha: fechaMovimiento,
+        items,
         comprobante,
         archivo: form.archivo,
       });
-      for (const linea of rest) {
-        await registrarMovimientoCajaChica({
-          sucursalId: activeBranchId,
-          sucursalEfectivaId,
-          tipo: "EGRESO",
-          monto: linea.monto,
-          concepto: linea.concepto,
-          conceptoId: linea.conceptoId,
-          observacion,
-          fecha: fechaMovimiento,
-          archivo: form.archivo,
-        });
-      }
-      return { count: lineas.length };
     },
-    onSuccess: async (result) => {
-      const count = result && typeof result === "object" && "count" in result
-        ? Number((result as { count?: number }).count ?? 1)
-        : 1;
+    onSuccess: async () => {
       toast.success(
         form.movimientoId
           ? "Movimiento actualizado"
           : form.tipo === "EGRESO"
-            ? (count > 1 ? `${count} egresos registrados` : "Egreso registrado")
+            ? "Egreso registrado"
             : "Reposición registrada",
       );
       closeForm();
@@ -618,18 +604,32 @@ export default function CajaChica() {
   const openEdit = (m: CajaChicaMovimiento) => {
     if (form.previewUrl) URL.revokeObjectURL(form.previewUrl);
     const isOtros = !m.concepto_id && m.concepto.trim().toLowerCase() === "otros";
+    const items = Array.isArray(m.items) && m.items.length > 0
+      ? m.items
+      : [{
+          concepto_id: isOtros ? null : m.concepto_id,
+          concepto: m.concepto,
+          monto: Number(m.monto),
+        }];
+
     setForm({
       movimientoId: m.id,
       tipo: m.tipo,
       monto: String(m.monto),
       totalEditado: m.tipo === "EGRESO",
       lineasConcepto: m.tipo === "EGRESO"
-        ? [{
-            key: m.id,
-            conceptoId: isOtros ? CAJA_CHICA_CONCEPTO_OTROS_ID : (m.concepto_id ?? CAJA_CHICA_CONCEPTO_OTROS_ID),
-            nombre: m.concepto,
-            monto: String(m.monto),
-          }]
+        ? items.map((it, idx) => {
+            const nombre = String(it.concepto || "").trim() || CAJA_CHICA_CONCEPTO_OTROS;
+            const esOtros = !it.concepto_id && nombre.toLowerCase() === "otros";
+            return {
+              key: `${m.id}-${idx}`,
+              conceptoId: esOtros
+                ? CAJA_CHICA_CONCEPTO_OTROS_ID
+                : (it.concepto_id ?? CAJA_CHICA_CONCEPTO_OTROS_ID),
+              nombre,
+              monto: String(it.monto ?? ""),
+            };
+          })
         : [],
       observacion: m.observacion ?? "",
       archivo: null,
@@ -849,6 +849,11 @@ export default function CajaChica() {
                           </td>
                           <td className="px-1.5 py-2 align-middle sm:px-2">
                             <p className="truncate text-[13px] font-medium" title={m.concepto}>{m.concepto}</p>
+                            {Array.isArray(m.items) && m.items.length > 1 ? (
+                              <p className="mt-0.5 truncate text-[10px] text-muted-foreground" title={m.items.map((it) => `${it.concepto}: ${money(Number(it.monto))}`).join(" · ")}>
+                                {m.items.length} conceptos
+                              </p>
+                            ) : null}
                             {m.registrado_por_nombre ? (
                               <p className="mt-0.5 truncate text-[10px] text-muted-foreground" title={m.registrado_por_nombre}>
                                 {nombreCorto(m.registrado_por_nombre)}

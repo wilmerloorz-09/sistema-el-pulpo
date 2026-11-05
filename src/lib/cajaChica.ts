@@ -26,6 +26,12 @@ export type CajaChicaConcepto = {
   actualizado_en: string;
 };
 
+export type CajaChicaMovimientoItem = {
+  concepto_id?: string | null;
+  concepto: string;
+  monto: number;
+};
+
 export type CajaChicaMovimiento = {
   id: string;
   sucursal_id: string;
@@ -41,6 +47,8 @@ export type CajaChicaMovimiento = {
   nombre_bucket: string | null;
   registrado_por_nombre: string | null;
   creado_en: string;
+  /** Detalle de conceptos cuando un egreso tiene varios ítems. */
+  items?: CajaChicaMovimientoItem[] | null;
 };
 
 export function construirRutaComprobanteCajaChica(params: {
@@ -81,6 +89,13 @@ export async function listarMovimientosCajaChica(
     saldo_despues: Number(row.saldo_despues),
     concepto_id: row.concepto_id ?? null,
     observacion: row.observacion ?? null,
+    items: Array.isArray(row.items)
+      ? row.items.map((it) => ({
+          concepto_id: it?.concepto_id ?? null,
+          concepto: String(it?.concepto ?? ""),
+          monto: Number(it?.monto ?? 0),
+        }))
+      : null,
   }));
 }
 
@@ -159,6 +174,7 @@ export async function registrarMovimientoCajaChica(params: {
   observacion?: string;
   notas?: string;
   fecha?: string | null;
+  items?: CajaChicaMovimientoItem[] | null;
   archivo?: File | Blob | null;
 }): Promise<{ id: string; saldo_despues: number }> {
   const movimientoId = generateUUID();
@@ -193,6 +209,7 @@ export async function registrarMovimientoCajaChica(params: {
     p_observacion: params.observacion ?? null,
     p_concepto_id: params.conceptoId ?? null,
     p_fecha: params.fecha ?? null,
+    p_items: params.items ?? null,
   } as any);
 
   if (error) {
@@ -216,6 +233,7 @@ export async function actualizarMovimientoCajaChica(params: {
   observacion?: string;
   notas?: string;
   fecha?: string | null;
+  items?: CajaChicaMovimientoItem[] | null;
   comprobante: "keep" | "replace" | "clear";
   archivo?: File | Blob | null;
 }): Promise<{ id: string; saldo: number }> {
@@ -253,6 +271,7 @@ export async function actualizarMovimientoCajaChica(params: {
     p_observacion: params.observacion ?? null,
     p_concepto_id: params.conceptoId ?? null,
     p_fecha: params.fecha ?? null,
+    p_items: params.items ?? null,
   } as any);
 
   if (error) throw error;
