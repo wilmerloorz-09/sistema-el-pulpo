@@ -225,7 +225,7 @@ function ConceptosDualList({
       <div className="space-y-1.5">
         <Label>Conceptos disponibles</Label>
         <div
-          className="min-h-[180px] rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 p-2"
+          className="flex h-[200px] flex-col overflow-hidden rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 p-2"
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => {
             e.preventDefault();
@@ -233,33 +233,35 @@ function ConceptosDualList({
             if (key) removeConcepto(key);
           }}
         >
-          {disponibles.length === 0 ? (
-            <p className="px-2 py-6 text-center text-xs text-muted-foreground">
-              Todos los conceptos ya están seleccionados
-            </p>
-          ) : (
-            <ul className="max-h-56 space-y-1 overflow-y-auto">
-              {disponibles.map((c) => (
-                <li key={c.id}>
-                  <button
-                    type="button"
-                    draggable
-                    onDragStart={(e) => {
-                      e.dataTransfer.setData("text/cc-concepto-id", c.id);
-                      e.dataTransfer.setData("text/cc-concepto-nombre", c.nombre);
-                      e.dataTransfer.effectAllowed = "move";
-                    }}
-                    onClick={() => addConcepto(c.id, c.nombre)}
-                    className="flex w-full items-center gap-2 rounded-xl border border-transparent bg-white px-2.5 py-2 text-left text-sm shadow-sm transition hover:border-emerald-200 hover:bg-emerald-50/60"
-                  >
-                    <GripVertical className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                    <span className="truncate font-medium text-slate-800">{c.nombre}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-          <p className="mt-2 px-1 text-[10px] text-muted-foreground">
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {disponibles.length === 0 ? (
+              <p className="px-2 py-6 text-center text-xs text-muted-foreground">
+                Todos los conceptos ya están seleccionados
+              </p>
+            ) : (
+              <ul className="space-y-1">
+                {disponibles.map((c) => (
+                  <li key={c.id}>
+                    <button
+                      type="button"
+                      draggable
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData("text/cc-concepto-id", c.id);
+                        e.dataTransfer.setData("text/cc-concepto-nombre", c.nombre);
+                        e.dataTransfer.effectAllowed = "move";
+                      }}
+                      onClick={() => addConcepto(c.id, c.nombre)}
+                      className="flex w-full items-center gap-2 rounded-xl border border-transparent bg-white px-2.5 py-2 text-left text-sm shadow-sm transition hover:border-emerald-200 hover:bg-emerald-50/60"
+                    >
+                      <GripVertical className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                      <span className="truncate font-medium text-slate-800">{c.nombre}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <p className="mt-1 shrink-0 px-1 text-[10px] text-muted-foreground">
             Arrastra o toca para agregar
           </p>
         </div>
@@ -268,7 +270,7 @@ function ConceptosDualList({
       <div className="space-y-1.5">
         <Label>Conceptos del gasto</Label>
         <div
-          className="min-h-[180px] rounded-2xl border border-emerald-200 bg-emerald-50/40 p-2"
+          className="flex h-[200px] flex-col overflow-hidden rounded-2xl border border-emerald-200 bg-emerald-50/40 p-2"
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => {
             e.preventDefault();
@@ -277,45 +279,47 @@ function ConceptosDualList({
             if (id && nombre) addConcepto(id, nombre);
           }}
         >
-          {seleccionados.length === 0 ? (
-            <p className="px-2 py-6 text-center text-xs text-muted-foreground">
-              Suelta aquí uno o más conceptos
-            </p>
-          ) : (
-            <ul className="max-h-56 space-y-1.5 overflow-y-auto">
-              {seleccionados.map((l) => (
-                <li
-                  key={l.key}
-                  draggable
-                  onDragStart={(e) => {
-                    e.dataTransfer.setData("text/cc-remove-key", l.key);
-                    e.dataTransfer.effectAllowed = "move";
-                  }}
-                  className="flex items-center gap-1.5 rounded-xl border border-emerald-100 bg-white px-2 py-1.5 shadow-sm"
-                >
-                  <GripVertical className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                  <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-800">{l.nombre}</span>
-                  <Input
-                    inputMode="decimal"
-                    placeholder="0.00"
-                    value={l.monto}
-                    onChange={(e) => setMonto(l.key, e.target.value)}
-                    onClick={(e) => e.stopPropagation()}
-                    onMouseDown={(e) => e.stopPropagation()}
-                    className="h-7 w-[3.75rem] shrink-0 rounded-md px-1.5 text-right text-xs tabular-nums"
-                  />
-                  <button
-                    type="button"
-                    className="shrink-0 rounded-lg p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-700"
-                    onClick={() => removeConcepto(l.key)}
-                    aria-label={`Quitar ${l.nombre}`}
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {seleccionados.length === 0 ? (
+              <p className="px-2 py-6 text-center text-xs text-muted-foreground">
+                Suelta aquí uno o más conceptos
+              </p>
+            ) : (
+              <ul className="space-y-1.5">
+                {seleccionados.map((l) => (
+                  <li
+                    key={l.key}
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData("text/cc-remove-key", l.key);
+                      e.dataTransfer.effectAllowed = "move";
+                    }}
+                    className="flex items-center gap-1.5 rounded-xl border border-emerald-100 bg-white px-2 py-1.5 shadow-sm"
                   >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
+                    <GripVertical className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                    <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-800">{l.nombre}</span>
+                    <Input
+                      inputMode="decimal"
+                      placeholder="0.00"
+                      value={l.monto}
+                      onChange={(e) => setMonto(l.key, e.target.value)}
+                      onClick={(e) => e.stopPropagation()}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      className="h-7 w-[3.75rem] shrink-0 rounded-md px-1.5 text-right text-xs tabular-nums"
+                    />
+                    <button
+                      type="button"
+                      className="shrink-0 rounded-lg p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-700"
+                      onClick={() => removeConcepto(l.key)}
+                      aria-label={`Quitar ${l.nombre}`}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
       </div>
     </div>
