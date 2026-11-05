@@ -669,12 +669,15 @@ export default function CajaChica() {
         ? items.map((it, idx) => {
             const nombre = String(it.concepto || "").trim() || CAJA_CHICA_CONCEPTO_OTROS;
             const esOtros = !it.concepto_id && nombre.toLowerCase() === "otros";
+            const match = conceptosActivos.find(
+              (c) => c.nombre.trim().toLowerCase() === nombre.toLowerCase(),
+            );
             return {
               key: `${m.id}-${idx}`,
               conceptoId: esOtros
                 ? CAJA_CHICA_CONCEPTO_OTROS_ID
-                : (it.concepto_id ?? CAJA_CHICA_CONCEPTO_OTROS_ID),
-              nombre,
+                : (it.concepto_id ?? match?.id ?? CAJA_CHICA_CONCEPTO_OTROS_ID),
+              nombre: match?.nombre ?? nombre,
               monto: String(it.monto ?? ""),
             };
           })
@@ -1071,50 +1074,6 @@ export default function CajaChica() {
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
-            {isEdit ? (
-              <div className="space-y-1.5">
-                <Label>Tipo</Label>
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={form.tipo === "EGRESO" ? "default" : "outline"}
-                    className={cn("rounded-xl", form.tipo === "EGRESO" && "bg-rose-600 hover:bg-rose-700")}
-                    onClick={() => setForm((p) => ({
-                      ...p,
-                      tipo: "EGRESO",
-                      lineasConcepto: p.lineasConcepto.length > 0
-                        ? p.lineasConcepto
-                        : (p.monto
-                            ? [{
-                                key: `edit-${Date.now()}`,
-                                conceptoId: CAJA_CHICA_CONCEPTO_OTROS_ID,
-                                nombre: CAJA_CHICA_CONCEPTO_OTROS,
-                                monto: p.monto,
-                              }]
-                            : []),
-                    }))}
-                  >
-                    Egreso
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={form.tipo === "REPOSICION" ? "default" : "outline"}
-                    className={cn("rounded-xl", form.tipo === "REPOSICION" && "bg-emerald-600 hover:bg-emerald-700")}
-                    onClick={() => setForm((p) => ({
-                      ...p,
-                      tipo: "REPOSICION",
-                      monto: p.lineasConcepto[0]?.monto || p.monto,
-                      lineasConcepto: [],
-                      observacion: "",
-                    }))}
-                  >
-                    Reposición
-                  </Button>
-                </div>
-              </div>
-            ) : null}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="cc-fecha">Fecha</Label>
@@ -1168,11 +1127,7 @@ export default function CajaChica() {
                 <p className={cn("text-xs", gastoExcedeSaldo ? "font-medium text-rose-700" : "text-muted-foreground")}>
                   {gastoExcedeSaldo
                     ? `Excede el saldo (disponible: ${money(saldoDisponibleParaEgreso)})`
-                    : `Saldo disponible: ${money(saldoDisponibleParaEgreso)}${
-                        form.totalEditado && Math.abs(sumaLineas - (Number.isFinite(montoFormulario) ? montoFormulario : 0)) > 0.009
-                          ? ` · Suma conceptos: ${money(sumaLineas)}`
-                          : ""
-                      }`}
+                    : `Saldo disponible: ${money(saldoDisponibleParaEgreso)}`}
                 </p>
                 <ConceptosGastoPicker
                   conceptos={conceptosActivos}
