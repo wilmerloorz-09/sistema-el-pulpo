@@ -1067,7 +1067,7 @@ export default function CajaChica() {
                 </div>
               </div>
             ) : null}
-            <div className={cn("grid gap-3", form.tipo === "REPOSICION" ? "grid-cols-2" : "grid-cols-1")}>
+            <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="cc-fecha">Fecha</Label>
                 <Input
@@ -1094,10 +1094,52 @@ export default function CajaChica() {
                     className="rounded-xl"
                   />
                 </div>
-              ) : null}
+              ) : (
+                <div className="space-y-1.5">
+                  <Label htmlFor="cc-total">Total gasto</Label>
+                  <div className="flex items-center gap-1.5">
+                    <Input
+                      id="cc-total"
+                      inputMode="decimal"
+                      placeholder="0.00"
+                      value={form.monto}
+                      onChange={(e) => setForm((p) => ({
+                        ...p,
+                        monto: e.target.value,
+                        totalEditado: true,
+                      }))}
+                      className={cn(
+                        "rounded-xl font-semibold tabular-nums",
+                        gastoExcedeSaldo && "border-rose-400 focus-visible:ring-rose-300",
+                      )}
+                    />
+                    <button
+                      type="button"
+                      className="h-10 shrink-0 rounded-xl border border-slate-200 bg-white px-2 text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
+                      onClick={() => setForm((p) => ({
+                        ...p,
+                        totalEditado: false,
+                        monto: formatMontoCampo(sumarLineasConcepto(p.lineasConcepto)),
+                      }))}
+                      title="Usar la suma de los conceptos"
+                    >
+                      =suma
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
             {form.tipo === "EGRESO" ? (
               <>
+                <p className={cn("text-xs", gastoExcedeSaldo ? "font-medium text-rose-700" : "text-muted-foreground")}>
+                  {gastoExcedeSaldo
+                    ? `Excede el saldo (disponible: ${money(saldoDisponibleParaEgreso)})`
+                    : `Saldo disponible: ${money(saldoDisponibleParaEgreso)}${
+                        form.totalEditado && Math.abs(sumaLineas - (Number.isFinite(montoFormulario) ? montoFormulario : 0)) > 0.009
+                          ? ` · Suma conceptos: ${money(sumaLineas)}`
+                          : ""
+                      }`}
+                </p>
                 <ConceptosDualList
                   conceptos={conceptosActivos}
                   seleccionados={form.lineasConcepto}
@@ -1110,51 +1152,6 @@ export default function CajaChica() {
                     };
                   })}
                 />
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5">
-                  <div className="flex items-end gap-3">
-                    <div className="min-w-0 flex-1 space-y-1">
-                      <Label htmlFor="cc-total" className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                        Total gasto
-                      </Label>
-                      <Input
-                        id="cc-total"
-                        inputMode="decimal"
-                        placeholder="0.00"
-                        value={form.monto}
-                        onChange={(e) => setForm((p) => ({
-                          ...p,
-                          monto: e.target.value,
-                          totalEditado: true,
-                        }))}
-                        className={cn(
-                          "h-10 rounded-xl text-base font-black tabular-nums",
-                          gastoExcedeSaldo && "border-rose-400 focus-visible:ring-rose-300",
-                        )}
-                      />
-                    </div>
-                    <button
-                      type="button"
-                      className="shrink-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-                      onClick={() => setForm((p) => ({
-                        ...p,
-                        totalEditado: false,
-                        monto: formatMontoCampo(sumarLineasConcepto(p.lineasConcepto)),
-                      }))}
-                      title="Usar la suma de los conceptos"
-                    >
-                      = suma
-                    </button>
-                  </div>
-                  <p className={cn("mt-1.5 text-xs", gastoExcedeSaldo ? "font-medium text-rose-700" : "text-muted-foreground")}>
-                    {gastoExcedeSaldo
-                      ? `Excede el saldo (disponible: ${money(saldoDisponibleParaEgreso)})`
-                      : `Saldo disponible: ${money(saldoDisponibleParaEgreso)}${
-                          form.totalEditado && Math.abs(sumaLineas - (Number.isFinite(montoFormulario) ? montoFormulario : 0)) > 0.009
-                            ? ` · Suma conceptos: ${money(sumaLineas)}`
-                            : ""
-                        }`}
-                  </p>
-                </div>
               </>
             ) : (
               <div className="space-y-1.5">
