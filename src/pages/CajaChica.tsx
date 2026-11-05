@@ -1145,35 +1145,21 @@ export default function CajaChica() {
               ) : (
                 <div className="space-y-1.5">
                   <Label htmlFor="cc-total">Total gasto</Label>
-                  <div className="flex items-center gap-1.5">
-                    <Input
-                      id="cc-total"
-                      inputMode="decimal"
-                      placeholder="0.00"
-                      value={form.monto}
-                      onChange={(e) => setForm((p) => ({
-                        ...p,
-                        monto: e.target.value,
-                        totalEditado: true,
-                      }))}
-                      className={cn(
-                        "rounded-xl font-semibold tabular-nums",
-                        gastoExcedeSaldo && "border-rose-400 focus-visible:ring-rose-300",
-                      )}
-                    />
-                    <button
-                      type="button"
-                      className="h-10 shrink-0 rounded-xl border border-slate-200 bg-white px-2 text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
-                      onClick={() => setForm((p) => ({
-                        ...p,
-                        totalEditado: false,
-                        monto: formatMontoCampo(sumarLineasConcepto(p.lineasConcepto)),
-                      }))}
-                      title="Usar la suma de los conceptos"
-                    >
-                      =suma
-                    </button>
-                  </div>
+                  <Input
+                    id="cc-total"
+                    inputMode="decimal"
+                    placeholder="0.00"
+                    value={form.monto}
+                    onChange={(e) => setForm((p) => ({
+                      ...p,
+                      monto: e.target.value,
+                      totalEditado: true,
+                    }))}
+                    className={cn(
+                      "rounded-xl font-semibold tabular-nums",
+                      gastoExcedeSaldo && "border-rose-400 focus-visible:ring-rose-300",
+                    )}
+                  />
                 </div>
               )}
             </div>
