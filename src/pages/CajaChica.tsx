@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Camera, Check, ChevronsUpDown, Lock, Pencil, PiggyBank, PlusCircle, RefreshCw, Trash2, Wallet } from "lucide-react";
+import { Camera, GripVertical, Lock, Pencil, PiggyBank, PlusCircle, RefreshCw, Trash2, Wallet, X } from "lucide-react";
 import { toast } from "sonner";
 import { useBranch } from "@/contexts/BranchContext";
 import { canManage, canOperate, canView } from "@/lib/permissions";
@@ -35,14 +35,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
-import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -50,7 +42,6 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -88,12 +79,19 @@ const nombreCorto = (nombre: string | null | undefined) => {
   return `${parts[0]} ${parts[parts.length - 1]}`;
 };
 
+type ConceptoLinea = {
+  key: string;
+  conceptoId: string;
+  nombre: string;
+  monto: string;
+};
+
 type FormState = {
   movimientoId: string | null;
   tipo: CajaChicaTipo;
+  /** Solo reposición: un monto único. En egreso se usan lineasConcepto. */
   monto: string;
-  conceptoId: string | null;
-  conceptoLabel: string;
+  lineasConcepto: ConceptoLinea[];
   observacion: string;
   archivo: File | null;
   previewUrl: string | null;
@@ -110,8 +108,7 @@ const emptyForm = (tipo: CajaChicaTipo): FormState => ({
   movimientoId: null,
   tipo,
   monto: "",
-  conceptoId: null,
-  conceptoLabel: tipo === "REPOSICION" ? CAJA_CHICA_CONCEPTO_REPOSICION : "",
+  lineasConcepto: [],
   observacion: "",
   archivo: null,
   previewUrl: null,
@@ -122,81 +119,144 @@ const emptyForm = (tipo: CajaChicaTipo): FormState => ({
   originalMonto: null,
 });
 
-function ConceptoCombobox({
+const parseMonto = (raw: string) => Number(String(raw).replace(",", "."));
+
+function ConceptosDualList({
   conceptos,
-  valueId,
-  valueLabel,
+  seleccionados,
   onChange,
-  disabled,
 }: {
   conceptos: CajaChicaConcepto[];
-  valueId: string | null;
-  valueLabel: string;
-  onChange: (id: string | null, label: string) => void;
-  disabled?: boolean;
+  seleccionados: ConceptoLinea[];
+  onChange: (next: ConceptoLinea[]) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const selectedLabel =
-    valueId === CAJA_CHICA_CONCEPTO_OTROS_ID
-      ? CAJA_CHICA_CONCEPTO_OTROS
-      : (conceptos.find((c) => c.id === valueId)?.nombre ?? valueLabel);
+  const selectedIds = new Set(seleccionados.map((l) => l.conceptoId));
+  const disponibles: Array<{ id: string; nombre: string }> = [
+    ...conceptos
+      .filter((c) => !selectedIds.has(c.id))
+      .map((c) => ({ id: c.id, nombre: c.nombre })),
+    ...(!selectedIds.has(CAJA_CHICA_CONCEPTO_OTROS_ID)
+      ? [{ id: CAJA_CHICA_CONCEPTO_OTROS_ID, nombre: CAJA_CHICA_CONCEPTO_OTROS }]
+      : []),
+  ];
+
+  const addConcepto = (id: string, nombre: string) => {
+    if (selectedIds.has(id)) return;
+    onChange([
+      ...seleccionados,
+      { key: `${id}-${Date.now()}`, conceptoId: id, nombre, monto: "" },
+    ]);
+  };
+
+  const removeConcepto = (key: string) => {
+    onChange(seleccionados.filter((l) => l.key !== key));
+  };
+
+  const setMonto = (key: string, monto: string) => {
+    onChange(seleccionados.map((l) => (l.key === key ? { ...l, monto } : l)));
+  };
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="outline"
-          role="combobox"
-          aria-expanded={open}
-          disabled={disabled}
-          className="h-10 w-full justify-between rounded-xl font-normal"
+    <div className="grid gap-3 sm:grid-cols-2">
+      <div className="space-y-1.5">
+        <Label>Conceptos disponibles</Label>
+        <div
+          className="min-h-[180px] rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 p-2"
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            e.preventDefault();
+            const key = e.dataTransfer.getData("text/cc-remove-key");
+            if (key) removeConcepto(key);
+          }}
         >
-          <span className={cn("truncate", !selectedLabel && "text-muted-foreground")}>
-            {selectedLabel || "Buscar concepto..."}
-          </span>
-          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-[var(--radix-popover-trigger-width)] rounded-xl p-0" align="start">
-        <Command>
-          <CommandInput placeholder="Escribir para buscar..." />
-          <CommandList>
-            <CommandEmpty>Sin resultados</CommandEmpty>
-            <CommandGroup>
-              {conceptos.map((c) => (
-                <CommandItem
-                  key={c.id}
-                  value={c.nombre}
-                  onSelect={() => {
-                    onChange(c.id, c.nombre);
-                    setOpen(false);
-                  }}
-                >
-                  <Check className={cn("mr-2 h-4 w-4", valueId === c.id ? "opacity-100" : "opacity-0")} />
-                  {c.nombre}
-                </CommandItem>
+          {disponibles.length === 0 ? (
+            <p className="px-2 py-6 text-center text-xs text-muted-foreground">
+              Todos los conceptos ya están seleccionados
+            </p>
+          ) : (
+            <ul className="max-h-56 space-y-1 overflow-y-auto">
+              {disponibles.map((c) => (
+                <li key={c.id}>
+                  <button
+                    type="button"
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData("text/cc-concepto-id", c.id);
+                      e.dataTransfer.setData("text/cc-concepto-nombre", c.nombre);
+                      e.dataTransfer.effectAllowed = "move";
+                    }}
+                    onClick={() => addConcepto(c.id, c.nombre)}
+                    className="flex w-full items-center gap-2 rounded-xl border border-transparent bg-white px-2.5 py-2 text-left text-sm shadow-sm transition hover:border-emerald-200 hover:bg-emerald-50/60"
+                  >
+                    <GripVertical className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                    <span className="truncate font-medium text-slate-800">{c.nombre}</span>
+                  </button>
+                </li>
               ))}
-              <CommandItem
-                value={CAJA_CHICA_CONCEPTO_OTROS}
-                onSelect={() => {
-                  onChange(CAJA_CHICA_CONCEPTO_OTROS_ID, CAJA_CHICA_CONCEPTO_OTROS);
-                  setOpen(false);
-                }}
-              >
-                <Check
-                  className={cn(
-                    "mr-2 h-4 w-4",
-                    valueId === CAJA_CHICA_CONCEPTO_OTROS_ID ? "opacity-100" : "opacity-0",
-                  )}
-                />
-                {CAJA_CHICA_CONCEPTO_OTROS}
-              </CommandItem>
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
+            </ul>
+          )}
+          <p className="mt-2 px-1 text-[10px] text-muted-foreground">
+            Arrastra o toca para agregar
+          </p>
+        </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label>Conceptos del gasto</Label>
+        <div
+          className="min-h-[180px] rounded-2xl border border-emerald-200 bg-emerald-50/40 p-2"
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            e.preventDefault();
+            const id = e.dataTransfer.getData("text/cc-concepto-id");
+            const nombre = e.dataTransfer.getData("text/cc-concepto-nombre");
+            if (id && nombre) addConcepto(id, nombre);
+          }}
+        >
+          {seleccionados.length === 0 ? (
+            <p className="px-2 py-6 text-center text-xs text-muted-foreground">
+              Suelta aquí uno o más conceptos
+            </p>
+          ) : (
+            <ul className="max-h-56 space-y-2 overflow-y-auto">
+              {seleccionados.map((l) => (
+                <li
+                  key={l.key}
+                  draggable
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData("text/cc-remove-key", l.key);
+                    e.dataTransfer.effectAllowed = "move";
+                  }}
+                  className="rounded-xl border border-emerald-100 bg-white p-2 shadow-sm"
+                >
+                  <div className="mb-1.5 flex items-center justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-1.5">
+                      <GripVertical className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                      <span className="truncate text-sm font-semibold text-slate-800">{l.nombre}</span>
+                    </div>
+                    <button
+                      type="button"
+                      className="rounded-lg p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-700"
+                      onClick={() => removeConcepto(l.key)}
+                      aria-label={`Quitar ${l.nombre}`}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                  <Input
+                    inputMode="decimal"
+                    placeholder="Monto"
+                    value={l.monto}
+                    onChange={(e) => setMonto(l.key, e.target.value)}
+                    className="h-8 rounded-lg text-sm"
+                  />
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -271,7 +331,12 @@ export default function CajaChica() {
     return Math.max(0, disponible);
   }, [saldoActual, form.originalTipo, form.originalMonto, form.tipo]);
 
-  const montoFormulario = Number(String(form.monto).replace(",", "."));
+  const montoFormulario = form.tipo === "EGRESO"
+    ? form.lineasConcepto.reduce((sum, linea) => {
+        const n = parseMonto(linea.monto);
+        return sum + (Number.isFinite(n) && n > 0 ? n : 0);
+      }, 0)
+    : parseMonto(form.monto);
   const gastoExcedeSaldo =
     form.tipo === "EGRESO"
     && Number.isFinite(montoFormulario)
@@ -298,88 +363,143 @@ export default function CajaChica() {
       if (!activeBranchId || !estadoQuery.data?.sucursal_efectiva_id) {
         throw new Error("Selecciona una sucursal activa");
       }
-      const monto = Number(String(form.monto).replace(",", "."));
-      if (!Number.isFinite(monto) || monto <= 0) {
-        throw new Error("Ingresa un monto válido");
-      }
-
-      let concepto = form.conceptoLabel.trim();
-      let conceptoId: string | null = form.conceptoId;
-
-      if (form.tipo === "REPOSICION") {
-        concepto = CAJA_CHICA_CONCEPTO_REPOSICION;
-        conceptoId = null;
-      } else {
-        if (!form.conceptoId && !concepto) {
-          throw new Error("Selecciona un concepto");
-        }
-        if (form.conceptoId === CAJA_CHICA_CONCEPTO_OTROS_ID) {
-          concepto = CAJA_CHICA_CONCEPTO_OTROS;
-          conceptoId = null;
-        } else if (form.conceptoId) {
-          const found = conceptosActivos.find((c) => c.id === form.conceptoId);
-          concepto = found?.nombre ?? concepto;
-          if (!found && form.movimientoId) {
-            // Edición conservando concepto histórico
-            conceptoId = form.conceptoId;
-          } else if (!found) {
-            throw new Error("Selecciona un concepto válido");
-          }
-        } else {
-          throw new Error("Selecciona un concepto");
-        }
-      }
-
-      if (form.tipo === "EGRESO") {
-        const disponible = saldoDisponibleParaEgreso;
-        if (disponible <= 0) {
-          throw new Error("No hay saldo disponible para registrar un gasto");
-        }
-        if (monto > disponible) {
-          throw new Error(`El gasto no puede ser mayor al saldo (disponible: ${money(disponible)})`);
-        }
-      }
-
       if (!form.creadoEn) {
         throw new Error("Ingresa la fecha del movimiento");
       }
       const fechaMovimiento = form.creadoEn;
+      const sucursalEfectivaId = estadoQuery.data.sucursal_efectiva_id;
+      const observacion = form.tipo === "EGRESO" ? form.observacion.trim() || undefined : undefined;
 
-      if (!form.movimientoId) {
-        return registrarMovimientoCajaChica({
-          sucursalId: activeBranchId,
-          sucursalEfectivaId: estadoQuery.data.sucursal_efectiva_id,
-          tipo: form.tipo,
+      if (form.tipo === "REPOSICION") {
+        const monto = parseMonto(form.monto);
+        if (!Number.isFinite(monto) || monto <= 0) {
+          throw new Error("Ingresa un monto válido");
+        }
+        if (!form.movimientoId) {
+          return registrarMovimientoCajaChica({
+            sucursalId: activeBranchId,
+            sucursalEfectivaId,
+            tipo: "REPOSICION",
+            monto,
+            concepto: CAJA_CHICA_CONCEPTO_REPOSICION,
+            conceptoId: null,
+            fecha: fechaMovimiento,
+            archivo: form.archivo,
+          });
+        }
+        const comprobante = form.archivo
+          ? "replace"
+          : form.quitarFoto
+            ? "clear"
+            : "keep";
+        return actualizarMovimientoCajaChica({
+          movimientoId: form.movimientoId,
+          sucursalEfectivaId,
+          tipo: "REPOSICION",
           monto,
-          concepto,
-          conceptoId,
-          observacion: form.tipo === "EGRESO" ? form.observacion.trim() || undefined : undefined,
+          concepto: CAJA_CHICA_CONCEPTO_REPOSICION,
+          conceptoId: null,
           fecha: fechaMovimiento,
+          comprobante,
           archivo: form.archivo,
         });
       }
 
+      if (form.lineasConcepto.length === 0) {
+        throw new Error("Arrastra al menos un concepto al gasto");
+      }
+
+      const lineas = form.lineasConcepto.map((linea) => {
+        const monto = parseMonto(linea.monto);
+        if (!Number.isFinite(monto) || monto <= 0) {
+          throw new Error(`Ingresa un monto válido para “${linea.nombre}”`);
+        }
+        const isOtros = linea.conceptoId === CAJA_CHICA_CONCEPTO_OTROS_ID;
+        const found = conceptosActivos.find((c) => c.id === linea.conceptoId);
+        if (!isOtros && !found && !form.movimientoId) {
+          throw new Error(`Concepto no válido: ${linea.nombre}`);
+        }
+        return {
+          monto,
+          concepto: isOtros ? CAJA_CHICA_CONCEPTO_OTROS : (found?.nombre ?? linea.nombre),
+          conceptoId: isOtros ? null : linea.conceptoId,
+        };
+      });
+
+      const total = lineas.reduce((sum, l) => sum + l.monto, 0);
+      const disponible = saldoDisponibleParaEgreso;
+      if (disponible <= 0) {
+        throw new Error("No hay saldo disponible para registrar un gasto");
+      }
+      if (total > disponible) {
+        throw new Error(`El gasto no puede ser mayor al saldo (disponible: ${money(disponible)})`);
+      }
+
+      // Alta: un movimiento por concepto.
+      if (!form.movimientoId) {
+        for (let i = 0; i < lineas.length; i += 1) {
+          const linea = lineas[i];
+          await registrarMovimientoCajaChica({
+            sucursalId: activeBranchId,
+            sucursalEfectivaId,
+            tipo: "EGRESO",
+            monto: linea.monto,
+            concepto: linea.concepto,
+            conceptoId: linea.conceptoId,
+            observacion,
+            fecha: fechaMovimiento,
+            // Misma foto en todas las líneas del registro.
+            archivo: form.archivo,
+          });
+        }
+        return { count: lineas.length };
+      }
+
+      // Edición: actualiza el movimiento actual con la 1ª línea; crea el resto.
+      const [primera, ...rest] = lineas;
       const comprobante = form.archivo
         ? "replace"
         : form.quitarFoto
           ? "clear"
           : "keep";
-
-      return actualizarMovimientoCajaChica({
+      await actualizarMovimientoCajaChica({
         movimientoId: form.movimientoId,
-        sucursalEfectivaId: estadoQuery.data.sucursal_efectiva_id,
-        tipo: form.tipo,
-        monto,
-        concepto,
-        conceptoId,
-        observacion: form.tipo === "EGRESO" ? form.observacion.trim() || undefined : undefined,
+        sucursalEfectivaId,
+        tipo: "EGRESO",
+        monto: primera.monto,
+        concepto: primera.concepto,
+        conceptoId: primera.conceptoId,
+        observacion,
         fecha: fechaMovimiento,
         comprobante,
         archivo: form.archivo,
       });
+      for (const linea of rest) {
+        await registrarMovimientoCajaChica({
+          sucursalId: activeBranchId,
+          sucursalEfectivaId,
+          tipo: "EGRESO",
+          monto: linea.monto,
+          concepto: linea.concepto,
+          conceptoId: linea.conceptoId,
+          observacion,
+          fecha: fechaMovimiento,
+          archivo: form.archivo,
+        });
+      }
+      return { count: lineas.length };
     },
-    onSuccess: async () => {
-      toast.success(form.movimientoId ? "Movimiento actualizado" : form.tipo === "EGRESO" ? "Egreso registrado" : "Reposición registrada");
+    onSuccess: async (result) => {
+      const count = result && typeof result === "object" && "count" in result
+        ? Number((result as { count?: number }).count ?? 1)
+        : 1;
+      toast.success(
+        form.movimientoId
+          ? "Movimiento actualizado"
+          : form.tipo === "EGRESO"
+            ? (count > 1 ? `${count} egresos registrados` : "Egreso registrado")
+            : "Reposición registrada",
+      );
       closeForm();
       await invalidate();
     },
@@ -447,13 +567,15 @@ export default function CajaChica() {
     setForm({
       movimientoId: m.id,
       tipo: m.tipo,
-      monto: String(m.monto),
-      conceptoId: m.tipo === "REPOSICION"
-        ? null
-        : isOtros
-          ? CAJA_CHICA_CONCEPTO_OTROS_ID
-          : (m.concepto_id ?? null),
-      conceptoLabel: m.tipo === "REPOSICION" ? CAJA_CHICA_CONCEPTO_REPOSICION : m.concepto,
+      monto: m.tipo === "REPOSICION" ? String(m.monto) : "",
+      lineasConcepto: m.tipo === "EGRESO"
+        ? [{
+            key: m.id,
+            conceptoId: isOtros ? CAJA_CHICA_CONCEPTO_OTROS_ID : (m.concepto_id ?? CAJA_CHICA_CONCEPTO_OTROS_ID),
+            nombre: m.concepto,
+            monto: String(m.monto),
+          }]
+        : [],
       observacion: m.observacion ?? "",
       archivo: null,
       previewUrl: null,
@@ -830,7 +952,7 @@ export default function CajaChica() {
           else setDialogOpen(true);
         }}
       >
-        <DialogContent className="max-w-md rounded-[28px]">
+        <DialogContent className={cn("rounded-[28px]", form.tipo === "EGRESO" ? "max-w-2xl" : "max-w-md")}>
           <DialogHeader>
             <DialogTitle>
               {isEdit
@@ -853,8 +975,16 @@ export default function CajaChica() {
                     onClick={() => setForm((p) => ({
                       ...p,
                       tipo: "EGRESO",
-                      conceptoId: null,
-                      conceptoLabel: "",
+                      lineasConcepto: p.lineasConcepto.length > 0
+                        ? p.lineasConcepto
+                        : (p.monto
+                            ? [{
+                                key: `edit-${Date.now()}`,
+                                conceptoId: CAJA_CHICA_CONCEPTO_OTROS_ID,
+                                nombre: CAJA_CHICA_CONCEPTO_OTROS,
+                                monto: p.monto,
+                              }]
+                            : []),
                     }))}
                   >
                     Egreso
@@ -867,8 +997,8 @@ export default function CajaChica() {
                     onClick={() => setForm((p) => ({
                       ...p,
                       tipo: "REPOSICION",
-                      conceptoId: null,
-                      conceptoLabel: CAJA_CHICA_CONCEPTO_REPOSICION,
+                      monto: p.lineasConcepto[0]?.monto || p.monto,
+                      lineasConcepto: [],
                       observacion: "",
                     }))}
                   >
@@ -877,7 +1007,7 @@ export default function CajaChica() {
                 </div>
               </div>
             ) : null}
-            <div className="grid grid-cols-2 gap-3">
+            <div className={cn("grid gap-3", form.tipo === "REPOSICION" ? "grid-cols-2" : "grid-cols-1")}>
               <div className="space-y-1.5">
                 <Label htmlFor="cc-fecha">Fecha</Label>
                 <Input
@@ -892,38 +1022,47 @@ export default function CajaChica() {
                   className="rounded-xl"
                 />
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="cc-monto">Monto</Label>
-                <Input
-                  id="cc-monto"
-                  inputMode="decimal"
-                  placeholder="0.00"
-                  value={form.monto}
-                  onChange={(e) => setForm((p) => ({ ...p, monto: e.target.value }))}
-                  className={cn("rounded-xl", gastoExcedeSaldo && "border-rose-400 focus-visible:ring-rose-300")}
-                />
-              </div>
+              {form.tipo === "REPOSICION" ? (
+                <div className="space-y-1.5">
+                  <Label htmlFor="cc-monto">Monto</Label>
+                  <Input
+                    id="cc-monto"
+                    inputMode="decimal"
+                    placeholder="0.00"
+                    value={form.monto}
+                    onChange={(e) => setForm((p) => ({ ...p, monto: e.target.value }))}
+                    className="rounded-xl"
+                  />
+                </div>
+              ) : null}
             </div>
             {form.tipo === "EGRESO" ? (
-              <p className={cn("text-xs", gastoExcedeSaldo ? "font-medium text-rose-700" : "text-muted-foreground")}>
-                {gastoExcedeSaldo
-                  ? `El gasto no puede ser mayor al saldo (disponible: ${money(saldoDisponibleParaEgreso)}).`
-                  : `Saldo disponible: ${money(saldoDisponibleParaEgreso)}`}
-              </p>
-            ) : null}
-            <div className="space-y-1.5">
-              <Label>Concepto</Label>
-              {form.tipo === "REPOSICION" ? (
-                <Input value={CAJA_CHICA_CONCEPTO_REPOSICION} disabled className="rounded-xl bg-slate-50" />
-              ) : (
-                <ConceptoCombobox
+              <>
+                <ConceptosDualList
                   conceptos={conceptosActivos}
-                  valueId={form.conceptoId}
-                  valueLabel={form.conceptoLabel}
-                  onChange={(id, label) => setForm((p) => ({ ...p, conceptoId: id, conceptoLabel: label }))}
+                  seleccionados={form.lineasConcepto}
+                  onChange={(lineasConcepto) => setForm((p) => ({ ...p, lineasConcepto }))}
                 />
-              )}
-            </div>
+                <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Total gasto</p>
+                    <p className={cn("text-lg font-black tabular-nums", gastoExcedeSaldo ? "text-rose-700" : "text-slate-900")}>
+                      {money(montoFormulario)}
+                    </p>
+                  </div>
+                  <p className={cn("text-xs", gastoExcedeSaldo ? "font-medium text-rose-700" : "text-muted-foreground")}>
+                    {gastoExcedeSaldo
+                      ? `Excede el saldo (disponible: ${money(saldoDisponibleParaEgreso)})`
+                      : `Saldo disponible: ${money(saldoDisponibleParaEgreso)}`}
+                  </p>
+                </div>
+              </>
+            ) : (
+              <div className="space-y-1.5">
+                <Label>Concepto</Label>
+                <Input value={CAJA_CHICA_CONCEPTO_REPOSICION} disabled className="rounded-xl bg-slate-50" />
+              </div>
+            )}
             {form.tipo === "EGRESO" ? (
               <div className="space-y-1.5">
                 <Label htmlFor="cc-obs">Observación</Label>
@@ -995,7 +1134,11 @@ export default function CajaChica() {
                 "w-full rounded-xl",
                 form.tipo === "EGRESO" ? "bg-rose-600 hover:bg-rose-700" : "bg-emerald-600 hover:bg-emerald-700",
               )}
-              disabled={saving || gastoExcedeSaldo || (form.tipo === "EGRESO" && saldoDisponibleParaEgreso <= 0)}
+              disabled={
+                saving
+                || gastoExcedeSaldo
+                || (form.tipo === "EGRESO" && (saldoDisponibleParaEgreso <= 0 || form.lineasConcepto.length === 0))
+              }
               onClick={() => guardar.mutate()}
             >
               {saving ? "Guardando…" : isEdit ? "Guardar cambios" : "Guardar"}
