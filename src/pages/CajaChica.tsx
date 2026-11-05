@@ -59,36 +59,28 @@ import { cn } from "@/lib/utils";
 const money = (value: number) =>
   new Intl.NumberFormat("es-EC", { style: "currency", currency: "USD" }).format(value);
 
-const fechaHora = (iso: string) =>
-  new Date(iso).toLocaleString("es-EC", {
+const fechaSolo = (iso: string) =>
+  new Date(iso).toLocaleDateString("es-EC", {
     timeZone: "America/Guayaquil",
     day: "2-digit",
     month: "2-digit",
-    year: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
+    year: "numeric",
   });
 
-/** Valor para input datetime-local en zona America/Guayaquil. */
-const isoToDatetimeLocal = (iso: string) => {
+/** YYYY-MM-DD en zona America/Guayaquil (input type=date). */
+const isoToDateInput = (iso: string) => {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Guayaquil",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
   }).formatToParts(new Date(iso));
-  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "00";
-  return `${get("year")}-${get("month")}-${get("day")}T${get("hour")}:${get("minute")}`;
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "01";
+  return `${get("year")}-${get("month")}-${get("day")}`;
 };
 
-/** Interpreta datetime-local como hora de Ecuador (UTC-5). */
-const datetimeLocalToIso = (value: string) => {
-  const normalized = value.length === 16 ? `${value}:00` : value;
-  return new Date(`${normalized}-05:00`).toISOString();
-};
+/** Fecha local Ecuador a mediodía para evitar cambio de día por zona horaria. */
+const dateInputToIso = (value: string) => new Date(`${value}T12:00:00-05:00`).toISOString();
 
 const nombreCorto = (nombre: string | null | undefined) => {
   const parts = String(nombre ?? "").trim().split(/\s+/).filter(Boolean);
@@ -697,7 +689,7 @@ export default function CajaChica() {
                           <td className="px-1.5 py-2 align-middle sm:px-2">
                             <div className="flex items-baseline justify-between gap-2">
                               <span className="whitespace-nowrap text-[11px] leading-tight text-muted-foreground">
-                                {fechaHora(m.creado_en)}
+                                {fechaSolo(m.creado_en)}
                               </span>
                               <span
                                 className={cn(
@@ -890,12 +882,12 @@ export default function CajaChica() {
                 <Label htmlFor="cc-fecha">Fecha</Label>
                 <Input
                   id="cc-fecha"
-                  type="datetime-local"
-                  value={isoToDatetimeLocal(form.creadoEn)}
+                  type="date"
+                  value={isoToDateInput(form.creadoEn)}
                   onChange={(e) => {
                     const next = e.target.value;
                     if (!next) return;
-                    setForm((p) => ({ ...p, creadoEn: datetimeLocalToIso(next) }));
+                    setForm((p) => ({ ...p, creadoEn: dateInputToIso(next) }));
                   }}
                   className="rounded-xl"
                 />
