@@ -221,7 +221,7 @@ function ConceptosDualList({
   };
 
   return (
-    <div className="grid gap-3 sm:grid-cols-2">
+    <div className="grid gap-3 sm:grid-cols-[minmax(0,0.85fr)_minmax(0,1.35fr)]">
       <div className="space-y-1.5">
         <Label>Conceptos disponibles</Label>
         <div
