@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Camera, GripVertical, Lock, Pencil, PiggyBank, PlusCircle, RefreshCw, Trash2, Wallet, X } from "lucide-react";
+import { Camera, Check, ChevronsUpDown, Lock, Pencil, PiggyBank, PlusCircle, RefreshCw, Trash2, Wallet, X } from "lucide-react";
 import { toast } from "sonner";
 import { useBranch } from "@/contexts/BranchContext";
 import { canManage, canOperate, canView } from "@/lib/permissions";
@@ -35,6 +35,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -42,6 +50,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -185,31 +194,75 @@ function repartirTotalEnLineas(
   return result;
 }
 
-function ConceptosDualList({
+function frecuenciaConceptosDesdeMovimientos(movimientos: CajaChicaMovimiento[] | undefined) {
+  const freq = new Map<string, number>();
+  const bump = (key: string) => {
+    if (!key) return;
+    freq.set(key, (freq.get(key) ?? 0) + 1);
+  };
+  for (const m of movimientos ?? []) {
+    if (m.tipo !== "EGRESO") continue;
+    if (Array.isArray(m.items) && m.items.length > 0) {
+      for (const it of m.items) {
+        const id = it.concepto_id ? String(it.concepto_id) : null;
+        if (id) bump(`id:${id}`);
+        else bump(`nombre:${String(it.concepto ?? "").trim().toLowerCase()}`);
+      }
+      continue;
+    }
+    if (m.concepto_id) bump(`id:${m.concepto_id}`);
+    else bump(`nombre:${String(m.concepto ?? "").trim().toLowerCase()}`);
+  }
+  return freq;
+}
+
+function ConceptosGastoPicker({
   conceptos,
+  frecuencia,
   seleccionados,
   onChange,
 }: {
   conceptos: CajaChicaConcepto[];
+  frecuencia: Map<string, number>;
   seleccionados: ConceptoLinea[];
   onChange: (next: ConceptoLinea[]) => void;
 }) {
-  const selectedIds = new Set(seleccionados.map((l) => l.conceptoId));
-  const disponibles: Array<{ id: string; nombre: string }> = [
-    ...conceptos
+  const [open, setOpen] = useState(false);
+
+  const disponibles = useMemo(() => {
+    const selectedIds = new Set(seleccionados.map((l) => l.conceptoId));
+    const score = (id: string, nombre: string) => {
+      if (id === CAJA_CHICA_CONCEPTO_OTROS_ID) {
+        return frecuencia.get(`nombre:otros`) ?? 0;
+      }
+      return Math.max(
+        frecuencia.get(`id:${id}`) ?? 0,
+        frecuencia.get(`nombre:${nombre.trim().toLowerCase()}`) ?? 0,
+      );
+    };
+    const list: Array<{ id: string; nombre: string; usos: number }> = conceptos
       .filter((c) => !selectedIds.has(c.id))
-      .map((c) => ({ id: c.id, nombre: c.nombre })),
-    ...(!selectedIds.has(CAJA_CHICA_CONCEPTO_OTROS_ID)
-      ? [{ id: CAJA_CHICA_CONCEPTO_OTROS_ID, nombre: CAJA_CHICA_CONCEPTO_OTROS }]
-      : []),
-  ];
+      .map((c) => ({ id: c.id, nombre: c.nombre, usos: score(c.id, c.nombre) }));
+    if (!selectedIds.has(CAJA_CHICA_CONCEPTO_OTROS_ID)) {
+      list.push({
+        id: CAJA_CHICA_CONCEPTO_OTROS_ID,
+        nombre: CAJA_CHICA_CONCEPTO_OTROS,
+        usos: score(CAJA_CHICA_CONCEPTO_OTROS_ID, CAJA_CHICA_CONCEPTO_OTROS),
+      });
+    }
+    return list.sort((a, b) => {
+      if (b.usos !== a.usos) return b.usos - a.usos;
+      return a.nombre.localeCompare(b.nombre, "es");
+    });
+  }, [conceptos, frecuencia, seleccionados]);
 
   const addConcepto = (id: string, nombre: string) => {
-    if (selectedIds.has(id)) return;
+    if (seleccionados.some((l) => l.conceptoId === id)) return;
     onChange([
       ...seleccionados,
       { key: `${id}-${Date.now()}`, conceptoId: id, nombre, monto: "" },
     ]);
+    setOpen(false);
   };
 
   const removeConcepto = (key: string) => {
@@ -221,90 +274,76 @@ function ConceptosDualList({
   };
 
   return (
-    <div className="grid gap-3 sm:grid-cols-[minmax(0,0.85fr)_minmax(0,1.35fr)]">
+    <div className="space-y-3">
       <div className="space-y-1.5">
-        <Label>Conceptos disponibles</Label>
-        <div
-          className="flex h-[200px] flex-col overflow-hidden rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 p-2"
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => {
-            e.preventDefault();
-            const key = e.dataTransfer.getData("text/cc-remove-key");
-            if (key) removeConcepto(key);
-          }}
-        >
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            {disponibles.length === 0 ? (
-              <p className="px-2 py-6 text-center text-xs text-muted-foreground">
-                Todos los conceptos ya están seleccionados
-              </p>
-            ) : (
-              <ul className="space-y-1">
-                {disponibles.map((c) => (
-                  <li key={c.id}>
-                    <button
-                      type="button"
-                      draggable
-                      onDragStart={(e) => {
-                        e.dataTransfer.setData("text/cc-concepto-id", c.id);
-                        e.dataTransfer.setData("text/cc-concepto-nombre", c.nombre);
-                        e.dataTransfer.effectAllowed = "move";
-                      }}
-                      onClick={() => addConcepto(c.id, c.nombre)}
-                      className="flex w-full items-center gap-2 rounded-xl border border-transparent bg-white px-2.5 py-2 text-left text-sm shadow-sm transition hover:border-emerald-200 hover:bg-emerald-50/60"
+        <Label>Agregar concepto</Label>
+        <Popover open={open} onOpenChange={setOpen}>
+          <PopoverTrigger asChild>
+            <Button
+              type="button"
+              variant="outline"
+              role="combobox"
+              aria-expanded={open}
+              disabled={disponibles.length === 0}
+              className="h-10 w-full justify-between rounded-xl font-normal"
+            >
+              <span className="truncate text-muted-foreground">
+                {disponibles.length === 0
+                  ? "No hay más conceptos"
+                  : "Buscar concepto..."}
+              </span>
+              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-[var(--radix-popover-trigger-width)] rounded-xl p-0" align="start">
+            <Command>
+              <CommandInput placeholder="Escribir para buscar..." />
+              <CommandList>
+                <CommandEmpty>Sin resultados</CommandEmpty>
+                <CommandGroup>
+                  {disponibles.map((c) => (
+                    <CommandItem
+                      key={c.id}
+                      value={c.nombre}
+                      onSelect={() => addConcepto(c.id, c.nombre)}
                     >
-                      <GripVertical className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                      <span className="truncate font-medium text-slate-800">{c.nombre}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-          <p className="mt-1 shrink-0 px-1 text-[10px] text-muted-foreground">
-            Arrastra o toca para agregar
-          </p>
-        </div>
+                      <Check className="mr-2 h-4 w-4 opacity-0" />
+                      <span className="min-w-0 flex-1 truncate">{c.nombre}</span>
+                      {c.usos > 0 ? (
+                        <span className="ml-2 shrink-0 text-[10px] text-muted-foreground">
+                          {c.usos}x
+                        </span>
+                      ) : null}
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </CommandList>
+            </Command>
+          </PopoverContent>
+        </Popover>
       </div>
 
       <div className="space-y-1.5">
         <Label>Conceptos del gasto</Label>
-        <div
-          className="flex h-[200px] flex-col overflow-hidden rounded-2xl border border-emerald-200 bg-emerald-50/40 p-2"
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => {
-            e.preventDefault();
-            const id = e.dataTransfer.getData("text/cc-concepto-id");
-            const nombre = e.dataTransfer.getData("text/cc-concepto-nombre");
-            if (id && nombre) addConcepto(id, nombre);
-          }}
-        >
+        <div className="flex h-[200px] flex-col overflow-hidden rounded-2xl border border-emerald-200 bg-emerald-50/40 p-2">
           <div className="min-h-0 flex-1 overflow-y-auto">
             {seleccionados.length === 0 ? (
               <p className="px-2 py-6 text-center text-xs text-muted-foreground">
-                Suelta aquí uno o más conceptos
+                Busca y agrega uno o más conceptos
               </p>
             ) : (
               <ul className="space-y-1.5">
                 {seleccionados.map((l) => (
                   <li
                     key={l.key}
-                    draggable
-                    onDragStart={(e) => {
-                      e.dataTransfer.setData("text/cc-remove-key", l.key);
-                      e.dataTransfer.effectAllowed = "move";
-                    }}
                     className="flex items-center gap-1.5 rounded-xl border border-emerald-100 bg-white px-2 py-1.5 shadow-sm"
                   >
-                    <GripVertical className="h-3.5 w-3.5 shrink-0 text-slate-400" />
                     <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-800">{l.nombre}</span>
                     <Input
                       inputMode="decimal"
                       placeholder="0.00"
                       value={l.monto}
                       onChange={(e) => setMonto(l.key, e.target.value)}
-                      onClick={(e) => e.stopPropagation()}
-                      onMouseDown={(e) => e.stopPropagation()}
                       className="h-7 w-[3.75rem] shrink-0 rounded-md px-1.5 text-right text-xs tabular-nums"
                     />
                     <button
@@ -374,6 +413,11 @@ export default function CajaChica() {
   const conceptosActivos = useMemo(
     () => (conceptosQuery.data ?? []).filter((c) => c.activo),
     [conceptosQuery.data],
+  );
+
+  const frecuenciaConceptos = useMemo(
+    () => frecuenciaConceptosDesdeMovimientos(movimientosQuery.data),
+    [movimientosQuery.data],
   );
 
   const compartirLabel = useMemo(() => {
@@ -1016,7 +1060,7 @@ export default function CajaChica() {
           else setDialogOpen(true);
         }}
       >
-        <DialogContent className={cn("rounded-[28px]", form.tipo === "EGRESO" ? "max-w-2xl" : "max-w-md")}>
+        <DialogContent className={cn("rounded-[28px]", form.tipo === "EGRESO" ? "max-w-lg" : "max-w-md")}>
           <DialogHeader>
             <DialogTitle>
               {isEdit
@@ -1144,8 +1188,9 @@ export default function CajaChica() {
                           : ""
                       }`}
                 </p>
-                <ConceptosDualList
+                <ConceptosGastoPicker
                   conceptos={conceptosActivos}
+                  frecuencia={frecuenciaConceptos}
                   seleccionados={form.lineasConcepto}
                   onChange={(lineasConcepto) => setForm((p) => {
                     const suma = sumarLineasConcepto(lineasConcepto);
