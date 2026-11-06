@@ -54,15 +54,42 @@ describe("isDispatchFirstOrder", () => {
     expect(isDispatchFirstOrder({ order_type: "DINE_IN" }, dispatchFirstWorkflow)).toBe(true);
   });
 
-  it("allows special takeout to collect without dispatch (cobro manual)", () => {
+  it("allows special takeout with value to collect without dispatch", () => {
     expect(
-      isDispatchFirstOrder({ order_type: "TAKEOUT", is_special: true }, dispatchFirstWorkflow),
+      isDispatchFirstOrder(
+        { order_type: "TAKEOUT", is_special: true, special_total_manual: 6 },
+        dispatchFirstWorkflow,
+      ),
     ).toBe(false);
+  });
+
+  it("treats special takeout $0 as dispatch-first (autopago al despachar)", () => {
+    expect(
+      isDispatchFirstOrder(
+        { order_type: "TAKEOUT", is_special: true, special_total_manual: 0 },
+        dispatchFirstWorkflow,
+      ),
+    ).toBe(true);
+    expect(
+      isDispatchFirstOrder(
+        { order_type: "TAKEOUT", is_special: true, special_total_manual: 0 },
+        "CASH_THEN_DISPATCH",
+      ),
+    ).toBe(true);
   });
 
   it("blocks orden especial de mesa until dispatch like mesa", () => {
     expect(
       isDispatchFirstOrder({ order_type: "DINE_IN", is_special: true }, dispatchFirstWorkflow),
+    ).toBe(true);
+  });
+
+  it("treats special express like express (dispatch-first)", () => {
+    expect(
+      isDispatchFirstOrder(
+        { order_type: "EXPRESS", is_special: true, special_total_manual: 5 },
+        "CASH_THEN_DISPATCH",
+      ),
     ).toBe(true);
   });
 

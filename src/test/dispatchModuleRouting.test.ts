@@ -20,7 +20,7 @@ describe("dispatch module routing", () => {
   it("reserva para llevar y express para empaquetador cuando hay empacador habilitado", () => {
     expect(shouldReserveOrderForPacking({ order_type: "TAKEOUT" }, true)).toBe(true);
     expect(shouldReserveOrderForPacking({ order_type: "EXPRESS" }, true)).toBe(true);
-    expect(shouldReserveOrderForPacking({ order_type: "TAKEOUT", is_special: true }, true)).toBe(false);
+    expect(shouldReserveOrderForPacking({ order_type: "TAKEOUT", is_special: true }, true)).toBe(true);
     expect(shouldReserveOrderForPacking({ order_type: "TAKEOUT" }, false)).toBe(false);
   });
 
@@ -41,7 +41,7 @@ describe("dispatch module routing", () => {
     expect(orderMayAppearInPackingModule({ order_type: "TAKEOUT" }, false)).toBe(true);
     expect(orderMayAppearInPackingModule({ order_type: "DINE_IN" }, true)).toBe(true);
     expect(orderMayAppearInPackingModule({ order_type: "DINE_IN" }, false)).toBe(false);
-    expect(orderMayAppearInPackingModule({ order_type: "DINE_IN", is_special: true }, true)).toBe(false);
+    expect(orderMayAppearInPackingModule({ order_type: "DINE_IN", is_special: true }, true)).toBe(true);
     expect(orderMatchesDispatchModuleRoute({ order_type: "DINE_IN" }, "packing", true)).toBe(true);
     expect(orderMatchesDispatchModuleRoute({ order_type: "DINE_IN" }, "packing", false)).toBe(false);
   });
@@ -67,7 +67,14 @@ describe("dispatch module routing", () => {
   it("mantiene empaquetador de para llevar/express a nivel orden", () => {
     expect(orderMatchesDispatchModuleRoute({ order_type: "TAKEOUT" }, "packing", true)).toBe(true);
     expect(orderMatchesDispatchModuleRoute({ order_type: "EXPRESS" }, "packing", false)).toBe(true);
-    expect(orderMatchesDispatchModuleRoute({ order_type: "TAKEOUT", is_special: true }, "packing", true)).toBe(false);
+    expect(orderMatchesDispatchModuleRoute({ order_type: "TAKEOUT", is_special: true }, "packing", true)).toBe(true);
     expect(itemBelongsToPackingRoute({ order_type: "TAKEOUT" }, { tray_item_type: null }, true)).toBe(true);
+    expect(itemBelongsToPackingRoute({ order_type: "TAKEOUT", is_special: true }, { tray_item_type: "B" }, true)).toBe(true);
+  });
+
+  it("oculta especial para llevar de servir cuando hay empacador (mismo tratamiento que llevar)", () => {
+    expect(orderMatchesDispatchModuleRoute({ order_type: "TAKEOUT", is_special: true }, "servir", true)).toBe(false);
+    expect(orderMatchesDispatchModuleRoute({ order_type: "TAKEOUT", is_special: true }, "dispatch", true)).toBe(false);
+    expect(orderMatchesDispatchModuleRoute({ order_type: "TAKEOUT", is_special: true }, "servir", false)).toBe(true);
   });
 });

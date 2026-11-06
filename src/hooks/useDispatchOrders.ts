@@ -51,6 +51,7 @@ import {
   orderMatchesDispatchModuleRoute,
   type DispatchModuleRoute,
 } from "@/lib/dispatchModuleRouting";
+import { isDispatchFirstOrder } from "@/lib/orderFlow";
 import { resolveOrderTableName } from "@/lib/orderPresentation";
 
 async function enrichDispatchOrdersTableContext(
@@ -498,15 +499,13 @@ function groupItemsIntoDispatchCards(
   moduleRoute: DispatchModuleRoute = "dispatch",
   hasEnabledPacker = false,
 ): DispatchOrder[] {
-  const isExpressOrder = order.order_type === "EXPRESS";
   const isExtraOrder = order.order_type === "EXTRA";
   // Con envase de mesa en Empaquetador: despachable sin cobro (como DISPATCH_THEN_CASH).
   const packingTableEnvase =
     moduleRoute === "packing" && hasEnabledPacker && isTableLikeOrderType(order.order_type);
   const isDispatchFirst =
     packingTableEnvase
-    || isExpressOrder
-    || (workflowMode === "DISPATCH_THEN_CASH" && order.order_type !== "TAKEOUT");
+    || isDispatchFirstOrder(order, workflowMode ?? "CASH_THEN_DISPATCH");
 
   const mappedItems: DispatchOrderItem[] = items
     .filter((item) => {
@@ -808,8 +807,7 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
           ? ordersMerged
           : ordersMerged.filter((o) => {
               if (String(o.notes ?? "").includes("VOID_SUCCESSOR_ORDER:")) return false;
-              const isExpress = o.order_type === "EXPRESS";
-              const isDispatchFirst = isExpress || (workflowMode === "DISPATCH_THEN_CASH" && o.order_type !== "TAKEOUT");
+              const isDispatchFirst = isDispatchFirstOrder(o, workflowMode);
               if (isDispatchFirst) {
                 return o.status === "SENT_TO_KITCHEN" || o.status === "READY" || o.status === "PAID";
               }
@@ -999,9 +997,8 @@ export function useDispatchOrders(scope: DispatchView, options: UseDispatchOrder
 
       const activeOrders = ordersMerged.filter((o) => {
         if (String(o.notes ?? "").includes("VOID_SUCCESSOR_ORDER:")) return false;
-        
-        const isExpress = o.order_type === "EXPRESS";
-        const isDispatchFirst = isExpress || (workflowMode === "DISPATCH_THEN_CASH" && o.order_type !== "TAKEOUT");
+
+        const isDispatchFirst = isDispatchFirstOrder(o, workflowMode);
 
         if (isDispatchFirst) {
           return o.status === "SENT_TO_KITCHEN" || o.status === "READY" || o.status === "PAID";

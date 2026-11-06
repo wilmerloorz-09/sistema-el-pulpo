@@ -68,7 +68,7 @@ import {
 } from "@/lib/inventarioMenuData";
 import { formatearMensajeStockInventario, productoBloqueadoPorStockInventario, stockVisibleParaOrden } from "@/lib/inventarioProductos";
 import { formatTableNameLabel, getOrderMesaHeaderNumber, getOrderRef } from "@/lib/orderPresentation";
-import { getDispatchedEditQuantity, getOrderStatusLabel, isExtraOrder as orderIsExtra, isOrderItemEditableInDispatchFirstEditMode, isOrderItemFullyDispatched, isSpecialOrderExplicitZeroTotal, resolveInDispatchStagingQuantities } from "@/lib/orderFlow";
+import { getDispatchedEditQuantity, getOrderStatusLabel, isDispatchFirstOrder, isExtraOrder as orderIsExtra, isOrderItemEditableInDispatchFirstEditMode, isOrderItemFullyDispatched, isSpecialOrderExplicitZeroTotal, resolveInDispatchStagingQuantities } from "@/lib/orderFlow";
 import {
   collectDispatchedCancellationSelections,
   computeKitchenSendMoneyDeltaForSend,
@@ -809,7 +809,7 @@ const OrdenesContent = () => {
   const isExpressOrder = order?.order_type === "EXPRESS" && !order?.is_tray_order && !order?.is_special;
   const isExtraOrder = orderIsExtra(order);
   const activeWorkflowMode = activeBranch?.workflow_mode ?? "CASH_THEN_DISPATCH";
-  const isDispatchFirstFlow = isExpressOrder || (activeWorkflowMode === "DISPATCH_THEN_CASH" && !isTakeoutOrder);
+  const isDispatchFirstFlow = isDispatchFirstOrder(order, activeWorkflowMode);
   const useKitchenStaging = isDispatchFirstFlow && !fromEditar;
   const isTakeoutMenuOrder = isTakeoutOrder || isExpressOrder;
   const isBranchSiblingOrder = isTakeoutOrder || isExpressOrder || isExtraOrder;

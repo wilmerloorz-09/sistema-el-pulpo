@@ -271,10 +271,16 @@ export function isDispatchFirstOrder(
     order_type?: string | null;
     is_tray_order?: boolean | null;
     is_special?: boolean | null;
+    special_total_manual?: number | null;
   } | null | undefined,
   workflowMode: string,
 ): boolean {
+  // Especial $0: despachar/servir/empaquetar primero; autopago al completar.
+  if (isSpecialOrderExplicitZeroTotal(order)) return true;
+  // Especial para llevar con valor: igual que para llevar (cobro primero).
   if (isSpecialTakeoutOrder(order)) return false;
+  // Express (incl. especial express): siempre despacho primero.
+  if (order?.order_type === "EXPRESS" && !order?.is_tray_order) return true;
   return isExpressOrder(order)
     || (workflowMode === "DISPATCH_THEN_CASH" && !isPureTakeoutOrder(order));
 }

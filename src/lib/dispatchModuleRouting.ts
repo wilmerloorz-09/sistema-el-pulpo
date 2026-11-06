@@ -27,19 +27,19 @@ export function shouldReserveOrderForPacking(
   order: DispatchRouteOrder,
   hasEnabledPacker: boolean,
 ): boolean {
-  return hasEnabledPacker && isPackingOrderType(order.order_type) && !order.is_special;
+  // Especiales siguen el tipo (para llevar/express → empaquetador si hay empacador).
+  return hasEnabledPacker && isPackingOrderType(order.order_type);
 }
 
 /**
  * La orden puede aparecer en Empaquetador:
- * - Para llevar / Express (no especial), siempre.
- * - Mesa/extra si hay empaquetador (luego se filtran solo líneas Con envase).
+ * - Para llevar / Express (incl. especial), siempre.
+ * - Mesa/extra (incl. especial) si hay empaquetador (luego se filtran solo líneas Con envase).
  */
 export function orderMayAppearInPackingModule(
   order: DispatchRouteOrder,
   hasEnabledPacker: boolean,
 ): boolean {
-  if (order.is_special) return false;
   if (isPackingOrderType(order.order_type)) return true;
   return hasEnabledPacker && isTableLikeOrderType(order.order_type);
 }
@@ -50,7 +50,6 @@ export function itemBelongsToPackingRoute(
   item: DispatchRouteItem,
   hasEnabledPacker: boolean,
 ): boolean {
-  if (order.is_special) return false;
   if (isPackingOrderType(order.order_type)) return true;
   return hasEnabledPacker && isTableLikeOrderType(order.order_type) && isPackingEnvaseItem(item);
 }
