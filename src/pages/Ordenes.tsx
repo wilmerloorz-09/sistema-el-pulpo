@@ -1103,6 +1103,8 @@ const OrdenesContent = () => {
   const specialTotalDebounceTimeoutRef = useRef<any>(null);
   /** Evita que un refetch con null pise un Total Manual que el usuario ya escribió (p. ej. 0). */
   const specialTotalTouchedRef = useRef(false);
+  const specialTotalInputRef = useRef(specialTotalInput);
+  specialTotalInputRef.current = specialTotalInput;
   const [specialGroupInput, setSpecialGroupInput] = useState("");
   const specialGroupDebounceTimeoutRef = useRef<any>(null);
   const [convertSpecialDialogOpen, setConvertSpecialDialogOpen] = useState(false);
@@ -1778,15 +1780,25 @@ const OrdenesContent = () => {
   }, [order?.id]);
 
   useEffect(() => {
-    if (!order?.is_special) {
+    // Durante refetch el order puede faltar un instante: no vaciar el Total Manual.
+    if (!order) return;
+
+    if (!order.is_special) {
+      specialTotalTouchedRef.current = false;
       setSpecialTotalInput("");
+      setSpecialGroupInput("");
       return;
     }
 
     if (!specialTotalTouchedRef.current) {
-      setSpecialTotalInput(
-        order.special_total_manual == null ? "" : Number(order.special_total_manual).toFixed(2),
-      );
+      // No pisar un 0/valor local válido con "" si el server aún trae null (carrera post-guardado).
+      if (order.special_total_manual == null) {
+        if (parseSpecialTotalManualInput(specialTotalInputRef.current) == null) {
+          setSpecialTotalInput("");
+        }
+      } else {
+        setSpecialTotalInput(Number(order.special_total_manual).toFixed(2));
+      }
     }
     setSpecialGroupInput(
       order.special_group_total == null ? "" : Number(order.special_group_total).toFixed(2),
@@ -2334,7 +2346,9 @@ const OrdenesContent = () => {
     : finalButtonTotal;
   // Especial no mixta: exige Total Manual (incluido $0) antes de Enviar.
   const requiresSpecialManualTotal = Boolean(order.is_special) && !isMixedSpecial;
-  const hasSpecialManualTotalEntered = effectiveSpecialTotalManual != null;
+  // Input o valor ya persistido (cubre carrera donde un refetch vacío el input un momento).
+  const hasSpecialManualTotalEntered = effectiveSpecialTotalManual != null
+    || (order.special_total_manual != null && Number.isFinite(Number(order.special_total_manual)));
   // Enviar: borradores por mandar o cambios en staging.
   const orderEditSendEnabledBase = useKitchenStaging
     ? (hasPendingKitchenSendChanges || hasDraftItems || stagedDirty)
@@ -3582,12 +3596,8 @@ const OrdenesContent = () => {
     const parsed = parseSpecialTotalManualInput(value);
     // Vacío: no borrar un total ya guardado (evita perder $0 por debounce/refetch).
     if (parsed == null) return;
-
-    updateSpecialTotal.mutate(parsed, {
-      onSuccess: () => {
-        specialTotalTouchedRef.current = false;
-      },
-    });
+    // Mantener touched=true tras guardar: un refetch stale con null no debe vaciar el input.
+    updateSpecialTotal.mutate(parsed);
   };
 
   const flushPendingSpecialTotalSave = async () => {
@@ -3600,13 +3610,13 @@ const OrdenesContent = () => {
       specialTotalDebounceTimeoutRef.current = null;
     }
 
-    const parsed = parseSpecialTotalManualInput(specialTotalInput);
-    if (parsed == null) {
+    const parsed = parseSpecialTotalManualInput(specialTotalInput)
+      ?? (order.special_total_manual == null ? null : Number(order.special_total_manual));
+    if (parsed == null || !Number.isFinite(parsed) || parsed < 0) {
       throw new Error("Ingresa el total manual antes de enviar");
     }
 
-    await updateSpecialTotal.mutateAsync(parsed);
-    specialTotalTouchedRef.current = false;
+    await updateSpecialTotal.mutateAsync(Math.round(parsed * 100) / 100);
   };
 
   const handleSpecialTotalInputChange = (val: string) => {
@@ -3633,9 +3643,9 @@ const OrdenesContent = () => {
       return;
     }
 
+    specialTotalTouchedRef.current = true;
     updateSpecialTotal.mutate(parsed, {
       onSuccess: () => {
-        specialTotalTouchedRef.current = false;
         toast.success("Total especial actualizado");
       },
     });

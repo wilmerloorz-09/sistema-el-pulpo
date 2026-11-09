@@ -1526,11 +1526,28 @@ export function useOrder(orderId: string | null) {
       }
       return { previousOrder };
     },
-    onSuccess: () => {
+    onSuccess: (specialTotalManual) => {
+      if (orderId) {
+        qc.setQueryData(getOrderQueryKey(orderId), (current: Order | undefined) => (
+          current
+            ? { ...current, special_total_manual: specialTotalManual }
+            : current
+        ));
+      }
       invalidateOrderOperationalCaches(qc, {
         branchId: query.data?.branch_id,
         orderId,
         includeCompletedPayments: true,
+      });
+    },
+    onSettled: (specialTotalManual) => {
+      // Si un refetch stale vuelve con null, reponer el valor recién guardado (incluye $0).
+      if (!orderId || specialTotalManual === undefined) return;
+      qc.setQueryData(getOrderQueryKey(orderId), (current: Order | undefined) => {
+        if (!current) return current;
+        if (current.special_total_manual === specialTotalManual) return current;
+        if (specialTotalManual == null) return current;
+        return { ...current, special_total_manual: specialTotalManual };
       });
     },
     onError: (err: any, _value, context) => {
