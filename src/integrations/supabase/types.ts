@@ -4412,8 +4412,16 @@ export type Database = {
         }
         Returns: boolean
       }
+      actualizar_total_manual_especial: {
+        Args: { p_order_id: string; p_special_total_manual: number }
+        Returns: {
+          order_id: string
+          is_special: boolean
+          special_total_manual: number
+        }[]
+      }
       submit_order_draft_items: {
-        Args: { p_order_id: string }
+        Args: { p_order_id: string; p_special_total_manual?: number }
         Returns: {
           order_id: string
           order_status: Database["public"]["Enums"]["order_status"]

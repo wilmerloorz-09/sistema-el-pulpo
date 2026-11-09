@@ -1344,7 +1344,7 @@ export function useOrder(orderId: string | null) {
   });
 
   const sendToKitchen = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (specialTotalManual?: number | null) => {
       if (!orderId) {
         throw new Error("No se encontró la orden");
       }
@@ -1358,9 +1358,20 @@ export function useOrder(orderId: string | null) {
         throw new Error("No hay productos pendientes por enviar");
       }
 
-      const { data, error } = await supabase.rpc("submit_order_draft_items" as any, {
-        p_order_id: orderId,
-      });
+      const rpcArgs: Record<string, unknown> = { p_order_id: orderId };
+      // Especial no mixta: enviar el total manual (incluido 0) en el mismo RPC del submit.
+      if (cached?.is_special && cached.special_group_total == null) {
+        const manual =
+          specialTotalManual != null && Number.isFinite(Number(specialTotalManual))
+            ? Number(specialTotalManual)
+            : (cached.special_total_manual == null ? null : Number(cached.special_total_manual));
+        if (manual == null || !Number.isFinite(manual) || manual < 0) {
+          throw new Error("Ingresa el total manual antes de enviar");
+        }
+        rpcArgs.p_special_total_manual = Math.round(manual * 100) / 100;
+      }
+
+      const { data, error } = await supabase.rpc("submit_order_draft_items" as any, rpcArgs);
       if (error) throw error;
 
       const row = Array.isArray(data) ? data[0] : null;
@@ -1508,17 +1519,33 @@ export function useOrder(orderId: string | null) {
 
   const updateSpecialTotal = useMutation({
     mutationFn: async (specialTotalManual: number | null) => {
-      await dbUpdate("orders", orderId!, {
-        special_total_manual: specialTotalManual,
-        updated_at: new Date().toISOString(),
+      if (!orderId) {
+        throw new Error("No se encontro la orden");
+      }
+      if (specialTotalManual == null || !Number.isFinite(specialTotalManual) || specialTotalManual < 0) {
+        throw new Error("Ingresa el total manual (puede ser 0)");
+      }
+
+      const rounded = Math.round(specialTotalManual * 100) / 100;
+      const { data, error } = await supabase.rpc("actualizar_total_manual_especial" as any, {
+        p_order_id: orderId,
+        p_special_total_manual: rounded,
       });
-      return specialTotalManual;
+      if (error) throw error;
+
+      const row = Array.isArray(data) ? data[0] : data;
+      const saved =
+        row?.special_total_manual == null ? rounded : Number(row.special_total_manual);
+      if (!Number.isFinite(saved) || Number(saved) !== rounded) {
+        throw new Error("No se pudo guardar el total manual");
+      }
+      return rounded;
     },
     onMutate: async (specialTotalManual) => {
       if (!orderId) return;
       await qc.cancelQueries({ queryKey: getOrderQueryKey(orderId) });
       const previousOrder = qc.getQueryData<Order>(getOrderQueryKey(orderId));
-      if (previousOrder) {
+      if (previousOrder && specialTotalManual != null) {
         qc.setQueryData(getOrderQueryKey(orderId), {
           ...previousOrder,
           special_total_manual: specialTotalManual,
@@ -1542,11 +1569,10 @@ export function useOrder(orderId: string | null) {
     },
     onSettled: (specialTotalManual) => {
       // Si un refetch stale vuelve con null, reponer el valor recién guardado (incluye $0).
-      if (!orderId || specialTotalManual === undefined) return;
+      if (!orderId || specialTotalManual === undefined || specialTotalManual == null) return;
       qc.setQueryData(getOrderQueryKey(orderId), (current: Order | undefined) => {
         if (!current) return current;
-        if (current.special_total_manual === specialTotalManual) return current;
-        if (specialTotalManual == null) return current;
+        if (Number(current.special_total_manual) === Number(specialTotalManual)) return current;
         return { ...current, special_total_manual: specialTotalManual };
       });
     },

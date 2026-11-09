@@ -3160,9 +3160,14 @@ const OrdenesContent = () => {
         ?? null;
 
       if (shouldSubmitDrafts || !hadKitchenPending) {
+        const specialTotalForSubmit =
+          order.is_special && order.special_group_total == null
+            ? (parseSpecialTotalManualInput(specialTotalInput)
+              ?? (order.special_total_manual == null ? null : Number(order.special_total_manual)))
+            : undefined;
         await (isExpressOrder
           ? sendToDispatch.mutateAsync()
-          : sendToKitchen.mutateAsync());
+          : sendToKitchen.mutateAsync(specialTotalForSubmit));
 
         if (orderId) {
           freshOrder =
