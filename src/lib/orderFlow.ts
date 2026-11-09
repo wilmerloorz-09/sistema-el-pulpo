@@ -369,6 +369,15 @@ export function isSpecialOrderExplicitZeroTotal(order: {
   return Number(order.special_total_manual) === 0;
 }
 
+/** Parsea Total Manual. Vacío → null; "0" / "0.00" → 0 (cero explícito). */
+export function parseSpecialTotalManualInput(value: string): number | null {
+  const rawValue = value.trim().replace(",", ".");
+  if (!rawValue) return null;
+  const parsed = Number(rawValue);
+  if (!Number.isFinite(parsed) || parsed < 0) return null;
+  return Math.round(parsed * 100) / 100;
+}
+
 /** Total a cobrar: manual en orden especial si está definido; si no, suma de ítems.
  *  Orden especial MIXTA: special_group_total + precio real de unidades no especiales. */
 export function resolveOrderChargeTotal(params: {

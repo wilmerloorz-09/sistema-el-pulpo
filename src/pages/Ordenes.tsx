@@ -68,7 +68,7 @@ import {
 } from "@/lib/inventarioMenuData";
 import { formatearMensajeStockInventario, productoBloqueadoPorStockInventario, stockVisibleParaOrden } from "@/lib/inventarioProductos";
 import { formatTableNameLabel, getOrderMesaHeaderNumber, getOrderRef } from "@/lib/orderPresentation";
-import { getDispatchedEditQuantity, getOrderStatusLabel, isDispatchFirstOrder, isExtraOrder as orderIsExtra, isOrderItemEditableInDispatchFirstEditMode, isOrderItemFullyDispatched, isSpecialOrderExplicitZeroTotal, resolveInDispatchStagingQuantities } from "@/lib/orderFlow";
+import { getDispatchedEditQuantity, getOrderStatusLabel, isDispatchFirstOrder, isExtraOrder as orderIsExtra, isOrderItemEditableInDispatchFirstEditMode, isOrderItemFullyDispatched, isSpecialOrderExplicitZeroTotal, parseSpecialTotalManualInput, resolveInDispatchStagingQuantities } from "@/lib/orderFlow";
 import {
   collectDispatchedCancellationSelections,
   computeKitchenSendMoneyDeltaForSend,
@@ -1101,6 +1101,8 @@ const OrdenesContent = () => {
   const [inlineCancellationType, setInlineCancellationType] = useState<"partial" | "total">("partial");
   const [specialTotalInput, setSpecialTotalInput] = useState("");
   const specialTotalDebounceTimeoutRef = useRef<any>(null);
+  /** Evita que un refetch con null pise un Total Manual que el usuario ya escribió (p. ej. 0). */
+  const specialTotalTouchedRef = useRef(false);
   const [specialGroupInput, setSpecialGroupInput] = useState("");
   const specialGroupDebounceTimeoutRef = useRef<any>(null);
   const [convertSpecialDialogOpen, setConvertSpecialDialogOpen] = useState(false);
@@ -1772,14 +1774,20 @@ const OrdenesContent = () => {
   }, [orderId, order?.branch_id, activeBranchId, branches, setActiveBranch]);
 
   useEffect(() => {
+    specialTotalTouchedRef.current = false;
+  }, [order?.id]);
+
+  useEffect(() => {
     if (!order?.is_special) {
       setSpecialTotalInput("");
       return;
     }
 
-    setSpecialTotalInput(
-      order.special_total_manual == null ? "" : Number(order.special_total_manual).toFixed(2),
-    );
+    if (!specialTotalTouchedRef.current) {
+      setSpecialTotalInput(
+        order.special_total_manual == null ? "" : Number(order.special_total_manual).toFixed(2),
+      );
+    }
     setSpecialGroupInput(
       order.special_group_total == null ? "" : Number(order.special_group_total).toFixed(2),
     );
@@ -2123,11 +2131,7 @@ const OrdenesContent = () => {
   // Deben ejecutarse siempre; el return temprano va al final de este bloque.
   const effectiveSpecialTotalManual = useMemo((): number | null => {
     if (!order?.is_special) return null;
-    const rawValue = specialTotalInput.trim().replace(",", ".");
-    if (!rawValue) return null;
-    const parsed = Number(rawValue);
-    if (!Number.isFinite(parsed) || parsed < 0) return null;
-    return Math.round(parsed * 100) / 100;
+    return parseSpecialTotalManualInput(specialTotalInput);
   }, [order?.is_special, specialTotalInput]);
 
   const specialBreakdown = useMemo(() => {
@@ -2328,10 +2332,15 @@ const OrdenesContent = () => {
   const kitchenSendDelta = useKitchenStaging
     ? computeKitchenSendMoneyDeltaForSend(kitchenBaselineItems, stagedItems)
     : finalButtonTotal;
+  // Especial no mixta: exige Total Manual (incluido $0) antes de Enviar.
+  const requiresSpecialManualTotal = Boolean(order.is_special) && !isMixedSpecial;
+  const hasSpecialManualTotalEntered = effectiveSpecialTotalManual != null;
   // Enviar: borradores por mandar o cambios en staging.
-  const orderEditSendEnabled = useKitchenStaging
+  const orderEditSendEnabledBase = useKitchenStaging
     ? (hasPendingKitchenSendChanges || hasDraftItems || stagedDirty)
     : hasDraftItems;
+  const orderEditSendEnabled = orderEditSendEnabledBase
+    && (!requiresSpecialManualTotal || hasSpecialManualTotalEntered);
   // Cancelar: solo si el usuario ensució el staging (bajas/ajustes).
   // NO usar hasPendingKitchenSendChanges: trata borradores nuevos como “pendientes”
   // y al cancelar se restauraba un baseline vacío.
@@ -3570,41 +3579,38 @@ const OrdenesContent = () => {
   };
 
   const saveSpecialTotalSilently = (value: string) => {
-    const rawValue = value.trim().replace(",", ".");
-    if (!rawValue) {
-      updateSpecialTotal.mutate(null);
-      return;
-    }
+    const parsed = parseSpecialTotalManualInput(value);
+    // Vacío: no borrar un total ya guardado (evita perder $0 por debounce/refetch).
+    if (parsed == null) return;
 
-    const parsed = Number(rawValue);
-    if (!Number.isFinite(parsed) || parsed < 0) {
-      return;
-    }
-
-    updateSpecialTotal.mutate(Math.round(parsed * 100) / 100);
+    updateSpecialTotal.mutate(parsed, {
+      onSuccess: () => {
+        specialTotalTouchedRef.current = false;
+      },
+    });
   };
 
   const flushPendingSpecialTotalSave = async () => {
     if (!order?.is_special) return;
+    // Mixta: el total lo mantiene el grupo especial; no pisar con el input vacío.
+    if (order.special_group_total != null) return;
 
     if (specialTotalDebounceTimeoutRef.current) {
       clearTimeout(specialTotalDebounceTimeoutRef.current);
       specialTotalDebounceTimeoutRef.current = null;
     }
 
-    const rawValue = specialTotalInput.trim().replace(",", ".");
-    if (!rawValue) {
-      await updateSpecialTotal.mutateAsync(null);
-      return;
+    const parsed = parseSpecialTotalManualInput(specialTotalInput);
+    if (parsed == null) {
+      throw new Error("Ingresa el total manual antes de enviar");
     }
 
-    const parsed = Number(rawValue);
-    if (!Number.isFinite(parsed) || parsed < 0) return;
-
-    await updateSpecialTotal.mutateAsync(Math.round(parsed * 100) / 100);
+    await updateSpecialTotal.mutateAsync(parsed);
+    specialTotalTouchedRef.current = false;
   };
 
   const handleSpecialTotalInputChange = (val: string) => {
+    specialTotalTouchedRef.current = true;
     setSpecialTotalInput(val);
 
     if (specialTotalDebounceTimeoutRef.current) {
@@ -3621,22 +3627,17 @@ const OrdenesContent = () => {
       clearTimeout(specialTotalDebounceTimeoutRef.current);
     }
 
-    const rawValue = specialTotalInput.trim().replace(",", ".");
-    if (!rawValue) {
-      updateSpecialTotal.mutate(null, {
-        onSuccess: () => toast.success("Total especial limpiado"),
-      });
+    const parsed = parseSpecialTotalManualInput(specialTotalInput);
+    if (parsed == null) {
+      toast.error("Ingresa el total manual (puede ser 0)");
       return;
     }
 
-    const parsed = Number(rawValue);
-    if (!Number.isFinite(parsed) || parsed < 0) {
-      toast.error("Ingresa un total especial valido");
-      return;
-    }
-
-    updateSpecialTotal.mutate(Math.round(parsed * 100) / 100, {
-      onSuccess: () => toast.success("Total especial actualizado"),
+    updateSpecialTotal.mutate(parsed, {
+      onSuccess: () => {
+        specialTotalTouchedRef.current = false;
+        toast.success("Total especial actualizado");
+      },
     });
   };
 
@@ -4043,9 +4044,14 @@ const OrdenesContent = () => {
                       e.currentTarget.blur();
                     }
                   }}
-                  placeholder="Ingresa el total manual"
+                  placeholder="Ingresa el total manual (puede ser 0)"
                   className="h-11 rounded-xl mt-1"
                 />
+                {effectiveSpecialTotalManual == null ? (
+                  <p className="mt-1 text-xs font-medium text-amber-700">
+                    Debes ingresar el total manual para poder enviar.
+                  </p>
+                ) : null}
               </div>
             ) : (
               <div className="mt-4 rounded-xl border border-border bg-white/70 px-3 py-2 text-xs text-muted-foreground">
@@ -4499,7 +4505,13 @@ const OrdenesContent = () => {
               || (isExpressOrder ? sendToDispatch.isPending : sendToKitchen.isPending)
               || hasTemporaryDraftItems
             }
-            title={hasTemporaryDraftItems ? "Sincronizando producto agregado..." : undefined}
+            title={
+              hasTemporaryDraftItems
+                ? "Sincronizando producto agregado..."
+                : requiresSpecialManualTotal && !hasSpecialManualTotalEntered
+                  ? "Ingresa el Total Manual antes de enviar"
+                  : undefined
+            }
             onClick={() => { void handleSendOrderEdits(); }}
           >
             {sendingKitchenChanges || (isExpressOrder ? sendToDispatch.isPending : sendToKitchen.isPending) || hasTemporaryDraftItems ? (

@@ -1882,7 +1882,9 @@ export default function PaymentDialog({
                   </div>
                   <div className="rounded-xl bg-white/80 px-3 py-2">
                     <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Total especial</p>
-                    <p className="mt-1 font-semibold text-foreground">${(order.special_total_manual ?? 0).toFixed(2)}</p>
+                    <p className="mt-1 font-semibold text-foreground">
+                      {order.special_total_manual == null ? "—" : `$${Number(order.special_total_manual).toFixed(2)}`}
+                    </p>
                   </div>
                   <div className="rounded-xl bg-white/80 px-3 py-2">
                     <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Saldo luego del cobro</p>

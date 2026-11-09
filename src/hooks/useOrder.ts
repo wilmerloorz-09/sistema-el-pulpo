@@ -1512,6 +1512,19 @@ export function useOrder(orderId: string | null) {
         special_total_manual: specialTotalManual,
         updated_at: new Date().toISOString(),
       });
+      return specialTotalManual;
+    },
+    onMutate: async (specialTotalManual) => {
+      if (!orderId) return;
+      await qc.cancelQueries({ queryKey: getOrderQueryKey(orderId) });
+      const previousOrder = qc.getQueryData<Order>(getOrderQueryKey(orderId));
+      if (previousOrder) {
+        qc.setQueryData(getOrderQueryKey(orderId), {
+          ...previousOrder,
+          special_total_manual: specialTotalManual,
+        });
+      }
+      return { previousOrder };
     },
     onSuccess: () => {
       invalidateOrderOperationalCaches(qc, {
@@ -1520,7 +1533,12 @@ export function useOrder(orderId: string | null) {
         includeCompletedPayments: true,
       });
     },
-    onError: (err: any) => toast.error(err.message),
+    onError: (err: any, _value, context) => {
+      if (orderId && context?.previousOrder) {
+        qc.setQueryData(getOrderQueryKey(orderId), context.previousOrder);
+      }
+      toast.error(err.message);
+    },
   });
 
   const updateSpecialReason = useMutation({

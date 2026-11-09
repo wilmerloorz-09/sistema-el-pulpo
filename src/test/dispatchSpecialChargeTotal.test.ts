@@ -1,9 +1,20 @@
 import { describe, expect, it } from "vitest";
 import {
   computeDispatchItemCatalogTotal,
+  parseSpecialTotalManualInput,
   prorateOrderChargeAmount,
   resolveDispatchPendingChargeTotal,
 } from "@/lib/orderFlow";
+
+describe("parseSpecialTotalManualInput", () => {
+  it("trata vacío como null y 0 como cero explícito", () => {
+    expect(parseSpecialTotalManualInput("")).toBeNull();
+    expect(parseSpecialTotalManualInput("   ")).toBeNull();
+    expect(parseSpecialTotalManualInput("0")).toBe(0);
+    expect(parseSpecialTotalManualInput("0.00")).toBe(0);
+    expect(parseSpecialTotalManualInput("10,5")).toBe(10.5);
+  });
+});
 
 describe("resolveDispatchPendingChargeTotal", () => {
   it("uses manual special total instead of catalog sum when all items are pending", () => {

@@ -157,7 +157,9 @@ export function OrderCardBase({
   const isWarning = isSentToKitchen && elapsed > 10 * 60;
   const isCancelRequested = isPendingCancellationView;
   const footerItemCount = isPendingCancellationView ? visibleItems.length : (order.item_count || 0);
-  const specialManualTotal = isSpecial ? Number(order.special_total_manual ?? 0) : null;
+  const specialManualTotal = isSpecial
+    ? (order.special_total_manual == null ? null : Number(order.special_total_manual))
+    : null;
   const realTotal = Number(order.total || 0);
 
   const eventTime = order.ready_at ?? order.dispatched_at ?? order.paid_at ?? order.cancelled_at ?? null;
@@ -320,7 +322,7 @@ export function OrderCardBase({
           <div className="text-right">
             <div className="flex items-center justify-end gap-1 font-semibold text-primary">
               <DollarSign className="h-4 w-4" />
-              <span>{(specialManualTotal ?? 0).toFixed(2)}</span>
+              <span>{specialManualTotal == null ? "—" : specialManualTotal.toFixed(2)}</span>
             </div>
             <p className="text-[11px] text-muted-foreground">Real: ${realTotal.toFixed(2)}</p>
           </div>

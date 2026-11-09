@@ -134,7 +134,9 @@ export default function OrderListRow({
     : formatCompactEventTime(eventTime, order.status);
   const footerItemCount = isPendingCancellationView ? order.items.length : (order.item_count || 0);
   const realTotal = Number(order.total || 0);
-  const specialManualTotal = isSpecial ? Number(order.special_total_manual ?? 0) : null;
+  const specialManualTotal = isSpecial
+    ? (order.special_total_manual == null ? null : Number(order.special_total_manual))
+    : null;
   const displayedUnits = order.items.reduce((sum, item) => sum + getDisplayQuantity(item, order.status), 0);
   const dispatchedUnits = order.items.reduce((sum, item) => sum + Math.max(0, Number(item.quantity_dispatched ?? 0)), 0);
   const remainingUnits = order.items.reduce((sum, item) => sum + Math.max(0, Number(item.quantity_remaining ?? 0)), 0);
@@ -181,7 +183,7 @@ export default function OrderListRow({
   }
   const mobileSummary = mobileSummaryParts.join(" - ");
   const mobileAmount = isSpecial
-    ? formatCurrency(specialManualTotal ?? 0)
+    ? (specialManualTotal == null ? "—" : formatCurrency(specialManualTotal))
     : formatCurrency(realTotal);
 
   const canShowMainAction =
@@ -337,7 +339,9 @@ export default function OrderListRow({
         <div className="flex flex-row items-center justify-between lg:justify-end gap-4 shrink-0 pl-11 lg:pl-0 mt-2 lg:mt-0">
            <div className="flex flex-wrap items-center gap-2">
              <span className="text-[1.15rem] font-bold tracking-[-0.03em] text-slate-950">
-               {formatCurrency(isSpecial ? (specialManualTotal ?? 0) : realTotal)}
+               {isSpecial
+                 ? (specialManualTotal == null ? "—" : formatCurrency(specialManualTotal))
+                 : formatCurrency(realTotal)}
              </span>
              {isPendingCancellationView && (
                <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
@@ -476,7 +480,9 @@ export default function OrderListRow({
 
               <div className="text-right">
                 <p className="text-[15px] font-black text-slate-900">
-                  {formatCurrency(isSpecial ? (specialManualTotal ?? 0) : realTotal)}
+                  {isSpecial
+                    ? (specialManualTotal == null ? "—" : formatCurrency(specialManualTotal))
+                    : formatCurrency(realTotal)}
                 </p>
                 {isSpecial && (
                   <p className="text-xs text-slate-500">
