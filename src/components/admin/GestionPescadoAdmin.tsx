@@ -369,6 +369,41 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
     return map;
   }, [stockQuery.data]);
 
+  const bandejasExistentesQuery = useQuery({
+    queryKey: ["pescado-bandejas-existentes"],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("obtener_bandejas_existentes_pescado" as any);
+      if (error) throw error;
+      return Number(data ?? 0);
+    },
+    enabled: section === "sucursales",
+  });
+  const [bandejasExistentesInput, setBandejasExistentesInput] = useState("");
+  useEffect(() => {
+    if (bandejasExistentesQuery.data == null || !Number.isFinite(bandejasExistentesQuery.data)) return;
+    setBandejasExistentesInput(String(bandejasExistentesQuery.data));
+  }, [bandejasExistentesQuery.data]);
+
+  const guardarBandejasExistentesMut = useMutation({
+    mutationFn: async () => {
+      const n = Number.parseInt(String(bandejasExistentesInput ?? "").trim(), 10);
+      if (!Number.isFinite(n) || n < 0) {
+        throw new Error("Ingresa un número de bandejas válido (0 o más)");
+      }
+      const { data, error } = await supabase.rpc("actualizar_bandejas_existentes_pescado" as any, {
+        p_cantidad: n,
+      });
+      if (error) throw error;
+      return Number(data ?? n);
+    },
+    onSuccess: async (n) => {
+      toast.success(`Bandejas existentes actualizadas: ${n}`);
+      setBandejasExistentesInput(String(n));
+      await qc.invalidateQueries({ queryKey: ["pescado-bandejas-existentes"] });
+    },
+    onError: (e: any) => mostrarError(e, "No se pudo guardar la cantidad de bandejas."),
+  });
+
   const ubicaciones = useMemo(() => [
     {
       value: "CENTRAL",
@@ -395,6 +430,32 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
             {stockQuery.isLoading ? "…" : formatLb(stockCentral?.cantidad_libras)} <span className="text-base font-semibold text-sky-700">lb</span>
             <span className="ml-2 text-base font-semibold text-muted-foreground">({formatG(stockCentral?.cantidad_libras)} g)</span>
           </p>
+          <div className="mt-3 flex flex-wrap items-end gap-2 border-t border-sky-100 pt-3">
+            <div className="min-w-[8.5rem] flex-1 space-y-1">
+              <Label className="inline-flex items-center gap-1 text-[11px] font-semibold text-sky-900">
+                <Hash className="h-3.5 w-3.5" />
+                Bandejas existentes
+              </Label>
+              <Input
+                inputMode="numeric"
+                value={bandejasExistentesInput}
+                disabled={!canOperateFull || bandejasExistentesQuery.isLoading || guardarBandejasExistentesMut.isPending}
+                onChange={(e) => setBandejasExistentesInput(e.target.value.replace(/[^\d]/g, ""))}
+                placeholder="0"
+                className="h-9 rounded-xl border-sky-200 bg-white/90"
+              />
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              className="h-9 rounded-xl border-sky-300 bg-white text-sky-900 hover:bg-sky-50"
+              disabled={!canOperateFull || guardarBandejasExistentesMut.isPending || bandejasExistentesQuery.isLoading}
+              onClick={() => guardarBandejasExistentesMut.mutate()}
+            >
+              {guardarBandejasExistentesMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              Guardar
+            </Button>
+          </div>
         </Card>
         <div className="overflow-x-auto rounded-2xl border">
           <table className="w-full min-w-[520px] text-left text-sm">
