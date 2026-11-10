@@ -229,12 +229,18 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
 
   const ingresoMut = useMutation({
     mutationFn: async () => {
+      if (bandejasExistentesTotal <= 0) {
+        throw new Error("Configura primero la cantidad de bandejas existentes en Sucursales");
+      }
       if (bandejasPeso.some((b) => !b.numero.trim() || !parseCantidad(b.peso))) {
         throw new Error("Todas las bandejas deben tener número y peso mayor a 0");
       }
-      const numeros = bandejasPeso.map((b) => b.numero.trim().toLowerCase());
+      const numeros = bandejasPeso.map((b) => b.numero.trim());
       if (new Set(numeros).size !== numeros.length) {
         throw new Error("Hay números de bandeja repetidos");
+      }
+      if (numeros.some((n) => !numerosBandejaCatalogo.includes(n))) {
+        throw new Error("Hay bandejas fuera del catálogo configurado en Sucursales");
       }
       if (bandejasCount <= 0 || cantidadTotalLb <= 0) {
         throw new Error("Agrega al menos una bandeja con número y peso");
@@ -376,8 +382,22 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
       if (error) throw error;
       return Number(data ?? 0);
     },
-    enabled: section === "sucursales",
+    enabled: section === "sucursales" || isPreparacionSection,
   });
+  const bandejasExistentesTotal = useMemo(() => {
+    const n = Number(bandejasExistentesQuery.data ?? 0);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+  }, [bandejasExistentesQuery.data]);
+  const numerosBandejaCatalogo = useMemo(
+    () => Array.from({ length: bandejasExistentesTotal }, (_, i) => String(i + 1)),
+    [bandejasExistentesTotal],
+  );
+  const numerosBandejaUsados = useMemo(
+    () => new Set(bandejasPeso.map((b) => b.numero.trim()).filter(Boolean)),
+    [bandejasPeso],
+  );
+  const opcionesBandejaParaFila = (filaId: string, numeroActual: string) =>
+    numerosBandejaCatalogo.filter((n) => n === numeroActual.trim() || !numerosBandejaUsados.has(n));
   const [bandejasExistentesInput, setBandejasExistentesInput] = useState("");
   useEffect(() => {
     if (bandejasExistentesQuery.data == null || !Number.isFinite(bandejasExistentesQuery.data)) return;
@@ -585,6 +605,12 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
               </span>
             </div>
 
+            {bandejasExistentesTotal <= 0 ? (
+              <p className="rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-900">
+                Configura la cantidad de bandejas existentes en la pestaña Sucursales.
+              </p>
+            ) : null}
+
             <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] items-start gap-2">
               <div className="space-y-1.5">
                 <div className="rounded-lg border border-sky-200 bg-sky-50 px-1.5 py-2 text-center">
@@ -599,7 +625,18 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
                   type="button"
                   variant="outline"
                   className="h-8 w-full gap-0.5 rounded-lg px-1 text-[10px]"
-                  onClick={() => setBandejasPeso((rows) => [...rows, nuevaBandejaPeso()])}
+                  disabled={bandejasExistentesTotal <= 0 || bandejasPeso.length >= bandejasExistentesTotal}
+                  onClick={() => {
+                    if (bandejasExistentesTotal <= 0) {
+                      toast.error("Configura primero las bandejas en Sucursales");
+                      return;
+                    }
+                    if (bandejasPeso.length >= bandejasExistentesTotal) {
+                      toast.error("Ya agregaste todas las bandejas disponibles");
+                      return;
+                    }
+                    setBandejasPeso((rows) => [...rows, nuevaBandejaPeso()]);
+                  }}
                 >
                   <Plus className="h-3.5 w-3.5" />
                   Agregar
@@ -607,10 +644,10 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
               </div>
 
               <div className="min-w-0 space-y-1.5">
-                <div className="grid grid-cols-[4rem_5.75rem_minmax(0,1fr)_1.75rem] items-center gap-1.5 px-0.5">
+                <div className="grid grid-cols-[7.25rem_5.5rem_minmax(0,1fr)_1.75rem] items-center gap-1.5 px-0.5">
                   <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-muted-foreground">
                     <Hash className="h-3 w-3" />
-                    Nº
+                    Bandeja
                   </span>
                   <span className="text-[10px] font-semibold text-muted-foreground">Unidad</span>
                   <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-muted-foreground">
@@ -619,58 +656,68 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
                   </span>
                   <span />
                 </div>
-                {bandejasPeso.map((bandeja) => (
-                  <div
-                    key={bandeja.id}
-                    className="grid grid-cols-[4rem_5.75rem_minmax(0,1fr)_1.75rem] items-center gap-1.5"
-                  >
-                    <Input
-                      inputMode="numeric"
-                      value={bandeja.numero}
-                      onChange={(e) => {
-                        const value = e.target.value;
-                        setBandejasPeso((rows) =>
-                          rows.map((row) => (row.id === bandeja.id ? { ...row, numero: value } : row)),
-                        );
-                      }}
-                      placeholder="12"
-                      className={cn(compactInputClass, "text-center font-semibold")}
-                      aria-label="Número de bandeja"
-                    />
-                    <UnidadSelect
-                      value={bandeja.unidad}
-                      onChange={(unidad) => {
-                        setBandejasPeso((rows) =>
-                          rows.map((row) => (row.id === bandeja.id ? { ...row, unidad } : row)),
-                        );
-                      }}
-                    />
-                    <Input
-                      inputMode="decimal"
-                      value={bandeja.peso}
-                      onChange={(e) => {
-                        const value = e.target.value;
-                        setBandejasPeso((rows) =>
-                          rows.map((row) => (row.id === bandeja.id ? { ...row, peso: value } : row)),
-                        );
-                      }}
-                      placeholder="0"
-                      className={compactInputClass}
-                      aria-label="Peso de bandeja"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      className="h-8 w-7 rounded-lg"
-                      disabled={bandejasPeso.length <= 1}
-                      onClick={() => setBandejasPeso((rows) => rows.filter((row) => row.id !== bandeja.id))}
-                      aria-label={`Quitar bandeja ${bandeja.numero || ""}`}
+                {bandejasPeso.map((bandeja) => {
+                  const opciones = opcionesBandejaParaFila(bandeja.id, bandeja.numero);
+                  return (
+                    <div
+                      key={bandeja.id}
+                      className="grid grid-cols-[7.25rem_5.5rem_minmax(0,1fr)_1.75rem] items-center gap-1.5"
                     >
-                      <Minus className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                ))}
+                      <Select
+                        value={bandeja.numero || undefined}
+                        onValueChange={(value) => {
+                          setBandejasPeso((rows) =>
+                            rows.map((row) => (row.id === bandeja.id ? { ...row, numero: value } : row)),
+                          );
+                        }}
+                        disabled={bandejasExistentesTotal <= 0}
+                      >
+                        <SelectTrigger className={cn(compactSelectClass, "px-2")} aria-label="Bandeja">
+                          <SelectValue placeholder="Elegir" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {opciones.map((n) => (
+                            <SelectItem key={n} value={n}>
+                              Bandeja {n}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <UnidadSelect
+                        value={bandeja.unidad}
+                        onChange={(unidad) => {
+                          setBandejasPeso((rows) =>
+                            rows.map((row) => (row.id === bandeja.id ? { ...row, unidad } : row)),
+                          );
+                        }}
+                      />
+                      <Input
+                        inputMode="decimal"
+                        value={bandeja.peso}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setBandejasPeso((rows) =>
+                            rows.map((row) => (row.id === bandeja.id ? { ...row, peso: value } : row)),
+                          );
+                        }}
+                        placeholder="0"
+                        className={compactInputClass}
+                        aria-label="Peso de bandeja"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="h-8 w-7 rounded-lg"
+                        disabled={bandejasPeso.length <= 1}
+                        onClick={() => setBandejasPeso((rows) => rows.filter((row) => row.id !== bandeja.id))}
+                        aria-label={`Quitar bandeja ${bandeja.numero || ""}`}
+                      >
+                        <Minus className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>
