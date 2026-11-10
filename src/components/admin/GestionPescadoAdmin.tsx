@@ -23,11 +23,20 @@ import {
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 
-export type GestionPescadoSection = "sucursales" | "ingreso-salida" | "movimientos" | "historial";
+export type GestionPescadoSection = "sucursales" | "preparacion" | "ingreso-salida" | "movimientos" | "historial";
 
 const GRAMOS_POR_LIBRA = 453.59237;
 const PESO_BANDEJA_LB = 0.78;
 type Unidad = "LIBRAS" | "GRAMOS";
+type BandejaPeso = { id: string; peso: string; unidad: Unidad };
+
+function nuevaBandejaPeso(): BandejaPeso {
+  return {
+    id: `b-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    peso: "",
+    unidad: "LIBRAS",
+  };
+}
 
 function parseCantidad(raw: string): number {
   const n = Number(String(raw ?? "").trim().replace(",", "."));
@@ -164,14 +173,12 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
   const branchName = (id: string | null | undefined) => branches.find((b) => b.id === id)?.name ?? "—";
   const ubicacionLabel = (ambito: string, sucursalId: string | null) => ambito === "CENTRAL" ? "Bodega General" : branchName(sucursalId);
 
-  // Ingreso / Salida
-  const [tipo, setTipo] = useState<"INGRESO" | "SALIDA">("INGRESO");
+  // Preparación (cocina)
+  const isPreparacionSection = section === "preparacion" || section === "ingreso-salida";
   const [origenIngreso, setOrigenIngreso] = useState("PREPARACION_INICIAL");
   const [cantEntregada, setCantEntregada] = useState("");
   const [unidadEntregada, setUnidadEntregada] = useState<Unidad>("LIBRAS");
-  const [cantVerificada, setCantVerificada] = useState("");
-  const [unidadVerificada, setUnidadVerificada] = useState<Unidad>("LIBRAS");
-  const [cantBandejas, setCantBandejas] = useState("");
+  const [bandejasPeso, setBandejasPeso] = useState<BandejaPeso[]>(() => [nuevaBandejaPeso()]);
   const [obsIngreso, setObsIngreso] = useState("");
   const [cantBonitoLb, setCantBonitoLb] = useState("");
   const [cantAlbacoraLb, setCantAlbacoraLb] = useState("");
@@ -187,7 +194,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
       return ((data as Array<{ producto_id: string; codigo: string; nombre: string; cantidad_lb: number }>) ?? [])
         .map((r) => ({ ...r, cantidad_lb: Number(r.cantidad_lb ?? 0) }));
     },
-    enabled: section === "ingreso-salida" && tipo === "INGRESO",
+    enabled: isPreparacionSection,
   });
 
   const stockBonitoLb = useMemo(
@@ -199,14 +206,6 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
     [stockFrescoQuery.data],
   );
 
-  const bandejasCount = useMemo(() => {
-    const n = Number.parseInt(String(cantBandejas ?? "").trim(), 10);
-    return Number.isFinite(n) && n > 0 ? n : 0;
-  }, [cantBandejas]);
-  const verificadaLb = useMemo(
-    () => aLibras(parseCantidad(cantVerificada), unidadVerificada),
-    [cantVerificada, unidadVerificada],
-  );
   const entregadaLb = useMemo(
     () => aLibras(parseCantidad(cantEntregada), unidadEntregada),
     [cantEntregada, unidadEntregada],
@@ -214,21 +213,25 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
   const bonitoLb = useMemo(() => parseCantidad(cantBonitoLb) || 0, [cantBonitoLb]);
   const albacoraLb = useMemo(() => parseCantidad(cantAlbacoraLb) || 0, [cantAlbacoraLb]);
   const crudoTotalLb = Math.round((bonitoLb + albacoraLb) * 1000) / 1000;
-  const descuentoBandejasLb = Math.round(bandejasCount * PESO_BANDEJA_LB * 1000) / 1000;
-  const cantidadTotalLb = Math.round((verificadaLb - descuentoBandejasLb) * 1000) / 1000;
-  const [cantSalida, setCantSalida] = useState("");
-  const [unidadSalida, setUnidadSalida] = useState<Unidad>("LIBRAS");
-  const [motivoSalida, setMotivoSalida] = useState("DANO_PRODUCTO");
-  const [obsSalida, setObsSalida] = useState("");
+  const pesosBandejasLb = useMemo(
+    () => bandejasPeso.map((b) => aLibras(parseCantidad(b.peso), b.unidad)),
+    [bandejasPeso],
+  );
+  const bandejasCount = pesosBandejasLb.filter((n) => n > 0).length;
+  const cantidadTotalLb = useMemo(
+    () => Math.round(pesosBandejasLb.reduce((s, n) => s + n, 0) * 1000) / 1000,
+    [pesosBandejasLb],
+  );
 
   const ingresoMut = useMutation({
     mutationFn: async () => {
       const entregadaRaw = parseCantidad(cantEntregada);
-      const verificadaRaw = parseCantidad(cantVerificada);
       if (!entregadaRaw) throw new Error("Ingresa el peso entregado");
-      if (!verificadaRaw) throw new Error("Ingresa el peso verificado");
-      if (cantidadTotalLb <= 0) {
-        throw new Error(`El peso total debe ser mayor a 0 (verificado ${formatLb(verificadaLb)} lb - bandejas ${formatLb(descuentoBandejasLb)} lb)`);
+      if (bandejasPeso.some((b) => !parseCantidad(b.peso))) {
+        throw new Error("Todas las bandejas deben tener peso mayor a 0");
+      }
+      if (bandejasCount <= 0 || cantidadTotalLb <= 0) {
+        throw new Error("Agrega al menos una bandeja con peso");
       }
 
       const entregada = aLibras(entregadaRaw, unidadEntregada);
@@ -257,19 +260,19 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
       const { error } = await supabase.rpc("registrar_ingreso_pescado" as any, {
         p_origen: origenIngreso,
         p_cantidad_entregada_lb: entregada,
-        p_cantidad_verificada_lb: aLibras(verificadaRaw, unidadVerificada),
+        p_cantidad_verificada_lb: cantidadTotalLb,
         p_observacion: obsIngreso.trim() || null,
         p_cantidad_bandejas: bandejasCount,
         p_bonito_lb: requierePescadoCrudo ? bonito : 0,
         p_albacora_lb: requierePescadoCrudo ? albacora : 0,
+        p_pesos_bandejas_lb: pesosBandejasLb,
       });
       if (error) throw error;
     },
     onSuccess: async () => {
-      toast.success("Ingreso registrado en Bodega General.");
+      toast.success("Preparación registrada en Bodega General.");
       setCantEntregada("");
-      setCantVerificada("");
-      setCantBandejas("");
+      setBandejasPeso([nuevaBandejaPeso()]);
       setObsIngreso("");
       setCantBonitoLb("");
       setCantAlbacoraLb("");
@@ -277,35 +280,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
       await qc.invalidateQueries({ queryKey: ["stock-pescado-fresco"] });
       await qc.invalidateQueries({ queryKey: ["historial-pescado-fresco"] });
     },
-    onError: (e: any) => mostrarError(e, "No se pudo registrar el ingreso. Revisa los datos e inténtalo de nuevo."),
-  });
-
-  const salidaMut = useMutation({
-    mutationFn: async () => {
-      const raw = parseCantidad(cantSalida);
-      if (!raw) throw new Error("Ingresa el peso");
-      const qtyLb = aLibras(raw, unidadSalida);
-      const stockCentralLb = Number(
-        (stockQuery.data ?? []).find((r) => r.ambito === "CENTRAL")?.cantidad_libras ?? 0,
-      );
-      if (qtyLb > stockCentralLb) {
-        const dispTxt = unidadSalida === "GRAMOS" ? `${formatG(stockCentralLb)} gramos` : `${formatLb(stockCentralLb)} Libras`;
-        const solTxt = unidadSalida === "GRAMOS" ? `${formatG(qtyLb)} gramos` : `${formatLb(qtyLb)} Libras`;
-        setErrorDialog({
-          title: "Stock insuficiente",
-          description: `En Bodega General solo hay ${dispTxt} disponibles y estás intentando retirar ${solTxt}. Ingresa un peso menor.`,
-        });
-        throw new Error("__DIALOG_SHOWN__");
-      }
-      const { error } = await supabase.rpc("registrar_salida_pescado" as any, {
-        p_cantidad_lb: aLibras(raw, unidadSalida),
-        p_motivo: motivoSalida,
-        p_observacion: obsSalida.trim() || null,
-      });
-      if (error) throw error;
-    },
-    onSuccess: async () => { toast.success("Salida registrada."); setCantSalida(""); setObsSalida(""); await invalidateAll(); },
-    onError: (e: any) => mostrarError(e, "No se pudo registrar la salida. Revisa los datos e inténtalo de nuevo."),
+    onError: (e: any) => mostrarError(e, "No se pudo registrar la preparación. Revisa los datos e inténtalo de nuevo."),
   });
 
   // Movimientos
@@ -433,11 +408,11 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
     );
   }
 
-  if (section === "ingreso-salida") {
+  if (isPreparacionSection) {
     if (!canOperateFull) {
       return (
         <p className="text-xs text-muted-foreground">
-          Solo bodega general / administrador puede registrar ingresos y salidas.
+          Solo bodega general / administrador puede registrar la preparación.
         </p>
       );
     }
@@ -445,248 +420,179 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
       <>
         {errorDialogNode}
         <Card className="space-y-2.5 rounded-xl border p-3">
-          <div className="grid grid-cols-2 gap-2">
-            <div className="space-y-1">
-              <Label className={fieldLabelClass}>Tipo</Label>
-              <Select value={tipo} onValueChange={(v) => setTipo(v as "INGRESO" | "SALIDA")}>
-                <SelectTrigger className={compactSelectClass}><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="INGRESO">Ingreso</SelectItem>
-                  <SelectItem value="SALIDA">Salida</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            {tipo === "INGRESO" ? (
-              <div className="space-y-1">
-                <Label className={fieldLabelClass}>Origen</Label>
-                <Select
-                  value={origenIngreso}
-                  onValueChange={(v) => {
-                    setOrigenIngreso(v);
-                    if (v === "OTROS") {
-                      setCantBonitoLb("");
-                      setCantAlbacoraLb("");
-                    }
-                  }}
-                >
-                  <SelectTrigger className={compactSelectClass}><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="PREPARACION_INICIAL">Prep. inicial</SelectItem>
-                    <SelectItem value="PREPARACION_EXTRA">Prep. extra</SelectItem>
-                    <SelectItem value="OTROS">Otros</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            ) : (
-              <div className="space-y-1">
-                <Label className={fieldLabelClass}>Motivo</Label>
-                <Select value={motivoSalida} onValueChange={setMotivoSalida}>
-                  <SelectTrigger className={compactSelectClass}><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="DANO_PRODUCTO">Daño producto</SelectItem>
-                    <SelectItem value="OTROS">Otros</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
+          <div className="space-y-1">
+            <Label className={fieldLabelClass}>Origen</Label>
+            <Select
+              value={origenIngreso}
+              onValueChange={(v) => {
+                setOrigenIngreso(v);
+                if (v === "OTROS") {
+                  setCantBonitoLb("");
+                  setCantAlbacoraLb("");
+                }
+              }}
+            >
+              <SelectTrigger className={compactSelectClass}><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="PREPARACION_INICIAL">Prep. inicial</SelectItem>
+                <SelectItem value="PREPARACION_EXTRA">Prep. extra</SelectItem>
+                <SelectItem value="OTROS">Otros</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className={helpTextClass}>Registra lo cocinado. Entra a Bodega General.</p>
           </div>
-          <p className={helpTextClass}>Aplica a Bodega General.</p>
 
-          {tipo === "INGRESO" ? (
-            <div className="space-y-2.5">
-              <div
-                className={cn(
-                  "space-y-1.5 rounded-xl border p-2",
-                  requierePescadoCrudo ? "border-cyan-200 bg-cyan-50/60" : "border-border/60 bg-muted/20 opacity-70",
-                )}
-              >
-                <div className="flex items-baseline justify-between gap-2">
-                  <Label className={fieldLabelClass}>Pescado crudo (lb)</Label>
-                  {requierePescadoCrudo ? (
-                    <span className="text-[10px] font-semibold text-cyan-900">
-                      Total {formatLb(crudoTotalLb)} lb
-                      {entregadaLb > 0 ? ` · Ent ${formatLb(entregadaLb)}` : ""}
-                    </span>
-                  ) : null}
-                </div>
-                <p className={helpTextClass}>
-                  {requierePescadoCrudo
-                    ? "Bonito + Albacora > entregado y ≤ stock fresco."
-                    : "Solo con preparación inicial/extra."}
-                </p>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1">
-                    <Label className={fieldLabelClass}>Bonito</Label>
-                    <Input
-                      inputMode="decimal"
-                      value={cantBonitoLb}
-                      disabled={!requierePescadoCrudo}
-                      onChange={(e) => setCantBonitoLb(e.target.value)}
-                      placeholder="0"
-                      className={compactInputClass}
-                    />
-                    <p className={helpTextClass}>Fresco: {formatLb(stockBonitoLb)} lb</p>
-                  </div>
-                  <div className="space-y-1">
-                    <Label className={fieldLabelClass}>Albacora</Label>
-                    <Input
-                      inputMode="decimal"
-                      value={cantAlbacoraLb}
-                      disabled={!requierePescadoCrudo}
-                      onChange={(e) => setCantAlbacoraLb(e.target.value)}
-                      placeholder="0"
-                      className={compactInputClass}
-                    />
-                    <p className={helpTextClass}>Fresco: {formatLb(stockAlbacoraLb)} lb</p>
-                  </div>
-                </div>
+          <div
+            className={cn(
+              "space-y-1.5 rounded-xl border p-2",
+              requierePescadoCrudo ? "border-cyan-200 bg-cyan-50/60" : "border-border/60 bg-muted/20 opacity-70",
+            )}
+          >
+            <div className="flex items-baseline justify-between gap-2">
+              <Label className={fieldLabelClass}>Pescado crudo (lb)</Label>
+              {requierePescadoCrudo ? (
+                <span className="text-[10px] font-semibold text-cyan-900">
+                  Total {formatLb(crudoTotalLb)} lb
+                  {entregadaLb > 0 ? ` · Ent ${formatLb(entregadaLb)}` : ""}
+                </span>
+              ) : null}
+            </div>
+            <p className={helpTextClass}>
+              {requierePescadoCrudo
+                ? "Bonito + Albacora > entregado y ≤ stock fresco."
+                : "Solo con preparación inicial/extra."}
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Label className={fieldLabelClass}>Bonito</Label>
+                <Input
+                  inputMode="decimal"
+                  value={cantBonitoLb}
+                  disabled={!requierePescadoCrudo}
+                  onChange={(e) => setCantBonitoLb(e.target.value)}
+                  placeholder="0"
+                  className={compactInputClass}
+                />
+                <p className={helpTextClass}>Fresco: {formatLb(stockBonitoLb)} lb</p>
               </div>
+              <div className="space-y-1">
+                <Label className={fieldLabelClass}>Albacora</Label>
+                <Input
+                  inputMode="decimal"
+                  value={cantAlbacoraLb}
+                  disabled={!requierePescadoCrudo}
+                  onChange={(e) => setCantAlbacoraLb(e.target.value)}
+                  placeholder="0"
+                  className={compactInputClass}
+                />
+                <p className={helpTextClass}>Fresco: {formatLb(stockAlbacoraLb)} lb</p>
+              </div>
+            </div>
+          </div>
 
-              <div className="space-y-1.5">
-                <div className="grid grid-cols-[1fr_5.75rem] gap-2">
+          <div className="grid grid-cols-[1fr_5.75rem] gap-2">
+            <div className="space-y-1">
+              <Label className={fieldLabelClass}>Peso entregado</Label>
+              <Input
+                inputMode="decimal"
+                value={cantEntregada}
+                onChange={(e) => setCantEntregada(e.target.value)}
+                placeholder="25.5"
+                className={compactInputClass}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className={fieldLabelClass}>Unidad</Label>
+              <UnidadSelect value={unidadEntregada} onChange={setUnidadEntregada} />
+            </div>
+          </div>
+
+          <div className="space-y-1.5 rounded-xl border border-orange-200/80 bg-orange-50/40 p-2">
+            <div className="flex items-center justify-between gap-2">
+              <Label className={fieldLabelClass}>Bandejas cocinadas</Label>
+              <span className="text-[10px] font-semibold text-orange-900">
+                {bandejasCount} · {formatLb(cantidadTotalLb)} lb
+              </span>
+            </div>
+            <p className={helpTextClass}>Peso por bandeja. El total suma todas.</p>
+            <div className="space-y-1.5">
+              {bandejasPeso.map((bandeja, index) => (
+                <div key={bandeja.id} className="grid grid-cols-[auto_1fr_5.75rem_auto] items-end gap-1.5">
+                  <span className="pb-1.5 text-[10px] font-bold text-muted-foreground">#{index + 1}</span>
                   <div className="space-y-1">
-                    <Label className={fieldLabelClass}>Peso entregado</Label>
+                    <Label className={fieldLabelClass}>Peso</Label>
                     <Input
                       inputMode="decimal"
-                      value={cantEntregada}
-                      onChange={(e) => setCantEntregada(e.target.value)}
-                      placeholder="25.5"
+                      value={bandeja.peso}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setBandejasPeso((rows) =>
+                          rows.map((row) => (row.id === bandeja.id ? { ...row, peso: value } : row)),
+                        );
+                      }}
+                      placeholder="0"
                       className={compactInputClass}
                     />
                   </div>
                   <div className="space-y-1">
                     <Label className={fieldLabelClass}>Unidad</Label>
-                    <UnidadSelect value={unidadEntregada} onChange={setUnidadEntregada} />
-                  </div>
-                </div>
-                <div className="grid grid-cols-[1fr_5.75rem] gap-2">
-                  <div className="space-y-1">
-                    <Label className={fieldLabelClass}>Peso verificado</Label>
-                    <Input
-                      inputMode="decimal"
-                      value={cantVerificada}
-                      onChange={(e) => setCantVerificada(e.target.value)}
-                      placeholder="24.8"
-                      className={compactInputClass}
+                    <UnidadSelect
+                      value={bandeja.unidad}
+                      onChange={(unidad) => {
+                        setBandejasPeso((rows) =>
+                          rows.map((row) => (row.id === bandeja.id ? { ...row, unidad } : row)),
+                        );
+                      }}
                     />
                   </div>
-                  <div className="space-y-1">
-                    <Label className={fieldLabelClass}>Unidad</Label>
-                    <UnidadSelect value={unidadVerificada} onChange={setUnidadVerificada} />
-                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="h-8 w-8 shrink-0 rounded-lg"
+                    disabled={bandejasPeso.length <= 1}
+                    onClick={() => setBandejasPeso((rows) => rows.filter((row) => row.id !== bandeja.id))}
+                    aria-label={`Quitar bandeja ${index + 1}`}
+                  >
+                    <Minus className="h-3.5 w-3.5" />
+                  </Button>
                 </div>
-                <p className={helpTextClass}>
-                  Stock + verificado − bandejas. Diferencia entregado/verificado = merma.
-                </p>
-              </div>
-
-              <div className="grid grid-cols-[1.15fr_0.85fr] gap-2">
-                <div className="space-y-1">
-                  <Label className={fieldLabelClass}>Bandejas</Label>
-                  <div className="flex items-center gap-1.5">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      className="h-8 w-8 shrink-0 rounded-lg"
-                      disabled={bandejasCount <= 0}
-                      onClick={() => setCantBandejas(String(Math.max(0, bandejasCount - 1)))}
-                      aria-label="Disminuir bandejas"
-                    >
-                      <Minus className="h-3.5 w-3.5" />
-                    </Button>
-                    <Input
-                      inputMode="numeric"
-                      value={cantBandejas}
-                      onChange={(e) => setCantBandejas(e.target.value.replace(/[^\d]/g, ""))}
-                      placeholder="0"
-                      className={cn(compactInputClass, "text-center")}
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      className="h-8 w-8 shrink-0 rounded-lg"
-                      onClick={() => setCantBandejas(String(bandejasCount + 1))}
-                      aria-label="Aumentar bandejas"
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                  <p className={helpTextClass}>
-                    {formatLb(PESO_BANDEJA_LB)} lb c/u · desc. {formatLb(descuentoBandejasLb)} lb
-                  </p>
-                </div>
-                <div className="flex flex-col justify-center rounded-xl border border-blue-200 bg-blue-50 px-2 py-1.5">
-                  <Label className="text-[10px] font-semibold text-blue-900">Peso total</Label>
-                  <div className="mt-0.5 text-center">
-                    {verificadaLb > 0 ? (
-                      <span className="font-display text-lg font-black leading-none text-blue-700">
-                        {unidadVerificada === "GRAMOS"
-                          ? `${formatG(cantidadTotalLb)} g`
-                          : `${formatLb(cantidadTotalLb)} lb`}
-                      </span>
-                    ) : (
-                      <span className="text-sm font-bold text-blue-300">Auto</span>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <Label className={fieldLabelClass}>Observación</Label>
-                <Textarea
-                  value={obsIngreso}
-                  onChange={(e) => setObsIngreso(e.target.value)}
-                  rows={2}
-                  className="min-h-[52px] rounded-lg px-2 py-1.5 text-sm"
-                />
-              </div>
-              <Button
-                className="h-9 w-full rounded-xl text-sm"
-                disabled={ingresoMut.isPending}
-                onClick={() => ingresoMut.mutate()}
-              >
-                {ingresoMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                Registrar ingreso
-              </Button>
+              ))}
             </div>
-          ) : (
-            <div className="space-y-2.5">
-              <div className="grid grid-cols-[1fr_5.75rem] gap-2">
-                <div className="space-y-1">
-                  <Label className={fieldLabelClass}>Peso</Label>
-                  <Input
-                    inputMode="decimal"
-                    value={cantSalida}
-                    onChange={(e) => setCantSalida(e.target.value)}
-                    className={compactInputClass}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className={fieldLabelClass}>Unidad</Label>
-                  <UnidadSelect value={unidadSalida} onChange={setUnidadSalida} />
-                </div>
-              </div>
-              <div className="space-y-1">
-                <Label className={fieldLabelClass}>Observación</Label>
-                <Textarea
-                  value={obsSalida}
-                  onChange={(e) => setObsSalida(e.target.value)}
-                  rows={2}
-                  className="min-h-[52px] rounded-lg px-2 py-1.5 text-sm"
-                />
-              </div>
-              <Button
-                className="h-9 w-full rounded-xl text-sm"
-                disabled={salidaMut.isPending}
-                onClick={() => salidaMut.mutate()}
-              >
-                {salidaMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                Registrar salida
-              </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="h-8 w-full gap-1 rounded-lg text-xs"
+              onClick={() => setBandejasPeso((rows) => [...rows, nuevaBandejaPeso()])}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Agregar bandeja
+            </Button>
+            <div className="rounded-lg border border-blue-200 bg-blue-50 px-2 py-1.5 text-center">
+              <p className="text-[10px] font-semibold text-blue-900">Peso total cocinado</p>
+              <p className="font-display text-lg font-black leading-none text-blue-700">
+                {cantidadTotalLb > 0 ? `${formatLb(cantidadTotalLb)} lb` : "—"}
+              </p>
             </div>
-          )}
+          </div>
+
+          <div className="space-y-1">
+            <Label className={fieldLabelClass}>Observación</Label>
+            <Textarea
+              value={obsIngreso}
+              onChange={(e) => setObsIngreso(e.target.value)}
+              rows={2}
+              className="min-h-[52px] rounded-lg px-2 py-1.5 text-sm"
+            />
+          </div>
+          <Button
+            className="h-9 w-full rounded-xl text-sm"
+            disabled={ingresoMut.isPending}
+            onClick={() => ingresoMut.mutate()}
+          >
+            {ingresoMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            Registrar preparación
+          </Button>
         </Card>
       </>
     );

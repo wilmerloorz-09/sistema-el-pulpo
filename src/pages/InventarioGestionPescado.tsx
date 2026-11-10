@@ -33,14 +33,14 @@ const InventarioGestionPescado = () => {
   return (
     <InventarioModuleShell
       title="Pescado cocido"
-      description="Stock · ingreso/salida · movimientos"
+      description="Stock · preparación · movimientos"
       icon={<Fish className="h-4 w-4" />}
       iconClassName="border-sky-200 text-sky-700"
       defaultTab="sucursales"
       compactTabs
       tabs={[
         { value: "sucursales", label: "Sucursales", content: <GestionPescadoAdmin section="sucursales" /> },
-        { value: "ingreso-salida", label: "Ingreso", content: <GestionPescadoAdmin section="ingreso-salida" /> },
+        { value: "preparacion", label: "Preparación", content: <GestionPescadoAdmin section="preparacion" /> },
         { value: "movimientos", label: "Movim.", content: <GestionPescadoAdmin section="movimientos" /> },
         { value: "historial", label: "Historial", content: <GestionPescadoAdmin section="historial" /> },
       ]}
