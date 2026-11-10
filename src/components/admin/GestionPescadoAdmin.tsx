@@ -549,7 +549,6 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
                 <UnidadSelect value={unidadMedida} onChange={setUnidadMedida} />
               </div>
             </div>
-            <p className={helpTextClass}>Registra lo cocinado. Entra a Bodega General. La unidad aplica a todo.</p>
           </div>
 
           <div
