@@ -213,9 +213,9 @@ function UnidadSelect({
   );
 }
 
-const fieldLabelClass = "text-[11px] font-semibold leading-none text-foreground";
-const compactInputClass = "h-8 rounded-lg px-2 text-sm shadow-none";
-const compactSelectClass = "h-8 rounded-lg text-xs";
+const fieldLabelClass = "text-xs font-semibold leading-none text-foreground";
+const compactInputClass = "h-10 rounded-xl px-2.5 text-base shadow-none";
+const compactSelectClass = "h-10 rounded-xl text-sm";
 
 export default function GestionPescadoAdmin({ section }: { section: GestionPescadoSection }) {
   const { branches, activeBranchId, permissions, isGlobalAdmin } = useBranch();
@@ -729,7 +729,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
 
   const motivoBloqueoGuardar = useMemo(() => {
     if (!isPreparacionSection || !canOperateFull) return "Sin permiso para guardar preparación.";
-    if (preparacionTerminada) return "La preparación está terminada. Ábrela para guardar.";
+    if (preparacionTerminada) return "La preparación está terminada. Edítala para guardar.";
     if (bandejasExistentesTotal <= 0) return "Configura la cantidad de bandejas en Sucursales.";
     if (bandejasPeso.length === 0) return "Agrega al menos una bandeja.";
     if (bandejasPeso.some((b) => !b.numero.trim() || !parseCantidad(b.peso))) {
@@ -860,7 +860,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
           {formulariosBloqueados ? (
             <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-medium text-amber-900">
               <Lock className="h-3.5 w-3.5" />
-              Preparación terminada: sin cambios hasta abrirla o crear una nueva.
+              Preparación terminada: sin cambios hasta editarla o crear una nueva.
             </div>
           ) : null}
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -877,7 +877,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
                   }
                 }}
               >
-                <SelectTrigger className="h-9 rounded-xl text-xs">
+                <SelectTrigger className={compactSelectClass}>
                   <SelectValue>
                     <SelectOptionRow
                       icon={origenSeleccionado.icon}
@@ -903,23 +903,29 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
 
           <div
             className={cn(
-              "space-y-2 rounded-xl border p-2.5",
+              "space-y-2.5 rounded-xl border p-2.5",
               requierePescadoCrudo ? "border-cyan-200 bg-cyan-50/60" : "border-border/60 bg-muted/20 opacity-70",
             )}
           >
             <div className="flex items-center gap-1.5">
-              <span className="flex h-6 w-6 items-center justify-center rounded-md bg-cyan-100 text-cyan-700">
-                <Fish className="h-3.5 w-3.5" />
+              <span className="flex h-7 w-7 items-center justify-center rounded-md bg-cyan-100 text-cyan-700">
+                <Fish className="h-4 w-4" />
               </span>
-              <Label className={fieldLabelClass}>Pescado crudo</Label>
+              <Label className="text-sm font-semibold text-foreground">Pescado crudo</Label>
             </div>
             <div className="grid grid-cols-3 gap-2">
-              <div className="space-y-1">
-                <Label className={cn(fieldLabelClass, "inline-flex items-center gap-1")}>
-                  <span className="flex h-5 w-5 items-center justify-center rounded-md bg-sky-100 text-sky-700">
+              <div className="space-y-1.5">
+                <Label className="inline-flex flex-wrap items-center gap-1 text-xs font-semibold leading-snug text-foreground">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-sky-100 text-sky-700">
                     <Fish className="h-3 w-3" />
                   </span>
-                  Bonito
+                  <span>
+                    Bonito{" "}
+                    <span className="font-medium text-sky-700">
+                      ({formatEnUnidad(stockBonitoDisponibleLb, unidadMedida)}{" "}
+                      {unidadMedida === "GRAMOS" ? "g" : "lb"})
+                    </span>
+                  </span>
                 </Label>
                 <Input
                   inputMode="decimal"
@@ -930,12 +936,18 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
                   className={compactInputClass}
                 />
               </div>
-              <div className="space-y-1">
-                <Label className={cn(fieldLabelClass, "inline-flex items-center gap-1")}>
-                  <span className="flex h-5 w-5 items-center justify-center rounded-md bg-teal-100 text-teal-700">
+              <div className="space-y-1.5">
+                <Label className="inline-flex flex-wrap items-center gap-1 text-xs font-semibold leading-snug text-foreground">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-teal-100 text-teal-700">
                     <Fish className="h-3 w-3" />
                   </span>
-                  Albacora
+                  <span>
+                    Albacora{" "}
+                    <span className="font-medium text-teal-700">
+                      ({formatEnUnidad(stockAlbacoraDisponibleLb, unidadMedida)}{" "}
+                      {unidadMedida === "GRAMOS" ? "g" : "lb"})
+                    </span>
+                  </span>
                 </Label>
                 <Input
                   inputMode="decimal"
@@ -946,8 +958,8 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
                   className={compactInputClass}
                 />
               </div>
-              <div className="space-y-1">
-                <Label className={cn(fieldLabelClass, "inline-flex items-center gap-1")}>
+              <div className="space-y-1.5">
+                <Label className="inline-flex items-center gap-1 text-xs font-semibold leading-snug text-foreground">
                   <span className="flex h-5 w-5 items-center justify-center rounded-md bg-indigo-100 text-indigo-700">
                     <Sigma className="h-3 w-3" />
                   </span>
