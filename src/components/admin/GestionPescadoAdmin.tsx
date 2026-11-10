@@ -1184,7 +1184,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
               {preparacionTerminada ? (
                 <>
                   <LockOpen className="h-4 w-4" />
-                  Abrir preparación
+                  Editar preparación
                 </>
               ) : ingresoMut.isPending ? (
                 <>
