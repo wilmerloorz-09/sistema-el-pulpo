@@ -85,7 +85,6 @@ function UnidadSelect({
 }
 
 const fieldLabelClass = "text-[11px] font-semibold leading-none text-foreground";
-const helpTextClass = "text-[10px] leading-snug text-muted-foreground";
 const compactInputClass = "h-8 rounded-lg px-2 text-sm shadow-none";
 const compactSelectClass = "h-8 rounded-lg text-xs";
 
