@@ -425,36 +425,40 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
       <div className="space-y-4">
         {errorDialogNode}
         <Card className="rounded-[24px] border border-sky-200 bg-gradient-to-br from-sky-50 via-white to-blue-50 p-4 shadow-sm sm:p-5">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">Bodega General</p>
-          <p className="mt-1 font-display text-3xl font-black text-sky-950">
-            {stockQuery.isLoading ? "…" : formatLb(stockCentral?.cantidad_libras)} <span className="text-base font-semibold text-sky-700">lb</span>
-            <span className="ml-2 text-base font-semibold text-muted-foreground">({formatG(stockCentral?.cantidad_libras)} g)</span>
-          </p>
-          <div className="mt-3 flex flex-wrap items-end gap-2 border-t border-sky-100 pt-3">
-            <div className="min-w-[8.5rem] flex-1 space-y-1">
-              <Label className="inline-flex items-center gap-1 text-[11px] font-semibold text-sky-900">
-                <Hash className="h-3.5 w-3.5" />
-                Bandejas existentes
-              </Label>
-              <Input
-                inputMode="numeric"
-                value={bandejasExistentesInput}
-                disabled={!canOperateFull || bandejasExistentesQuery.isLoading || guardarBandejasExistentesMut.isPending}
-                onChange={(e) => setBandejasExistentesInput(e.target.value.replace(/[^\d]/g, ""))}
-                placeholder="0"
-                className="h-9 rounded-xl border-sky-200 bg-white/90"
-              />
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">Bodega General</p>
+              <p className="mt-1 font-display text-3xl font-black text-sky-950">
+                {stockQuery.isLoading ? "…" : formatLb(stockCentral?.cantidad_libras)} <span className="text-base font-semibold text-sky-700">lb</span>
+                <span className="ml-2 text-base font-semibold text-muted-foreground">({formatG(stockCentral?.cantidad_libras)} g)</span>
+              </p>
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              className="h-9 rounded-xl border-sky-300 bg-white text-sky-900 hover:bg-sky-50"
-              disabled={!canOperateFull || guardarBandejasExistentesMut.isPending || bandejasExistentesQuery.isLoading}
-              onClick={() => guardarBandejasExistentesMut.mutate()}
-            >
-              {guardarBandejasExistentesMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              Guardar
-            </Button>
+            <div className="w-[7.25rem] shrink-0 space-y-1">
+              <Label className="inline-flex items-center gap-1 text-[10px] font-semibold leading-none text-sky-900">
+                <Hash className="h-3 w-3" />
+                Bandejas
+              </Label>
+              <div className="flex items-center gap-1">
+                <Input
+                  inputMode="numeric"
+                  value={bandejasExistentesInput}
+                  disabled={!canOperateFull || bandejasExistentesQuery.isLoading || guardarBandejasExistentesMut.isPending}
+                  onChange={(e) => setBandejasExistentesInput(e.target.value.replace(/[^\d]/g, ""))}
+                  placeholder="0"
+                  className="h-8 w-14 rounded-lg border-sky-200 bg-white/90 px-2 text-center text-sm"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 rounded-lg border-sky-300 bg-white px-2 text-[11px] text-sky-900 hover:bg-sky-50"
+                  disabled={!canOperateFull || guardarBandejasExistentesMut.isPending || bandejasExistentesQuery.isLoading}
+                  onClick={() => guardarBandejasExistentesMut.mutate()}
+                >
+                  {guardarBandejasExistentesMut.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "OK"}
+                </Button>
+              </div>
+            </div>
           </div>
         </Card>
         <div className="overflow-x-auto rounded-2xl border">
