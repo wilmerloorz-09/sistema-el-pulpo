@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Hash, Layers, Loader2, Minus, Plus, Scale } from "lucide-react";
+import { Check, Hash, Layers, Loader2, Minus, Plus, Scale } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useBranch } from "@/contexts/BranchContext";
@@ -449,13 +449,18 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
                 />
                 <Button
                   type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-8 rounded-lg border-sky-300 bg-white px-2 text-[11px] text-sky-900 hover:bg-sky-50"
+                  size="icon"
+                  className="h-8 w-8 rounded-lg bg-sky-600 text-white shadow-sm hover:bg-sky-700"
                   disabled={!canOperateFull || guardarBandejasExistentesMut.isPending || bandejasExistentesQuery.isLoading}
                   onClick={() => guardarBandejasExistentesMut.mutate()}
+                  aria-label="Guardar bandejas existentes"
+                  title="Guardar"
                 >
-                  {guardarBandejasExistentesMut.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "OK"}
+                  {guardarBandejasExistentesMut.isPending ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Check className="h-4 w-4" strokeWidth={2.5} />
+                  )}
                 </Button>
               </div>
             </div>
