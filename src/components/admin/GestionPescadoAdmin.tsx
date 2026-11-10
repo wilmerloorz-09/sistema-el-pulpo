@@ -386,7 +386,6 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
       if (error) throw error;
     },
     onSuccess: async () => {
-      toast.success("Preparación guardada.");
       await invalidateAll();
       await qc.invalidateQueries({ queryKey: ["stock-pescado-fresco"] });
       await qc.invalidateQueries({ queryKey: ["historial-pescado-fresco"] });
@@ -935,7 +934,9 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
                   });
                   return;
                 }
-                ingresoMut.mutate();
+                ingresoMut.mutate(undefined, {
+                  onSuccess: () => toast.success("Preparación guardada."),
+                });
               }}
             >
               {ingresoMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
@@ -950,6 +951,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
                   ? "border-emerald-300 bg-emerald-50 text-emerald-900 hover:bg-emerald-100"
                   : "border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100",
               )}
+              disabled={!preparacionTerminada && ingresoMut.isPending}
               onClick={() => {
                 if (preparacionTerminada) {
                   setPreparacionTerminada(false);
@@ -963,14 +965,23 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
                   });
                   return;
                 }
-                setPreparacionTerminada(true);
-                toast.success("Preparación terminada.");
+                ingresoMut.mutate(undefined, {
+                  onSuccess: () => {
+                    setPreparacionTerminada(true);
+                    toast.success("Preparación guardada y terminada.");
+                  },
+                });
               }}
             >
               {preparacionTerminada ? (
                 <>
                   <LockOpen className="h-4 w-4" />
                   Abrir preparación
+                </>
+              ) : ingresoMut.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Guardando…
                 </>
               ) : (
                 <>
