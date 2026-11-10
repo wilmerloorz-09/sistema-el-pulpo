@@ -1,6 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Hash, Layers, Loader2, Minus, Plus, Scale } from "lucide-react";
+import {
+  Check,
+  ChefHat,
+  Hash,
+  Layers,
+  Loader2,
+  Minus,
+  MoreHorizontal,
+  Plus,
+  Scale,
+  Sparkles,
+  Weight,
+} from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useBranch } from "@/contexts/BranchContext";
@@ -60,6 +72,61 @@ function fecha(value: string) {
 
 type StockRow = { ambito: string; sucursal_id: string | null; sucursal_nombre: string; cantidad_libras: number };
 
+const ORIGEN_OPCIONES = [
+  {
+    value: "PREPARACION_INICIAL",
+    label: "Preparación inicial",
+    icon: ChefHat,
+    iconClass: "text-orange-600",
+  },
+  {
+    value: "PREPARACION_EXTRA",
+    label: "Preparación extra",
+    icon: Sparkles,
+    iconClass: "text-amber-600",
+  },
+  {
+    value: "OTROS",
+    label: "Otros",
+    icon: MoreHorizontal,
+    iconClass: "text-slate-600",
+  },
+] as const;
+
+const UNIDAD_OPCIONES = [
+  {
+    value: "LIBRAS" as const,
+    label: "Libras",
+    icon: Scale,
+    iconClass: "text-sky-600",
+  },
+  {
+    value: "GRAMOS" as const,
+    label: "Gramos",
+    icon: Weight,
+    iconClass: "text-violet-600",
+  },
+];
+
+function SelectOptionRow({
+  icon: Icon,
+  iconClass,
+  label,
+}: {
+  icon: typeof Scale;
+  iconClass: string;
+  label: string;
+}) {
+  return (
+    <span className="flex items-center gap-2">
+      <span className={cn("flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-muted/80", iconClass)}>
+        <Icon className="h-3.5 w-3.5" />
+      </span>
+      <span className="truncate font-medium">{label}</span>
+    </span>
+  );
+}
+
 function UnidadSelect({
   value,
   onChange,
@@ -71,14 +138,20 @@ function UnidadSelect({
   className?: string;
   disabled?: boolean;
 }) {
+  const selected = UNIDAD_OPCIONES.find((o) => o.value === value) ?? UNIDAD_OPCIONES[0];
   return (
     <Select value={value} onValueChange={(v) => onChange(v as Unidad)} disabled={disabled}>
-      <SelectTrigger className={cn("h-8 rounded-lg text-xs", className)}>
-        <SelectValue />
+      <SelectTrigger className={cn("h-9 rounded-xl text-xs", className)}>
+        <SelectValue>
+          <SelectOptionRow icon={selected.icon} iconClass={selected.iconClass} label={selected.label} />
+        </SelectValue>
       </SelectTrigger>
       <SelectContent>
-        <SelectItem value="LIBRAS">Libras</SelectItem>
-        <SelectItem value="GRAMOS">Gramos</SelectItem>
+        {UNIDAD_OPCIONES.map((opt) => (
+          <SelectItem key={opt.value} value={opt.value} className="py-2">
+            <SelectOptionRow icon={opt.icon} iconClass={opt.iconClass} label={opt.label} />
+          </SelectItem>
+        ))}
       </SelectContent>
     </Select>
   );
@@ -517,36 +590,45 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
         </p>
       );
     }
+    const origenSeleccionado = ORIGEN_OPCIONES.find((o) => o.value === origenIngreso) ?? ORIGEN_OPCIONES[0];
     return (
       <>
         {errorDialogNode}
         <Card className="space-y-2.5 rounded-xl border p-3">
-          <div className="space-y-1">
-            <div className="grid grid-cols-[minmax(0,1fr)_6.5rem] gap-2">
-              <div className="space-y-1">
-                <Label className={fieldLabelClass}>Origen</Label>
-                <Select
-                  value={origenIngreso}
-                  onValueChange={(v) => {
-                    setOrigenIngreso(v);
-                    if (v === "OTROS") {
-                      setCantBonito("");
-                      setCantAlbacora("");
-                    }
-                  }}
-                >
-                  <SelectTrigger className={compactSelectClass}><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="PREPARACION_INICIAL">Prep. inicial</SelectItem>
-                    <SelectItem value="PREPARACION_EXTRA">Prep. extra</SelectItem>
-                    <SelectItem value="OTROS">Otros</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <Label className={fieldLabelClass}>Unidad</Label>
-                <UnidadSelect value={unidadMedida} onChange={setUnidadMedida} />
-              </div>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label className={fieldLabelClass}>Origen</Label>
+              <Select
+                value={origenIngreso}
+                onValueChange={(v) => {
+                  setOrigenIngreso(v);
+                  if (v === "OTROS") {
+                    setCantBonito("");
+                    setCantAlbacora("");
+                  }
+                }}
+              >
+                <SelectTrigger className="h-9 rounded-xl text-xs">
+                  <SelectValue>
+                    <SelectOptionRow
+                      icon={origenSeleccionado.icon}
+                      iconClass={origenSeleccionado.iconClass}
+                      label={origenSeleccionado.label}
+                    />
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {ORIGEN_OPCIONES.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value} className="py-2">
+                      <SelectOptionRow icon={opt.icon} iconClass={opt.iconClass} label={opt.label} />
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className={fieldLabelClass}>Unidad de medida</Label>
+              <UnidadSelect value={unidadMedida} onChange={setUnidadMedida} />
             </div>
           </div>
 
