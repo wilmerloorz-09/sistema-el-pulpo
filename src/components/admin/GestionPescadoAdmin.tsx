@@ -64,13 +64,15 @@ function UnidadSelect({
   value,
   onChange,
   className,
+  disabled,
 }: {
   value: Unidad;
   onChange: (v: Unidad) => void;
   className?: string;
+  disabled?: boolean;
 }) {
   return (
-    <Select value={value} onValueChange={(v) => onChange(v as Unidad)}>
+    <Select value={value} onValueChange={(v) => onChange(v as Unidad)} disabled={disabled}>
       <SelectTrigger className={cn("h-8 rounded-lg text-xs", className)}>
         <SelectValue />
       </SelectTrigger>
@@ -178,8 +180,9 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
   const [origenIngreso, setOrigenIngreso] = useState("PREPARACION_INICIAL");
   const [bandejasPeso, setBandejasPeso] = useState<BandejaPeso[]>(() => [nuevaBandejaPeso()]);
   const [obsIngreso, setObsIngreso] = useState("");
-  const [cantBonitoLb, setCantBonitoLb] = useState("");
-  const [cantAlbacoraLb, setCantAlbacoraLb] = useState("");
+  const [unidadCrudo, setUnidadCrudo] = useState<Unidad>("LIBRAS");
+  const [cantBonito, setCantBonito] = useState("");
+  const [cantAlbacora, setCantAlbacora] = useState("");
 
   const requierePescadoCrudo =
     origenIngreso === "PREPARACION_INICIAL" || origenIngreso === "PREPARACION_EXTRA";
@@ -204,8 +207,14 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
     [stockFrescoQuery.data],
   );
 
-  const bonitoLb = useMemo(() => parseCantidad(cantBonitoLb) || 0, [cantBonitoLb]);
-  const albacoraLb = useMemo(() => parseCantidad(cantAlbacoraLb) || 0, [cantAlbacoraLb]);
+  const bonitoLb = useMemo(
+    () => aLibras(parseCantidad(cantBonito) || 0, unidadCrudo),
+    [cantBonito, unidadCrudo],
+  );
+  const albacoraLb = useMemo(
+    () => aLibras(parseCantidad(cantAlbacora) || 0, unidadCrudo),
+    [cantAlbacora, unidadCrudo],
+  );
   const crudoTotalLb = Math.round((bonitoLb + albacoraLb) * 1000) / 1000;
   const pesosBandejasLb = useMemo(
     () => bandejasPeso.map((b) => aLibras(parseCantidad(b.peso), b.unidad)),
@@ -229,8 +238,8 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
       let bonito = 0;
       let albacora = 0;
       if (requierePescadoCrudo) {
-        bonito = Math.round((parseCantidad(cantBonitoLb) || 0) * 1000) / 1000;
-        albacora = Math.round((parseCantidad(cantAlbacoraLb) || 0) * 1000) / 1000;
+        bonito = Math.round(bonitoLb * 1000) / 1000;
+        albacora = Math.round(albacoraLb * 1000) / 1000;
         const crudo = Math.round((bonito + albacora) * 1000) / 1000;
         if (crudo <= 0) {
           throw new Error("Ingresa la cantidad de pescado crudo (Bonito y/o Albacora)");
@@ -265,8 +274,9 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
       toast.success("Preparación registrada en Bodega General.");
       setBandejasPeso([nuevaBandejaPeso()]);
       setObsIngreso("");
-      setCantBonitoLb("");
-      setCantAlbacoraLb("");
+      setCantBonito("");
+      setCantAlbacora("");
+      setUnidadCrudo("LIBRAS");
       await invalidateAll();
       await qc.invalidateQueries({ queryKey: ["stock-pescado-fresco"] });
       await qc.invalidateQueries({ queryKey: ["historial-pescado-fresco"] });
@@ -418,8 +428,8 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
               onValueChange={(v) => {
                 setOrigenIngreso(v);
                 if (v === "OTROS") {
-                  setCantBonitoLb("");
-                  setCantAlbacoraLb("");
+                  setCantBonito("");
+                  setCantAlbacora("");
                 }
               }}
             >
@@ -440,7 +450,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
             )}
           >
             <div className="flex items-baseline justify-between gap-2">
-              <Label className={fieldLabelClass}>Pescado crudo (lb)</Label>
+              <Label className={fieldLabelClass}>Pescado crudo</Label>
               {requierePescadoCrudo ? (
                 <span className="text-[10px] font-semibold text-cyan-900">
                   Total {formatLb(crudoTotalLb)} lb
@@ -453,14 +463,22 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
                 ? "Bonito + Albacora > total bandejas y ≤ stock fresco."
                 : "Solo con preparación inicial/extra."}
             </p>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-[5.75rem_1fr_1fr] gap-2">
+              <div className="space-y-1">
+                <Label className={fieldLabelClass}>Unidad</Label>
+                <UnidadSelect
+                  value={unidadCrudo}
+                  onChange={setUnidadCrudo}
+                  disabled={!requierePescadoCrudo}
+                />
+              </div>
               <div className="space-y-1">
                 <Label className={fieldLabelClass}>Bonito</Label>
                 <Input
                   inputMode="decimal"
-                  value={cantBonitoLb}
+                  value={cantBonito}
                   disabled={!requierePescadoCrudo}
-                  onChange={(e) => setCantBonitoLb(e.target.value)}
+                  onChange={(e) => setCantBonito(e.target.value)}
                   placeholder="0"
                   className={compactInputClass}
                 />
@@ -470,9 +488,9 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
                 <Label className={fieldLabelClass}>Albacora</Label>
                 <Input
                   inputMode="decimal"
-                  value={cantAlbacoraLb}
+                  value={cantAlbacora}
                   disabled={!requierePescadoCrudo}
-                  onChange={(e) => setCantAlbacoraLb(e.target.value)}
+                  onChange={(e) => setCantAlbacora(e.target.value)}
                   placeholder="0"
                   className={compactInputClass}
                 />
