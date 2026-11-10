@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Check,
@@ -263,6 +263,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
   const [unidadMedida, setUnidadMedida] = useState<Unidad>("LIBRAS");
   const [cantBonito, setCantBonito] = useState("");
   const [cantAlbacora, setCantAlbacora] = useState("");
+  const ultimaFirmaPreparacionRef = useRef<string | null>(null);
 
   const requierePescadoCrudo =
     origenIngreso === "PREPARACION_INICIAL" || origenIngreso === "PREPARACION_EXTRA";
@@ -368,7 +369,8 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
       if (error) throw error;
     },
     onSuccess: async () => {
-      toast.success("Preparación registrada en Bodega General.");
+      toast.success("Preparación guardada automáticamente.");
+      ultimaFirmaPreparacionRef.current = null;
       setBandejasPeso([nuevaBandejaPeso()]);
       setObsIngreso("");
       setCantBonito("");
@@ -378,7 +380,10 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
       await qc.invalidateQueries({ queryKey: ["stock-pescado-fresco"] });
       await qc.invalidateQueries({ queryKey: ["historial-pescado-fresco"] });
     },
-    onError: (e: any) => mostrarError(e, "No se pudo registrar la preparación. Revisa los datos e inténtalo de nuevo."),
+    onError: (e: any) => {
+      ultimaFirmaPreparacionRef.current = null;
+      mostrarError(e, "No se pudo guardar la preparación. Revisa los datos e inténtalo de nuevo.");
+    },
   });
 
   // Movimientos
@@ -518,6 +523,63 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
 
   const stockDeUbicacion = (value: string): number =>
     ubicaciones.find((u) => u.value === value)?.stockLb ?? 0;
+
+  const preparacionFirma = useMemo(
+    () =>
+      JSON.stringify({
+        origenIngreso,
+        unidadMedida,
+        cantBonito: cantBonito.trim(),
+        cantAlbacora: cantAlbacora.trim(),
+        obsIngreso: obsIngreso.trim(),
+        bandejas: bandejasPeso.map((b) => ({ numero: b.numero.trim(), peso: b.peso.trim() })),
+      }),
+    [origenIngreso, unidadMedida, cantBonito, cantAlbacora, obsIngreso, bandejasPeso],
+  );
+
+  const preparacionListaParaGuardar = useMemo(() => {
+    if (!isPreparacionSection || !canOperateFull) return false;
+    if (bandejasExistentesTotal <= 0) return false;
+    if (bandejasPeso.length === 0) return false;
+    if (bandejasPeso.some((b) => !b.numero.trim() || !parseCantidad(b.peso))) return false;
+    const numeros = bandejasPeso.map((b) => b.numero.trim());
+    if (new Set(numeros).size !== numeros.length) return false;
+    if (numeros.some((n) => !numerosBandejaCatalogo.includes(n))) return false;
+    if (bandejasCount <= 0 || cantidadTotalLb <= 0) return false;
+    if (requierePescadoCrudo) {
+      if (crudoTotalLb <= 0) return false;
+      if (bonitoLb > stockBonitoLb || albacoraLb > stockAlbacoraLb) return false;
+      if (crudoTotalLb <= cantidadTotalLb) return false;
+    }
+    return true;
+  }, [
+    isPreparacionSection,
+    canOperateFull,
+    bandejasExistentesTotal,
+    bandejasPeso,
+    numerosBandejaCatalogo,
+    bandejasCount,
+    cantidadTotalLb,
+    requierePescadoCrudo,
+    crudoTotalLb,
+    bonitoLb,
+    albacoraLb,
+    stockBonitoLb,
+    stockAlbacoraLb,
+  ]);
+
+  useEffect(() => {
+    if (!preparacionListaParaGuardar) return;
+    if (ingresoMut.isPending) return;
+    if (ultimaFirmaPreparacionRef.current === preparacionFirma) return;
+
+    const timer = window.setTimeout(() => {
+      ultimaFirmaPreparacionRef.current = preparacionFirma;
+      ingresoMut.mutate();
+    }, 1200);
+
+    return () => window.clearTimeout(timer);
+  }, [preparacionListaParaGuardar, preparacionFirma, ingresoMut.isPending]);
 
   if (section === "sucursales") {
     return (
@@ -849,14 +911,33 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
               className="min-h-[52px] rounded-lg px-2 py-1.5 text-sm"
             />
           </div>
-          <Button
-            className="h-9 w-full rounded-xl text-sm"
-            disabled={ingresoMut.isPending}
-            onClick={() => ingresoMut.mutate()}
+          <div
+            className={cn(
+              "flex items-center gap-2 rounded-xl border px-3 py-2 text-[11px] font-medium",
+              ingresoMut.isPending
+                ? "border-sky-200 bg-sky-50 text-sky-800"
+                : preparacionListaParaGuardar
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                  : "border-slate-200 bg-slate-50 text-slate-600",
+            )}
           >
-            {ingresoMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            Registrar preparación
-          </Button>
+            {ingresoMut.isPending ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Guardando preparación…
+              </>
+            ) : preparacionListaParaGuardar ? (
+              <>
+                <Check className="h-3.5 w-3.5" />
+                Datos listos: se guardan solos en un momento
+              </>
+            ) : (
+              <>
+                <Layers className="h-3.5 w-3.5" />
+                Completa origen, pesos y bandejas: se guarda automáticamente
+              </>
+            )}
+          </div>
         </Card>
       </>
     );
