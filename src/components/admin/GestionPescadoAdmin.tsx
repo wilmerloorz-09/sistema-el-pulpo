@@ -51,10 +51,20 @@ function fecha(value: string) {
 
 type StockRow = { ambito: string; sucursal_id: string | null; sucursal_nombre: string; cantidad_libras: number };
 
-function UnidadSelect({ value, onChange }: { value: Unidad; onChange: (v: Unidad) => void }) {
+function UnidadSelect({
+  value,
+  onChange,
+  className,
+}: {
+  value: Unidad;
+  onChange: (v: Unidad) => void;
+  className?: string;
+}) {
   return (
     <Select value={value} onValueChange={(v) => onChange(v as Unidad)}>
-      <SelectTrigger className="rounded-2xl"><SelectValue /></SelectTrigger>
+      <SelectTrigger className={cn("h-8 rounded-lg text-xs", className)}>
+        <SelectValue />
+      </SelectTrigger>
       <SelectContent>
         <SelectItem value="LIBRAS">Libras</SelectItem>
         <SelectItem value="GRAMOS">Gramos</SelectItem>
@@ -62,6 +72,11 @@ function UnidadSelect({ value, onChange }: { value: Unidad; onChange: (v: Unidad
     </Select>
   );
 }
+
+const fieldLabelClass = "text-[11px] font-semibold leading-none text-foreground";
+const helpTextClass = "text-[10px] leading-snug text-muted-foreground";
+const compactInputClass = "h-8 rounded-lg px-2 text-sm shadow-none";
+const compactSelectClass = "h-8 rounded-lg text-xs";
 
 export default function GestionPescadoAdmin({ section }: { section: GestionPescadoSection }) {
   const { branches, activeBranchId, permissions, isGlobalAdmin } = useBranch();
@@ -419,164 +434,260 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
   }
 
   if (section === "ingreso-salida") {
-    if (!canOperateFull) return <p className="text-sm text-muted-foreground">Solo bodega general / administrador puede registrar ingresos y salidas.</p>;
+    if (!canOperateFull) {
+      return (
+        <p className="text-xs text-muted-foreground">
+          Solo bodega general / administrador puede registrar ingresos y salidas.
+        </p>
+      );
+    }
     return (
       <>
         {errorDialogNode}
-      <Card className="rounded-[24px] border p-4 space-y-4">
-        <div className="space-y-2">
-          <Label>Tipo de movimiento</Label>
-          <Select value={tipo} onValueChange={(v) => setTipo(v as "INGRESO" | "SALIDA")}>
-            <SelectTrigger className="rounded-2xl"><SelectValue /></SelectTrigger>
-            <SelectContent><SelectItem value="INGRESO">Ingreso</SelectItem><SelectItem value="SALIDA">Salida</SelectItem></SelectContent>
-          </Select>
-          <p className="text-xs text-muted-foreground">Aplica a Bodega General.</p>
-        </div>
+        <Card className="space-y-2.5 rounded-xl border p-3">
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <Label className={fieldLabelClass}>Tipo</Label>
+              <Select value={tipo} onValueChange={(v) => setTipo(v as "INGRESO" | "SALIDA")}>
+                <SelectTrigger className={compactSelectClass}><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="INGRESO">Ingreso</SelectItem>
+                  <SelectItem value="SALIDA">Salida</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {tipo === "INGRESO" ? (
+              <div className="space-y-1">
+                <Label className={fieldLabelClass}>Origen</Label>
+                <Select
+                  value={origenIngreso}
+                  onValueChange={(v) => {
+                    setOrigenIngreso(v);
+                    if (v === "OTROS") {
+                      setCantBonitoLb("");
+                      setCantAlbacoraLb("");
+                    }
+                  }}
+                >
+                  <SelectTrigger className={compactSelectClass}><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="PREPARACION_INICIAL">Prep. inicial</SelectItem>
+                    <SelectItem value="PREPARACION_EXTRA">Prep. extra</SelectItem>
+                    <SelectItem value="OTROS">Otros</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : (
+              <div className="space-y-1">
+                <Label className={fieldLabelClass}>Motivo</Label>
+                <Select value={motivoSalida} onValueChange={setMotivoSalida}>
+                  <SelectTrigger className={compactSelectClass}><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="DANO_PRODUCTO">Daño producto</SelectItem>
+                    <SelectItem value="OTROS">Otros</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+          </div>
+          <p className={helpTextClass}>Aplica a Bodega General.</p>
 
-        {tipo === "INGRESO" ? (
-          <div className="space-y-3">
-            <div className="space-y-2">
-              <Label>Origen</Label>
-              <Select
-                value={origenIngreso}
-                onValueChange={(v) => {
-                  setOrigenIngreso(v);
-                  if (v === "OTROS") {
-                    setCantBonitoLb("");
-                    setCantAlbacoraLb("");
-                  }
-                }}
+          {tipo === "INGRESO" ? (
+            <div className="space-y-2.5">
+              <div
+                className={cn(
+                  "space-y-1.5 rounded-xl border p-2",
+                  requierePescadoCrudo ? "border-cyan-200 bg-cyan-50/60" : "border-border/60 bg-muted/20 opacity-70",
+                )}
               >
-                <SelectTrigger className="rounded-2xl"><SelectValue /></SelectTrigger>
-                <SelectContent><SelectItem value="PREPARACION_INICIAL">Preparación inicial</SelectItem><SelectItem value="PREPARACION_EXTRA">Preparación extra</SelectItem><SelectItem value="OTROS">Otros</SelectItem></SelectContent>
-              </Select>
-            </div>
-
-            <div className={cn("space-y-3 rounded-2xl border p-3", requierePescadoCrudo ? "border-cyan-200 bg-cyan-50/60" : "border-border/60 bg-muted/20 opacity-70")}>
-              <div>
-                <Label className="text-sm">Pescado crudo (lb)</Label>
-                <p className="text-xs text-muted-foreground">
-                  {requierePescadoCrudo
-                    ? "Obligatorio en preparación. La suma Bonito + Albacora debe ser mayor que el peso entregado y no superar el stock de fresco."
-                    : "Se habilita solo con Preparación inicial o Preparación extra."}
-                </p>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label>Bonito (lb)</Label>
-                  <Input
-                    inputMode="decimal"
-                    value={cantBonitoLb}
-                    disabled={!requierePescadoCrudo}
-                    onChange={(e) => setCantBonitoLb(e.target.value)}
-                    placeholder="0"
-                  />
-                  <p className="text-[11px] text-muted-foreground">
-                    Stock fresco: {formatLb(stockBonitoLb)} lb
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  <Label>Albacora (lb)</Label>
-                  <Input
-                    inputMode="decimal"
-                    value={cantAlbacoraLb}
-                    disabled={!requierePescadoCrudo}
-                    onChange={(e) => setCantAlbacoraLb(e.target.value)}
-                    placeholder="0"
-                  />
-                  <p className="text-[11px] text-muted-foreground">
-                    Stock fresco: {formatLb(stockAlbacoraLb)} lb
-                  </p>
-                </div>
-              </div>
-              {requierePescadoCrudo ? (
-                <p className="text-xs text-muted-foreground">
-                  Total crudo: <span className="font-semibold text-foreground">{formatLb(crudoTotalLb)} lb</span>
-                  {entregadaLb > 0 ? (
-                    <> · Entregado: <span className="font-semibold text-foreground">{formatLb(entregadaLb)} lb</span></>
-                  ) : null}
-                </p>
-              ) : null}
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-2"><Label>Peso entregado</Label><Input inputMode="decimal" value={cantEntregada} onChange={(e) => setCantEntregada(e.target.value)} placeholder="Ej. 25.5" /></div>
-              <div className="space-y-2"><Label>Unidad</Label><UnidadSelect value={unidadEntregada} onChange={setUnidadEntregada} /></div>
-              <div className="space-y-2"><Label>Peso verificado</Label><Input inputMode="decimal" value={cantVerificada} onChange={(e) => setCantVerificada(e.target.value)} placeholder="Ej. 24.8" /></div>
-              <div className="space-y-2"><Label>Unidad</Label><UnidadSelect value={unidadVerificada} onChange={setUnidadVerificada} /></div>
-            </div>
-            <p className="text-xs text-muted-foreground">El stock de Bodega General aumenta con el peso total (verificado menos bandejas). La diferencia entregado-verificado queda registrada como merma.</p>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label>Cantidad de bandejas</Label>
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    className="h-10 w-10 shrink-0 rounded-xl"
-                    disabled={bandejasCount <= 0}
-                    onClick={() => setCantBandejas(String(Math.max(0, bandejasCount - 1)))}
-                    aria-label="Disminuir bandejas"
-                  >
-                    <Minus className="h-4 w-4" />
-                  </Button>
-                  <Input
-                    inputMode="numeric"
-                    value={cantBandejas}
-                    onChange={(e) => setCantBandejas(e.target.value.replace(/[^\d]/g, ""))}
-                    placeholder="0"
-                    className="text-center"
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    className="h-10 w-10 shrink-0 rounded-xl"
-                    onClick={() => setCantBandejas(String(bandejasCount + 1))}
-                    aria-label="Aumentar bandejas"
-                  >
-                    <Plus className="h-4 w-4" />
-                  </Button>
-                </div>
-                <p className="text-xs text-muted-foreground">Cada bandeja pesa {formatLb(PESO_BANDEJA_LB)} lb (descuento: {formatLb(descuentoBandejasLb)} lb).</p>
-              </div>
-              <div className="space-y-2 rounded-2xl border border-blue-200 bg-blue-50 p-3">
-                <Label className="text-blue-900">Peso Total</Label>
-                <div className="py-1 text-center">
-                  {verificadaLb > 0 ? (
-                    <span className="font-display text-3xl font-black leading-none text-blue-700">
-                      {unidadVerificada === "GRAMOS"
-                        ? `${formatG(cantidadTotalLb)} gramos`
-                        : `${formatLb(cantidadTotalLb)} Libras`}
+                <div className="flex items-baseline justify-between gap-2">
+                  <Label className={fieldLabelClass}>Pescado crudo (lb)</Label>
+                  {requierePescadoCrudo ? (
+                    <span className="text-[10px] font-semibold text-cyan-900">
+                      Total {formatLb(crudoTotalLb)} lb
+                      {entregadaLb > 0 ? ` · Ent ${formatLb(entregadaLb)}` : ""}
                     </span>
-                  ) : (
-                    <span className="text-lg font-bold text-blue-300">Automático</span>
-                  )}
+                  ) : null}
+                </div>
+                <p className={helpTextClass}>
+                  {requierePescadoCrudo
+                    ? "Bonito + Albacora > entregado y ≤ stock fresco."
+                    : "Solo con preparación inicial/extra."}
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <Label className={fieldLabelClass}>Bonito</Label>
+                    <Input
+                      inputMode="decimal"
+                      value={cantBonitoLb}
+                      disabled={!requierePescadoCrudo}
+                      onChange={(e) => setCantBonitoLb(e.target.value)}
+                      placeholder="0"
+                      className={compactInputClass}
+                    />
+                    <p className={helpTextClass}>Fresco: {formatLb(stockBonitoLb)} lb</p>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className={fieldLabelClass}>Albacora</Label>
+                    <Input
+                      inputMode="decimal"
+                      value={cantAlbacoraLb}
+                      disabled={!requierePescadoCrudo}
+                      onChange={(e) => setCantAlbacoraLb(e.target.value)}
+                      placeholder="0"
+                      className={compactInputClass}
+                    />
+                    <p className={helpTextClass}>Fresco: {formatLb(stockAlbacoraLb)} lb</p>
+                  </div>
                 </div>
               </div>
+
+              <div className="space-y-1.5">
+                <div className="grid grid-cols-[1fr_5.75rem] gap-2">
+                  <div className="space-y-1">
+                    <Label className={fieldLabelClass}>Peso entregado</Label>
+                    <Input
+                      inputMode="decimal"
+                      value={cantEntregada}
+                      onChange={(e) => setCantEntregada(e.target.value)}
+                      placeholder="25.5"
+                      className={compactInputClass}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className={fieldLabelClass}>Unidad</Label>
+                    <UnidadSelect value={unidadEntregada} onChange={setUnidadEntregada} />
+                  </div>
+                </div>
+                <div className="grid grid-cols-[1fr_5.75rem] gap-2">
+                  <div className="space-y-1">
+                    <Label className={fieldLabelClass}>Peso verificado</Label>
+                    <Input
+                      inputMode="decimal"
+                      value={cantVerificada}
+                      onChange={(e) => setCantVerificada(e.target.value)}
+                      placeholder="24.8"
+                      className={compactInputClass}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className={fieldLabelClass}>Unidad</Label>
+                    <UnidadSelect value={unidadVerificada} onChange={setUnidadVerificada} />
+                  </div>
+                </div>
+                <p className={helpTextClass}>
+                  Stock + verificado − bandejas. Diferencia entregado/verificado = merma.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-[1.15fr_0.85fr] gap-2">
+                <div className="space-y-1">
+                  <Label className={fieldLabelClass}>Bandejas</Label>
+                  <div className="flex items-center gap-1.5">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="h-8 w-8 shrink-0 rounded-lg"
+                      disabled={bandejasCount <= 0}
+                      onClick={() => setCantBandejas(String(Math.max(0, bandejasCount - 1)))}
+                      aria-label="Disminuir bandejas"
+                    >
+                      <Minus className="h-3.5 w-3.5" />
+                    </Button>
+                    <Input
+                      inputMode="numeric"
+                      value={cantBandejas}
+                      onChange={(e) => setCantBandejas(e.target.value.replace(/[^\d]/g, ""))}
+                      placeholder="0"
+                      className={cn(compactInputClass, "text-center")}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="h-8 w-8 shrink-0 rounded-lg"
+                      onClick={() => setCantBandejas(String(bandejasCount + 1))}
+                      aria-label="Aumentar bandejas"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                  <p className={helpTextClass}>
+                    {formatLb(PESO_BANDEJA_LB)} lb c/u · desc. {formatLb(descuentoBandejasLb)} lb
+                  </p>
+                </div>
+                <div className="flex flex-col justify-center rounded-xl border border-blue-200 bg-blue-50 px-2 py-1.5">
+                  <Label className="text-[10px] font-semibold text-blue-900">Peso total</Label>
+                  <div className="mt-0.5 text-center">
+                    {verificadaLb > 0 ? (
+                      <span className="font-display text-lg font-black leading-none text-blue-700">
+                        {unidadVerificada === "GRAMOS"
+                          ? `${formatG(cantidadTotalLb)} g`
+                          : `${formatLb(cantidadTotalLb)} lb`}
+                      </span>
+                    ) : (
+                      <span className="text-sm font-bold text-blue-300">Auto</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <Label className={fieldLabelClass}>Observación</Label>
+                <Textarea
+                  value={obsIngreso}
+                  onChange={(e) => setObsIngreso(e.target.value)}
+                  rows={2}
+                  className="min-h-[52px] rounded-lg px-2 py-1.5 text-sm"
+                />
+              </div>
+              <Button
+                className="h-9 w-full rounded-xl text-sm"
+                disabled={ingresoMut.isPending}
+                onClick={() => ingresoMut.mutate()}
+              >
+                {ingresoMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                Registrar ingreso
+              </Button>
             </div>
-            <div className="space-y-2"><Label>Observación</Label><Textarea value={obsIngreso} onChange={(e) => setObsIngreso(e.target.value)} rows={2} /></div>
-            <Button className="rounded-2xl" disabled={ingresoMut.isPending} onClick={() => ingresoMut.mutate()}>{ingresoMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Registrar ingreso</Button>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-2"><Label>Peso</Label><Input inputMode="decimal" value={cantSalida} onChange={(e) => setCantSalida(e.target.value)} /></div>
-              <div className="space-y-2"><Label>Unidad</Label><UnidadSelect value={unidadSalida} onChange={setUnidadSalida} /></div>
+          ) : (
+            <div className="space-y-2.5">
+              <div className="grid grid-cols-[1fr_5.75rem] gap-2">
+                <div className="space-y-1">
+                  <Label className={fieldLabelClass}>Peso</Label>
+                  <Input
+                    inputMode="decimal"
+                    value={cantSalida}
+                    onChange={(e) => setCantSalida(e.target.value)}
+                    className={compactInputClass}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className={fieldLabelClass}>Unidad</Label>
+                  <UnidadSelect value={unidadSalida} onChange={setUnidadSalida} />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <Label className={fieldLabelClass}>Observación</Label>
+                <Textarea
+                  value={obsSalida}
+                  onChange={(e) => setObsSalida(e.target.value)}
+                  rows={2}
+                  className="min-h-[52px] rounded-lg px-2 py-1.5 text-sm"
+                />
+              </div>
+              <Button
+                className="h-9 w-full rounded-xl text-sm"
+                disabled={salidaMut.isPending}
+                onClick={() => salidaMut.mutate()}
+              >
+                {salidaMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                Registrar salida
+              </Button>
             </div>
-            <div className="space-y-2">
-              <Label>Motivo</Label>
-              <Select value={motivoSalida} onValueChange={setMotivoSalida}>
-                <SelectTrigger className="rounded-2xl"><SelectValue /></SelectTrigger>
-                <SelectContent><SelectItem value="DANO_PRODUCTO">Daño del producto</SelectItem><SelectItem value="OTROS">Otros</SelectItem></SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2"><Label>Observación</Label><Textarea value={obsSalida} onChange={(e) => setObsSalida(e.target.value)} rows={2} /></div>
-            <Button className="rounded-2xl" disabled={salidaMut.isPending} onClick={() => salidaMut.mutate()}>{salidaMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Registrar salida</Button>
-          </div>
-        )}
-      </Card>
+          )}
+        </Card>
       </>
     );
   }
