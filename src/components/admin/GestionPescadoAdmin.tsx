@@ -176,8 +176,6 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
   // Preparación (cocina)
   const isPreparacionSection = section === "preparacion" || section === "ingreso-salida";
   const [origenIngreso, setOrigenIngreso] = useState("PREPARACION_INICIAL");
-  const [cantEntregada, setCantEntregada] = useState("");
-  const [unidadEntregada, setUnidadEntregada] = useState<Unidad>("LIBRAS");
   const [bandejasPeso, setBandejasPeso] = useState<BandejaPeso[]>(() => [nuevaBandejaPeso()]);
   const [obsIngreso, setObsIngreso] = useState("");
   const [cantBonitoLb, setCantBonitoLb] = useState("");
@@ -206,10 +204,6 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
     [stockFrescoQuery.data],
   );
 
-  const entregadaLb = useMemo(
-    () => aLibras(parseCantidad(cantEntregada), unidadEntregada),
-    [cantEntregada, unidadEntregada],
-  );
   const bonitoLb = useMemo(() => parseCantidad(cantBonitoLb) || 0, [cantBonitoLb]);
   const albacoraLb = useMemo(() => parseCantidad(cantAlbacoraLb) || 0, [cantAlbacoraLb]);
   const crudoTotalLb = Math.round((bonitoLb + albacoraLb) * 1000) / 1000;
@@ -225,8 +219,6 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
 
   const ingresoMut = useMutation({
     mutationFn: async () => {
-      const entregadaRaw = parseCantidad(cantEntregada);
-      if (!entregadaRaw) throw new Error("Ingresa el peso entregado");
       if (bandejasPeso.some((b) => !parseCantidad(b.peso))) {
         throw new Error("Todas las bandejas deben tener peso mayor a 0");
       }
@@ -234,7 +226,6 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
         throw new Error("Agrega al menos una bandeja con peso");
       }
 
-      const entregada = aLibras(entregadaRaw, unidadEntregada);
       let bonito = 0;
       let albacora = 0;
       if (requierePescadoCrudo) {
@@ -250,16 +241,17 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
         if (albacora > stockAlbacoraLb) {
           throw new Error(`Stock insuficiente de Albacora: hay ${formatLb(stockAlbacoraLb)} lb y se solicitan ${formatLb(albacora)} lb`);
         }
-        if (crudo <= entregada) {
+        if (crudo <= cantidadTotalLb) {
           throw new Error(
-            `El pescado crudo (${formatLb(crudo)} lb) debe ser mayor que el peso entregado (${formatLb(entregada)} lb)`,
+            `El pescado crudo (${formatLb(crudo)} lb) debe ser mayor que el total de bandejas (${formatLb(cantidadTotalLb)} lb)`,
           );
         }
       }
 
       const { error } = await supabase.rpc("registrar_ingreso_pescado" as any, {
         p_origen: origenIngreso,
-        p_cantidad_entregada_lb: entregada,
+        // Compatibilidad RPC: entregada = total cocinado (suma bandejas); sin campo manual.
+        p_cantidad_entregada_lb: cantidadTotalLb,
         p_cantidad_verificada_lb: cantidadTotalLb,
         p_observacion: obsIngreso.trim() || null,
         p_cantidad_bandejas: bandejasCount,
@@ -271,7 +263,6 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
     },
     onSuccess: async () => {
       toast.success("Preparación registrada en Bodega General.");
-      setCantEntregada("");
       setBandejasPeso([nuevaBandejaPeso()]);
       setObsIngreso("");
       setCantBonitoLb("");
@@ -453,13 +444,13 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
               {requierePescadoCrudo ? (
                 <span className="text-[10px] font-semibold text-cyan-900">
                   Total {formatLb(crudoTotalLb)} lb
-                  {entregadaLb > 0 ? ` · Ent ${formatLb(entregadaLb)}` : ""}
+                  {cantidadTotalLb > 0 ? ` · Band ${formatLb(cantidadTotalLb)}` : ""}
                 </span>
               ) : null}
             </div>
             <p className={helpTextClass}>
               {requierePescadoCrudo
-                ? "Bonito + Albacora > entregado y ≤ stock fresco."
+                ? "Bonito + Albacora > total bandejas y ≤ stock fresco."
                 : "Solo con preparación inicial/extra."}
             </p>
             <div className="grid grid-cols-2 gap-2">
@@ -487,23 +478,6 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
                 />
                 <p className={helpTextClass}>Fresco: {formatLb(stockAlbacoraLb)} lb</p>
               </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-[1fr_5.75rem] gap-2">
-            <div className="space-y-1">
-              <Label className={fieldLabelClass}>Peso entregado</Label>
-              <Input
-                inputMode="decimal"
-                value={cantEntregada}
-                onChange={(e) => setCantEntregada(e.target.value)}
-                placeholder="25.5"
-                className={compactInputClass}
-              />
-            </div>
-            <div className="space-y-1">
-              <Label className={fieldLabelClass}>Unidad</Label>
-              <UnidadSelect value={unidadEntregada} onChange={setUnidadEntregada} />
             </div>
           </div>
 
