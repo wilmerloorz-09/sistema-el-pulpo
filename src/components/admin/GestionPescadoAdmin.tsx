@@ -197,7 +197,7 @@ function UnidadSelect({
   const selected = UNIDAD_OPCIONES.find((o) => o.value === value) ?? UNIDAD_OPCIONES[0];
   return (
     <Select value={value} onValueChange={(v) => onChange(v as Unidad)} disabled={disabled}>
-      <SelectTrigger className={cn("h-9 rounded-xl text-xs", className)}>
+      <SelectTrigger className={cn("h-10 rounded-xl text-sm", className)}>
         <SelectValue>
           <SelectOptionRow icon={selected.icon} iconClass={selected.iconClass} label={selected.label} />
         </SelectValue>
@@ -583,6 +583,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
       if (result?.modo !== "noop") {
         await invalidateAll();
         await qc.invalidateQueries({ queryKey: ["stock-pescado-fresco"] });
+        await qc.refetchQueries({ queryKey: ["stock-pescado-fresco"] });
         await qc.invalidateQueries({ queryKey: ["historial-pescado-fresco"] });
       }
     },
@@ -922,7 +923,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
                   <span>
                     Bonito{" "}
                     <span className="font-medium text-sky-700">
-                      ({formatEnUnidad(stockBonitoDisponibleLb, unidadMedida)}{" "}
+                      ({formatEnUnidad(stockBonitoLb, unidadMedida)}{" "}
                       {unidadMedida === "GRAMOS" ? "g" : "lb"})
                     </span>
                   </span>
@@ -944,7 +945,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
                   <span>
                     Albacora{" "}
                     <span className="font-medium text-teal-700">
-                      ({formatEnUnidad(stockAlbacoraDisponibleLb, unidadMedida)}{" "}
+                      ({formatEnUnidad(stockAlbacoraLb, unidadMedida)}{" "}
                       {unidadMedida === "GRAMOS" ? "g" : "lb"})
                     </span>
                   </span>
