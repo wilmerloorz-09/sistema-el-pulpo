@@ -458,11 +458,6 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
                 </span>
               ) : null}
             </div>
-            <p className={helpTextClass}>
-              {requierePescadoCrudo
-                ? "Bonito + Albacora > total bandejas y ≤ stock fresco."
-                : "Solo con preparación inicial/extra."}
-            </p>
             <div className="grid grid-cols-[5.75rem_1fr_1fr] gap-2">
               <div className="space-y-1">
                 <Label className={fieldLabelClass}>Unidad</Label>
@@ -482,7 +477,6 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
                   placeholder="0"
                   className={compactInputClass}
                 />
-                <p className={helpTextClass}>Fresco: {formatLb(stockBonitoLb)} lb</p>
               </div>
               <div className="space-y-1">
                 <Label className={fieldLabelClass}>Albacora</Label>
@@ -494,7 +488,6 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
                   placeholder="0"
                   className={compactInputClass}
                 />
-                <p className={helpTextClass}>Fresco: {formatLb(stockAlbacoraLb)} lb</p>
               </div>
             </div>
           </div>
