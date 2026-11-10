@@ -577,8 +577,6 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
     unidadMedida,
   ]);
 
-  const preparacionListaParaGuardar = !motivoBloqueoGuardar;
-
   if (section === "sucursales") {
     return (
       <div className="space-y-4">
