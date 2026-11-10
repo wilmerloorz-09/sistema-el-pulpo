@@ -68,6 +68,12 @@ function formatG(valueLb: number | string | null | undefined): string {
   const n = Number(valueLb ?? 0) * GRAMOS_POR_LIBRA;
   return Number.isFinite(n) ? n.toLocaleString("es-EC", { maximumFractionDigits: 0 }) : "0";
 }
+function formatEnUnidad(valueLb: number | string | null | undefined, unidad: Unidad): string {
+  return unidad === "GRAMOS" ? formatG(valueLb) : formatLb(valueLb);
+}
+function etiquetaUnidad(unidad: Unidad): string {
+  return unidad === "GRAMOS" ? "gramos" : "libras";
+}
 function fecha(value: string) {
   return new Date(value).toLocaleString("es-EC");
 }
@@ -693,7 +699,9 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
                   )}
                   aria-live="polite"
                 >
-                  {requierePescadoCrudo && crudoTotalLb > 0 ? formatLb(crudoTotalLb) : "—"}
+                  {requierePescadoCrudo && crudoTotalLb > 0
+                    ? formatEnUnidad(crudoTotalLb, unidadMedida)
+                    : "—"}
                 </div>
               </div>
             </div>
@@ -727,10 +735,10 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
                   </div>
                   <div className="px-2.5 py-2.5 text-center">
                     <p className="font-display text-xl font-black leading-none tracking-tight text-slate-900">
-                      {cantidadTotalLb > 0 ? formatLb(cantidadTotalLb) : "—"}
+                      {cantidadTotalLb > 0 ? formatEnUnidad(cantidadTotalLb, unidadMedida) : "—"}
                     </p>
                     <p className="mt-1 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">
-                      libras
+                      {etiquetaUnidad(unidadMedida)}
                     </p>
                   </div>
                 </div>
