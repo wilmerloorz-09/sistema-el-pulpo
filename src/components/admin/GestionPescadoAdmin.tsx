@@ -532,22 +532,33 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
   const stockDeUbicacion = (value: string): number =>
     ubicaciones.find((u) => u.value === value)?.stockLb ?? 0;
 
-  const preparacionListaParaGuardar = useMemo(() => {
-    if (!isPreparacionSection || !canOperateFull) return false;
-    if (preparacionTerminada) return false;
-    if (bandejasExistentesTotal <= 0) return false;
-    if (bandejasPeso.length === 0) return false;
-    if (bandejasPeso.some((b) => !b.numero.trim() || !parseCantidad(b.peso))) return false;
-    const numeros = bandejasPeso.map((b) => b.numero.trim());
-    if (new Set(numeros).size !== numeros.length) return false;
-    if (numeros.some((n) => !numerosBandejaCatalogo.includes(n))) return false;
-    if (bandejasCount <= 0 || cantidadTotalLb <= 0) return false;
-    if (requierePescadoCrudo) {
-      if (crudoTotalLb <= 0) return false;
-      if (bonitoLb > stockBonitoLb || albacoraLb > stockAlbacoraLb) return false;
-      if (crudoTotalLb <= cantidadTotalLb) return false;
+  const motivoBloqueoGuardar = useMemo(() => {
+    if (!isPreparacionSection || !canOperateFull) return "Sin permiso para guardar preparación.";
+    if (preparacionTerminada) return "La preparación está terminada. Ábrela para guardar.";
+    if (bandejasExistentesTotal <= 0) return "Configura la cantidad de bandejas en Sucursales.";
+    if (bandejasPeso.length === 0) return "Agrega al menos una bandeja.";
+    if (bandejasPeso.some((b) => !b.numero.trim() || !parseCantidad(b.peso))) {
+      return "Completa bandeja y peso en todas las filas.";
     }
-    return true;
+    const numeros = bandejasPeso.map((b) => b.numero.trim());
+    if (new Set(numeros).size !== numeros.length) return "Hay números de bandeja repetidos.";
+    if (numeros.some((n) => !numerosBandejaCatalogo.includes(n))) {
+      return "Hay bandejas fuera del catálogo configurado.";
+    }
+    if (bandejasCount <= 0 || cantidadTotalLb <= 0) return "El peso total de bandejas debe ser mayor a 0.";
+    if (requierePescadoCrudo) {
+      if (crudoTotalLb <= 0) return "Ingresa pescado crudo (Bonito y/o Albacora).";
+      if (bonitoLb > stockBonitoLb) {
+        return `Stock insuficiente de Bonito: hay ${formatEnUnidad(stockBonitoLb, unidadMedida)} ${etiquetaUnidad(unidadMedida)} y pediste ${formatEnUnidad(bonitoLb, unidadMedida)}.`;
+      }
+      if (albacoraLb > stockAlbacoraLb) {
+        return `Stock insuficiente de Albacora: hay ${formatEnUnidad(stockAlbacoraLb, unidadMedida)} ${etiquetaUnidad(unidadMedida)} y pediste ${formatEnUnidad(albacoraLb, unidadMedida)}.`;
+      }
+      if (crudoTotalLb <= cantidadTotalLb) {
+        return `El pescado crudo (${formatEnUnidad(crudoTotalLb, unidadMedida)}) debe ser mayor que el total de bandejas (${formatEnUnidad(cantidadTotalLb, unidadMedida)}).`;
+      }
+    }
+    return null;
   }, [
     isPreparacionSection,
     canOperateFull,
@@ -563,7 +574,10 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
     albacoraLb,
     stockBonitoLb,
     stockAlbacoraLb,
+    unidadMedida,
   ]);
+
+  const preparacionListaParaGuardar = !motivoBloqueoGuardar;
 
   if (section === "sucursales") {
     return (
@@ -910,51 +924,67 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
               className="min-h-[52px] rounded-lg px-2 py-1.5 text-sm"
             />
           </div>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-            <Button
-              className="h-10 gap-1.5 rounded-xl text-sm"
-              disabled={!preparacionListaParaGuardar || ingresoMut.isPending}
-              onClick={() => ingresoMut.mutate()}
-            >
-              {ingresoMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              Guardar
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              className={cn(
-                "h-10 gap-1.5 rounded-xl text-sm",
-                preparacionTerminada
-                  ? "border-emerald-300 bg-emerald-50 text-emerald-900 hover:bg-emerald-100"
-                  : "border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100",
-              )}
-              onClick={() => setPreparacionTerminada((v) => !v)}
-            >
-              {preparacionTerminada ? (
-                <>
-                  <LockOpen className="h-4 w-4" />
-                  Abrir preparación
-                </>
-              ) : (
-                <>
-                  <Lock className="h-4 w-4" />
-                  Terminar preparación
-                </>
-              )}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              className="h-10 gap-1.5 rounded-xl border-sky-300 bg-sky-50 text-sm text-sky-900 hover:bg-sky-100"
-              disabled={!preparacionTerminada}
-              onClick={() => {
-                reiniciarPreparacion();
-                toast.success("Nueva preparación lista.");
-              }}
-            >
-              <FilePlus2 className="h-4 w-4" />
-              Nueva preparación
-            </Button>
+          <div className="space-y-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <Button
+                className="h-10 gap-1.5 rounded-xl text-sm"
+                disabled={preparacionTerminada || ingresoMut.isPending}
+                onClick={() => {
+                  if (motivoBloqueoGuardar) {
+                    toast.error(motivoBloqueoGuardar);
+                    return;
+                  }
+                  ingresoMut.mutate();
+                }}
+              >
+                {ingresoMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                Guardar
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className={cn(
+                  "h-10 gap-1.5 rounded-xl text-sm",
+                  preparacionTerminada
+                    ? "border-emerald-300 bg-emerald-50 text-emerald-900 hover:bg-emerald-100"
+                    : "border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100",
+                )}
+                onClick={() => setPreparacionTerminada((v) => !v)}
+              >
+                {preparacionTerminada ? (
+                  <>
+                    <LockOpen className="h-4 w-4" />
+                    Abrir preparación
+                  </>
+                ) : (
+                  <>
+                    <Lock className="h-4 w-4" />
+                    Terminar preparación
+                  </>
+                )}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="h-10 gap-1.5 rounded-xl border-sky-300 bg-sky-50 text-sm text-sky-900 hover:bg-sky-100 disabled:opacity-50"
+                disabled={!preparacionTerminada}
+                onClick={() => {
+                  reiniciarPreparacion();
+                  toast.success("Nueva preparación lista.");
+                }}
+              >
+                <FilePlus2 className="h-4 w-4" />
+                Nueva preparación
+              </Button>
+            </div>
+            {!preparacionTerminada && motivoBloqueoGuardar ? (
+              <p className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-900">
+                {motivoBloqueoGuardar}
+              </p>
+            ) : null}
+            {!preparacionTerminada && preparacionListaParaGuardar ? (
+              <p className="text-[11px] text-emerald-700">Listo para guardar.</p>
+            ) : null}
           </div>
         </Card>
       </>
