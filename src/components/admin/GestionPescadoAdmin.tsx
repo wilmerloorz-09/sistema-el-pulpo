@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Check,
   ChefHat,
+  Fish,
   Hash,
   Layers,
   Loader2,
@@ -10,6 +11,7 @@ import {
   MoreHorizontal,
   Plus,
   Scale,
+  Sigma,
   Sparkles,
   Weight,
 } from "lucide-react";
@@ -634,22 +636,24 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
 
           <div
             className={cn(
-              "space-y-1.5 rounded-xl border p-2",
+              "space-y-2 rounded-xl border p-2.5",
               requierePescadoCrudo ? "border-cyan-200 bg-cyan-50/60" : "border-border/60 bg-muted/20 opacity-70",
             )}
           >
-            <div className="flex items-baseline justify-between gap-2">
+            <div className="flex items-center gap-1.5">
+              <span className="flex h-6 w-6 items-center justify-center rounded-md bg-cyan-100 text-cyan-700">
+                <Fish className="h-3.5 w-3.5" />
+              </span>
               <Label className={fieldLabelClass}>Pescado crudo</Label>
-              {requierePescadoCrudo ? (
-                <span className="text-[10px] font-semibold text-cyan-900">
-                  Total {formatLb(crudoTotalLb)} lb
-                  {cantidadTotalLb > 0 ? ` · Band ${formatLb(cantidadTotalLb)}` : ""}
-                </span>
-              ) : null}
             </div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               <div className="space-y-1">
-                <Label className={fieldLabelClass}>Bonito</Label>
+                <Label className={cn(fieldLabelClass, "inline-flex items-center gap-1")}>
+                  <span className="flex h-5 w-5 items-center justify-center rounded-md bg-sky-100 text-sky-700">
+                    <Fish className="h-3 w-3" />
+                  </span>
+                  Bonito
+                </Label>
                 <Input
                   inputMode="decimal"
                   value={cantBonito}
@@ -660,7 +664,12 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
                 />
               </div>
               <div className="space-y-1">
-                <Label className={fieldLabelClass}>Albacora</Label>
+                <Label className={cn(fieldLabelClass, "inline-flex items-center gap-1")}>
+                  <span className="flex h-5 w-5 items-center justify-center rounded-md bg-teal-100 text-teal-700">
+                    <Fish className="h-3 w-3" />
+                  </span>
+                  Albacora
+                </Label>
                 <Input
                   inputMode="decimal"
                   value={cantAlbacora}
@@ -669,6 +678,23 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
                   placeholder="0"
                   className={compactInputClass}
                 />
+              </div>
+              <div className="space-y-1">
+                <Label className={cn(fieldLabelClass, "inline-flex items-center gap-1")}>
+                  <span className="flex h-5 w-5 items-center justify-center rounded-md bg-indigo-100 text-indigo-700">
+                    <Sigma className="h-3 w-3" />
+                  </span>
+                  Total
+                </Label>
+                <div
+                  className={cn(
+                    compactInputClass,
+                    "flex items-center justify-center border border-indigo-200 bg-indigo-50/80 font-semibold text-indigo-900",
+                  )}
+                  aria-live="polite"
+                >
+                  {requierePescadoCrudo && crudoTotalLb > 0 ? formatLb(crudoTotalLb) : "—"}
+                </div>
               </div>
             </div>
           </div>
