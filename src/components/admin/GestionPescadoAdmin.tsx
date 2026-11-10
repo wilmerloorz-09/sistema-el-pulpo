@@ -494,7 +494,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
   const ingresoMut = useMutation({
     mutationFn: async () => {
       if (preparacionTerminada) {
-        throw new Error("La preparación está terminada. Ábrela para guardar cambios.");
+        throw new Error("La preparación está terminada. Edítala para guardar cambios.");
       }
       if (bandejasExistentesTotal <= 0) {
         throw new Error("Configura primero la cantidad de bandejas existentes en Sucursales");
