@@ -28,13 +28,14 @@ export type GestionPescadoSection = "sucursales" | "preparacion" | "ingreso-sali
 const GRAMOS_POR_LIBRA = 453.59237;
 const PESO_BANDEJA_LB = 0.78;
 type Unidad = "LIBRAS" | "GRAMOS";
-type BandejaPeso = { id: string; peso: string; unidad: Unidad };
+type BandejaPeso = { id: string; numero: string; peso: string; unidad: Unidad };
 
-function nuevaBandejaPeso(): BandejaPeso {
+function nuevaBandejaPeso(partial?: Partial<Omit<BandejaPeso, "id">>): BandejaPeso {
   return {
     id: `b-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    peso: "",
-    unidad: "LIBRAS",
+    numero: partial?.numero ?? "",
+    peso: partial?.peso ?? "",
+    unidad: partial?.unidad ?? "LIBRAS",
   };
 }
 
@@ -178,7 +179,10 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
   // Preparación (cocina)
   const isPreparacionSection = section === "preparacion" || section === "ingreso-salida";
   const [origenIngreso, setOrigenIngreso] = useState("PREPARACION_INICIAL");
-  const [bandejasPeso, setBandejasPeso] = useState<BandejaPeso[]>(() => [nuevaBandejaPeso()]);
+  const [bandejasPeso, setBandejasPeso] = useState<BandejaPeso[]>([]);
+  const [draftNumeroBandeja, setDraftNumeroBandeja] = useState("");
+  const [draftPesoBandeja, setDraftPesoBandeja] = useState("");
+  const [draftUnidadBandeja, setDraftUnidadBandeja] = useState<Unidad>("LIBRAS");
   const [obsIngreso, setObsIngreso] = useState("");
   const [unidadCrudo, setUnidadCrudo] = useState<Unidad>("LIBRAS");
   const [cantBonito, setCantBonito] = useState("");
@@ -226,13 +230,36 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
     [pesosBandejasLb],
   );
 
+  const agregarBandejaDraft = () => {
+    const numero = draftNumeroBandeja.trim();
+    const peso = parseCantidad(draftPesoBandeja);
+    if (!numero) {
+      toast.error("Ingresa el número de la bandeja");
+      return;
+    }
+    if (peso <= 0) {
+      toast.error("Ingresa el peso de la bandeja");
+      return;
+    }
+    if (bandejasPeso.some((b) => b.numero.trim().toLowerCase() === numero.toLowerCase())) {
+      toast.error(`La bandeja #${numero} ya está en la lista`);
+      return;
+    }
+    setBandejasPeso((rows) => [
+      ...rows,
+      nuevaBandejaPeso({ numero, peso: draftPesoBandeja.trim(), unidad: draftUnidadBandeja }),
+    ]);
+    setDraftNumeroBandeja("");
+    setDraftPesoBandeja("");
+  };
+
   const ingresoMut = useMutation({
     mutationFn: async () => {
-      if (bandejasPeso.some((b) => !parseCantidad(b.peso))) {
-        throw new Error("Todas las bandejas deben tener peso mayor a 0");
+      if (bandejasPeso.some((b) => !b.numero.trim() || !parseCantidad(b.peso))) {
+        throw new Error("Todas las bandejas deben tener número y peso mayor a 0");
       }
       if (bandejasCount <= 0 || cantidadTotalLb <= 0) {
-        throw new Error("Agrega al menos una bandeja con peso");
+        throw new Error("Agrega al menos una bandeja con número y peso");
       }
 
       let bonito = 0;
@@ -257,12 +284,19 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
         }
       }
 
+      const detalleBandejas = bandejasPeso
+        .map((b) => `#${b.numero.trim()} ${formatLb(aLibras(parseCantidad(b.peso), b.unidad))} lb`)
+        .join(", ");
+      const observacion = [obsIngreso.trim() || null, detalleBandejas ? `Bandejas: ${detalleBandejas}` : null]
+        .filter(Boolean)
+        .join(" | ");
+
       const { error } = await supabase.rpc("registrar_ingreso_pescado" as any, {
         p_origen: origenIngreso,
         // Compatibilidad RPC: entregada = total cocinado (suma bandejas); sin campo manual.
         p_cantidad_entregada_lb: cantidadTotalLb,
         p_cantidad_verificada_lb: cantidadTotalLb,
-        p_observacion: obsIngreso.trim() || null,
+        p_observacion: observacion || null,
         p_cantidad_bandejas: bandejasCount,
         p_bonito_lb: requierePescadoCrudo ? bonito : 0,
         p_albacora_lb: requierePescadoCrudo ? albacora : 0,
@@ -272,7 +306,10 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
     },
     onSuccess: async () => {
       toast.success("Preparación registrada en Bodega General.");
-      setBandejasPeso([nuevaBandejaPeso()]);
+      setBandejasPeso([]);
+      setDraftNumeroBandeja("");
+      setDraftPesoBandeja("");
+      setDraftUnidadBandeja("LIBRAS");
       setObsIngreso("");
       setCantBonito("");
       setCantAlbacora("");
@@ -499,65 +536,74 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
                 {bandejasCount} · {formatLb(cantidadTotalLb)} lb
               </span>
             </div>
-            <p className={helpTextClass}>Peso por bandeja. El total suma todas.</p>
-            <div className="space-y-1.5">
-              {bandejasPeso.map((bandeja, index) => (
-                <div key={bandeja.id} className="grid grid-cols-[auto_1fr_5.75rem_auto] items-end gap-1.5">
-                  <span className="pb-1.5 text-[10px] font-bold text-muted-foreground">#{index + 1}</span>
-                  <div className="space-y-1">
-                    <Label className={fieldLabelClass}>Peso</Label>
-                    <Input
-                      inputMode="decimal"
-                      value={bandeja.peso}
-                      onChange={(e) => {
-                        const value = e.target.value;
-                        setBandejasPeso((rows) =>
-                          rows.map((row) => (row.id === bandeja.id ? { ...row, peso: value } : row)),
-                        );
-                      }}
-                      placeholder="0"
-                      className={compactInputClass}
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className={fieldLabelClass}>Unidad</Label>
-                    <UnidadSelect
-                      value={bandeja.unidad}
-                      onChange={(unidad) => {
-                        setBandejasPeso((rows) =>
-                          rows.map((row) => (row.id === bandeja.id ? { ...row, unidad } : row)),
-                        );
-                      }}
-                    />
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    className="h-8 w-8 shrink-0 rounded-lg"
-                    disabled={bandejasPeso.length <= 1}
-                    onClick={() => setBandejasPeso((rows) => rows.filter((row) => row.id !== bandeja.id))}
-                    aria-label={`Quitar bandeja ${index + 1}`}
+            {bandejasPeso.length > 0 ? (
+              <div className="space-y-1">
+                {bandejasPeso.map((bandeja) => (
+                  <div
+                    key={bandeja.id}
+                    className="flex items-center gap-1.5 rounded-lg border border-orange-200/80 bg-white/80 px-2 py-1"
                   >
-                    <Minus className="h-3.5 w-3.5" />
-                  </Button>
+                    <span className="min-w-0 flex-1 truncate text-[11px] font-semibold text-orange-950">
+                      #{bandeja.numero} · {formatLb(aLibras(parseCantidad(bandeja.peso), bandeja.unidad))} lb
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="h-7 w-7 shrink-0 rounded-lg"
+                      onClick={() => setBandejasPeso((rows) => rows.filter((row) => row.id !== bandeja.id))}
+                      aria-label={`Quitar bandeja ${bandeja.numero}`}
+                    >
+                      <Minus className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-2">
+                <div className="rounded-lg border border-blue-200 bg-blue-50 px-2 py-1.5 text-center">
+                  <p className="text-[10px] font-semibold text-blue-900">Total</p>
+                  <p className="font-display text-lg font-black leading-none text-blue-700">
+                    {cantidadTotalLb > 0 ? `${formatLb(cantidadTotalLb)} lb` : "—"}
+                  </p>
                 </div>
-              ))}
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              className="h-8 w-full gap-1 rounded-lg text-xs"
-              onClick={() => setBandejasPeso((rows) => [...rows, nuevaBandejaPeso()])}
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Agregar bandeja
-            </Button>
-            <div className="rounded-lg border border-blue-200 bg-blue-50 px-2 py-1.5 text-center">
-              <p className="text-[10px] font-semibold text-blue-900">Peso total cocinado</p>
-              <p className="font-display text-lg font-black leading-none text-blue-700">
-                {cantidadTotalLb > 0 ? `${formatLb(cantidadTotalLb)} lb` : "—"}
-              </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-8 w-full gap-1 rounded-lg text-xs"
+                  onClick={agregarBandejaDraft}
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Agregar bandeja
+                </Button>
+              </div>
+              <div className="space-y-1.5">
+                <div className="space-y-1">
+                  <Label className={fieldLabelClass}>Nº bandeja</Label>
+                  <Input
+                    inputMode="numeric"
+                    value={draftNumeroBandeja}
+                    onChange={(e) => setDraftNumeroBandeja(e.target.value)}
+                    placeholder="Ej. 12"
+                    className={compactInputClass}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className={fieldLabelClass}>Unidad</Label>
+                  <UnidadSelect value={draftUnidadBandeja} onChange={setDraftUnidadBandeja} />
+                </div>
+                <div className="space-y-1">
+                  <Label className={fieldLabelClass}>Peso</Label>
+                  <Input
+                    inputMode="decimal"
+                    value={draftPesoBandeja}
+                    onChange={(e) => setDraftPesoBandeja(e.target.value)}
+                    placeholder="0"
+                    className={compactInputClass}
+                  />
+                </div>
+              </div>
             </div>
           </div>
 
