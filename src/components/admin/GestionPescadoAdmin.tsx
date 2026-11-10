@@ -56,6 +56,10 @@ type PreparacionBorrador = {
   obsIngreso: string;
   bandejasPeso: Array<{ numero: string; peso: string }>;
   preparacionTerminada: boolean;
+  ingresoId?: string | null;
+  firmaGuardada?: string | null;
+  bonitoGuardadoLb?: number;
+  albacoraGuardadoLb?: number;
 };
 
 const PREPARACION_BORRADOR_KEY = "pescado-preparacion-ultima-v1";
@@ -321,6 +325,18 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
   const [preparacionTerminada, setPreparacionTerminada] = useState(
     () => Boolean(borradorInicial?.preparacionTerminada),
   );
+  const [ingresoIdGuardado, setIngresoIdGuardado] = useState<string | null>(
+    () => borradorInicial?.ingresoId ?? null,
+  );
+  const [firmaGuardada, setFirmaGuardada] = useState<string | null>(
+    () => borradorInicial?.firmaGuardada ?? null,
+  );
+  const [bonitoGuardadoLb, setBonitoGuardadoLb] = useState(
+    () => Number(borradorInicial?.bonitoGuardadoLb ?? 0),
+  );
+  const [albacoraGuardadoLb, setAlbacoraGuardadoLb] = useState(
+    () => Number(borradorInicial?.albacoraGuardadoLb ?? 0),
+  );
 
   const requierePescadoCrudo =
     origenIngreso === "PREPARACION_INICIAL" || origenIngreso === "PREPARACION_EXTRA";
@@ -334,6 +350,10 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
     setCantBonito("");
     setCantAlbacora("");
     setPreparacionTerminada(false);
+    setIngresoIdGuardado(null);
+    setFirmaGuardada(null);
+    setBonitoGuardadoLb(0);
+    setAlbacoraGuardadoLb(0);
   };
 
   useEffect(() => {
@@ -346,6 +366,10 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
       obsIngreso,
       bandejasPeso: bandejasPeso.map((b) => ({ numero: b.numero, peso: b.peso })),
       preparacionTerminada,
+      ingresoId: ingresoIdGuardado,
+      firmaGuardada,
+      bonitoGuardadoLb,
+      albacoraGuardadoLb,
     });
   }, [
     isPreparacionSection,
@@ -356,6 +380,10 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
     obsIngreso,
     bandejasPeso,
     preparacionTerminada,
+    ingresoIdGuardado,
+    firmaGuardada,
+    bonitoGuardadoLb,
+    albacoraGuardadoLb,
   ]);
 
   const stockFrescoQuery = useQuery({
@@ -377,6 +405,10 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
     () => Number(stockFrescoQuery.data?.find((r) => r.codigo === "ALBACORA")?.cantidad_lb ?? 0),
     [stockFrescoQuery.data],
   );
+  // Si ya guardamos esta misma preparación, el stock actual ya descontó ese crudo:
+  // para re-guardar/actualizar se considera disponible = stock actual + lo ya usado en esta prep.
+  const stockBonitoDisponibleLb = stockBonitoLb + (ingresoIdGuardado ? Math.max(0, bonitoGuardadoLb) : 0);
+  const stockAlbacoraDisponibleLb = stockAlbacoraLb + (ingresoIdGuardado ? Math.max(0, albacoraGuardadoLb) : 0);
 
   const bonitoLb = useMemo(
     () => aLibras(parseCantidad(cantBonito) || 0, unidadMedida),
@@ -396,6 +428,68 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
     () => Math.round(pesosBandejasLb.reduce((s, n) => s + n, 0) * 1000) / 1000,
     [pesosBandejasLb],
   );
+
+  const preparacionFirmaActual = useMemo(
+    () =>
+      JSON.stringify({
+        origenIngreso,
+        unidadMedida,
+        cantBonito: cantBonito.trim(),
+        cantAlbacora: cantAlbacora.trim(),
+        obsIngreso: obsIngreso.trim(),
+        bandejas: bandejasPeso.map((b) => ({ numero: b.numero.trim(), peso: b.peso.trim() })),
+      }),
+    [origenIngreso, unidadMedida, cantBonito, cantAlbacora, obsIngreso, bandejasPeso],
+  );
+
+  // Si el borrador ya tiene datos pero no el id del ingreso (versión anterior),
+  // intenta enlazar con el último ingreso coincidente para no descontar de nuevo.
+  useEffect(() => {
+    if (!isPreparacionSection || ingresoIdGuardado) return;
+    if (!cantBonito.trim() && !cantAlbacora.trim()) return;
+    if (cantidadTotalLb <= 0) return;
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from("pescado_ingresos" as any)
+        .select("id, origen, bonito_lb, albacora_lb, cantidad_total_lb")
+        .order("creado_en", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (cancelled || error || !data) return;
+      const row = data as {
+        id: string;
+        origen: string;
+        bonito_lb: number | null;
+        albacora_lb: number | null;
+        cantidad_total_lb: number | null;
+      };
+      if (row.origen !== origenIngreso) return;
+      const b = Math.round(Number(row.bonito_lb ?? 0) * 1000) / 1000;
+      const a = Math.round(Number(row.albacora_lb ?? 0) * 1000) / 1000;
+      const total = Math.round(Number(row.cantidad_total_lb ?? 0) * 1000) / 1000;
+      if (b !== Math.round(bonitoLb * 1000) / 1000) return;
+      if (a !== Math.round(albacoraLb * 1000) / 1000) return;
+      if (total !== Math.round(cantidadTotalLb * 1000) / 1000) return;
+      setIngresoIdGuardado(row.id);
+      setBonitoGuardadoLb(b);
+      setAlbacoraGuardadoLb(a);
+      setFirmaGuardada(preparacionFirmaActual);
+    })().catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    isPreparacionSection,
+    ingresoIdGuardado,
+    origenIngreso,
+    cantBonito,
+    cantAlbacora,
+    bonitoLb,
+    albacoraLb,
+    cantidadTotalLb,
+    preparacionFirmaActual,
+  ]);
 
   const ingresoMut = useMutation({
     mutationFn: async () => {
@@ -428,17 +522,26 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
         if (crudo <= 0) {
           throw new Error("Ingresa la cantidad de pescado crudo (Bonito y/o Albacora)");
         }
-        if (bonito > stockBonitoLb) {
-          throw new Error(`Stock insuficiente de Bonito: hay ${formatLb(stockBonitoLb)} lb y se solicitan ${formatLb(bonito)} lb`);
+        if (bonito > stockBonitoDisponibleLb) {
+          throw new Error(
+            `Stock insuficiente de Bonito: hay ${formatLb(stockBonitoDisponibleLb)} lb y se solicitan ${formatLb(bonito)} lb`,
+          );
         }
-        if (albacora > stockAlbacoraLb) {
-          throw new Error(`Stock insuficiente de Albacora: hay ${formatLb(stockAlbacoraLb)} lb y se solicitan ${formatLb(albacora)} lb`);
+        if (albacora > stockAlbacoraDisponibleLb) {
+          throw new Error(
+            `Stock insuficiente de Albacora: hay ${formatLb(stockAlbacoraDisponibleLb)} lb y se solicitan ${formatLb(albacora)} lb`,
+          );
         }
         if (crudo <= cantidadTotalLb) {
           throw new Error(
             `El pescado crudo (${formatLb(crudo)} lb) debe ser mayor que el total de bandejas (${formatLb(cantidadTotalLb)} lb)`,
           );
         }
+      }
+
+      // Misma preparación sin cambios: no volver a descontar stock.
+      if (ingresoIdGuardado && firmaGuardada === preparacionFirmaActual) {
+        return { id: ingresoIdGuardado, modo: "noop" as const, bonito, albacora };
       }
 
       const detalleBandejas = bandejasPeso
@@ -448,9 +551,8 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
         .filter(Boolean)
         .join(" | ");
 
-      const { error } = await supabase.rpc("registrar_ingreso_pescado" as any, {
+      const payload = {
         p_origen: origenIngreso,
-        // Compatibilidad RPC: entregada = total cocinado (suma bandejas); sin campo manual.
         p_cantidad_entregada_lb: cantidadTotalLb,
         p_cantidad_verificada_lb: cantidadTotalLb,
         p_observacion: observacion || null,
@@ -458,13 +560,31 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
         p_bonito_lb: requierePescadoCrudo ? bonito : 0,
         p_albacora_lb: requierePescadoCrudo ? albacora : 0,
         p_pesos_bandejas_lb: pesosBandejasLb,
-      });
+      };
+
+      if (ingresoIdGuardado) {
+        const { data, error } = await supabase.rpc("actualizar_ingreso_pescado" as any, {
+          p_ingreso_id: ingresoIdGuardado,
+          ...payload,
+        });
+        if (error) throw error;
+        return { id: String(data ?? ingresoIdGuardado), modo: "update" as const, bonito, albacora };
+      }
+
+      const { data, error } = await supabase.rpc("registrar_ingreso_pescado" as any, payload);
       if (error) throw error;
+      return { id: String(data), modo: "create" as const, bonito, albacora };
     },
-    onSuccess: async () => {
-      await invalidateAll();
-      await qc.invalidateQueries({ queryKey: ["stock-pescado-fresco"] });
-      await qc.invalidateQueries({ queryKey: ["historial-pescado-fresco"] });
+    onSuccess: async (result) => {
+      if (result?.id) setIngresoIdGuardado(result.id);
+      setFirmaGuardada(preparacionFirmaActual);
+      setBonitoGuardadoLb(Number(result?.bonito ?? 0));
+      setAlbacoraGuardadoLb(Number(result?.albacora ?? 0));
+      if (result?.modo !== "noop") {
+        await invalidateAll();
+        await qc.invalidateQueries({ queryKey: ["stock-pescado-fresco"] });
+        await qc.invalidateQueries({ queryKey: ["historial-pescado-fresco"] });
+      }
     },
     onError: (e: any) => mostrarError(e, "No se pudo guardar la preparación. Revisa los datos e inténtalo de nuevo."),
   });
@@ -623,11 +743,11 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
     if (bandejasCount <= 0 || cantidadTotalLb <= 0) return "El peso total de bandejas debe ser mayor a 0.";
     if (requierePescadoCrudo) {
       if (crudoTotalLb <= 0) return "Ingresa pescado crudo (Bonito y/o Albacora).";
-      if (bonitoLb > stockBonitoLb) {
-        return `Stock insuficiente de Bonito: hay ${formatEnUnidad(stockBonitoLb, unidadMedida)} ${etiquetaUnidad(unidadMedida)} y pediste ${formatEnUnidad(bonitoLb, unidadMedida)}.`;
+      if (bonitoLb > stockBonitoDisponibleLb) {
+        return `Stock insuficiente de Bonito: hay ${formatEnUnidad(stockBonitoDisponibleLb, unidadMedida)} ${etiquetaUnidad(unidadMedida)} y pediste ${formatEnUnidad(bonitoLb, unidadMedida)}.`;
       }
-      if (albacoraLb > stockAlbacoraLb) {
-        return `Stock insuficiente de Albacora: hay ${formatEnUnidad(stockAlbacoraLb, unidadMedida)} ${etiquetaUnidad(unidadMedida)} y pediste ${formatEnUnidad(albacoraLb, unidadMedida)}.`;
+      if (albacoraLb > stockAlbacoraDisponibleLb) {
+        return `Stock insuficiente de Albacora: hay ${formatEnUnidad(stockAlbacoraDisponibleLb, unidadMedida)} ${etiquetaUnidad(unidadMedida)} y pediste ${formatEnUnidad(albacoraLb, unidadMedida)}.`;
       }
       if (crudoTotalLb <= cantidadTotalLb) {
         return `El pescado crudo (${formatEnUnidad(crudoTotalLb, unidadMedida)}) debe ser mayor que el total de bandejas (${formatEnUnidad(cantidadTotalLb, unidadMedida)}).`;
@@ -647,8 +767,8 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
     crudoTotalLb,
     bonitoLb,
     albacoraLb,
-    stockBonitoLb,
-    stockAlbacoraLb,
+    stockBonitoDisponibleLb,
+    stockAlbacoraDisponibleLb,
     unidadMedida,
   ]);
 
@@ -1011,7 +1131,15 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
                   return;
                 }
                 ingresoMut.mutate(undefined, {
-                  onSuccess: () => toast.success("Preparación guardada."),
+                  onSuccess: (result) => {
+                    toast.success(
+                      result?.modo === "noop"
+                        ? "Esta preparación ya estaba guardada."
+                        : result?.modo === "update"
+                          ? "Preparación actualizada."
+                          : "Preparación guardada.",
+                    );
+                  },
                 });
               }}
             >
@@ -1042,9 +1170,13 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
                   return;
                 }
                 ingresoMut.mutate(undefined, {
-                  onSuccess: () => {
+                  onSuccess: (result) => {
                     setPreparacionTerminada(true);
-                    toast.success("Preparación guardada y terminada.");
+                    toast.success(
+                      result?.modo === "noop"
+                        ? "Preparación terminada."
+                        : "Preparación guardada y terminada.",
+                    );
                   },
                 });
               }}
