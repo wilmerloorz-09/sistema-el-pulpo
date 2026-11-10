@@ -950,7 +950,22 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
                   ? "border-emerald-300 bg-emerald-50 text-emerald-900 hover:bg-emerald-100"
                   : "border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100",
               )}
-              onClick={() => setPreparacionTerminada((v) => !v)}
+              onClick={() => {
+                if (preparacionTerminada) {
+                  setPreparacionTerminada(false);
+                  return;
+                }
+                if (motivoBloqueoGuardar) {
+                  const esStock = /stock insuficiente/i.test(motivoBloqueoGuardar);
+                  setErrorDialog({
+                    title: esStock ? "Stock insuficiente" : "No se puede terminar",
+                    description: motivoBloqueoGuardar,
+                  });
+                  return;
+                }
+                setPreparacionTerminada(true);
+                toast.success("Preparación terminada.");
+              }}
             >
               {preparacionTerminada ? (
                 <>
