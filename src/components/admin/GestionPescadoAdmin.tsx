@@ -1,15 +1,19 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Check,
   ChefHat,
+  FilePlus2,
   Fish,
   Hash,
   Layers,
   Loader2,
+  Lock,
+  LockOpen,
   Minus,
   MoreHorizontal,
   Plus,
+  Save,
   Scale,
   Sigma,
   Sparkles,
@@ -263,10 +267,20 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
   const [unidadMedida, setUnidadMedida] = useState<Unidad>("LIBRAS");
   const [cantBonito, setCantBonito] = useState("");
   const [cantAlbacora, setCantAlbacora] = useState("");
-  const ultimaFirmaPreparacionRef = useRef<string | null>(null);
+  const [preparacionTerminada, setPreparacionTerminada] = useState(false);
 
   const requierePescadoCrudo =
     origenIngreso === "PREPARACION_INICIAL" || origenIngreso === "PREPARACION_EXTRA";
+
+  const reiniciarPreparacion = () => {
+    setOrigenIngreso("PREPARACION_INICIAL");
+    setBandejasPeso([nuevaBandejaPeso()]);
+    setObsIngreso("");
+    setUnidadMedida("LIBRAS");
+    setCantBonito("");
+    setCantAlbacora("");
+    setPreparacionTerminada(false);
+  };
 
   const stockFrescoQuery = useQuery({
     queryKey: ["stock-pescado-fresco"],
@@ -309,6 +323,9 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
 
   const ingresoMut = useMutation({
     mutationFn: async () => {
+      if (preparacionTerminada) {
+        throw new Error("La preparación está terminada. Ábrela para guardar cambios.");
+      }
       if (bandejasExistentesTotal <= 0) {
         throw new Error("Configura primero la cantidad de bandejas existentes en Sucursales");
       }
@@ -369,21 +386,12 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
       if (error) throw error;
     },
     onSuccess: async () => {
-      toast.success("Preparación guardada automáticamente.");
-      ultimaFirmaPreparacionRef.current = null;
-      setBandejasPeso([nuevaBandejaPeso()]);
-      setObsIngreso("");
-      setCantBonito("");
-      setCantAlbacora("");
-      setUnidadMedida("LIBRAS");
+      toast.success("Preparación guardada.");
       await invalidateAll();
       await qc.invalidateQueries({ queryKey: ["stock-pescado-fresco"] });
       await qc.invalidateQueries({ queryKey: ["historial-pescado-fresco"] });
     },
-    onError: (e: any) => {
-      ultimaFirmaPreparacionRef.current = null;
-      mostrarError(e, "No se pudo guardar la preparación. Revisa los datos e inténtalo de nuevo.");
-    },
+    onError: (e: any) => mostrarError(e, "No se pudo guardar la preparación. Revisa los datos e inténtalo de nuevo."),
   });
 
   // Movimientos
@@ -524,21 +532,9 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
   const stockDeUbicacion = (value: string): number =>
     ubicaciones.find((u) => u.value === value)?.stockLb ?? 0;
 
-  const preparacionFirma = useMemo(
-    () =>
-      JSON.stringify({
-        origenIngreso,
-        unidadMedida,
-        cantBonito: cantBonito.trim(),
-        cantAlbacora: cantAlbacora.trim(),
-        obsIngreso: obsIngreso.trim(),
-        bandejas: bandejasPeso.map((b) => ({ numero: b.numero.trim(), peso: b.peso.trim() })),
-      }),
-    [origenIngreso, unidadMedida, cantBonito, cantAlbacora, obsIngreso, bandejasPeso],
-  );
-
   const preparacionListaParaGuardar = useMemo(() => {
     if (!isPreparacionSection || !canOperateFull) return false;
+    if (preparacionTerminada) return false;
     if (bandejasExistentesTotal <= 0) return false;
     if (bandejasPeso.length === 0) return false;
     if (bandejasPeso.some((b) => !b.numero.trim() || !parseCantidad(b.peso))) return false;
@@ -555,6 +551,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
   }, [
     isPreparacionSection,
     canOperateFull,
+    preparacionTerminada,
     bandejasExistentesTotal,
     bandejasPeso,
     numerosBandejaCatalogo,
@@ -567,19 +564,6 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
     stockBonitoLb,
     stockAlbacoraLb,
   ]);
-
-  useEffect(() => {
-    if (!preparacionListaParaGuardar) return;
-    if (ingresoMut.isPending) return;
-    if (ultimaFirmaPreparacionRef.current === preparacionFirma) return;
-
-    const timer = window.setTimeout(() => {
-      ultimaFirmaPreparacionRef.current = preparacionFirma;
-      ingresoMut.mutate();
-    }, 1200);
-
-    return () => window.clearTimeout(timer);
-  }, [preparacionListaParaGuardar, preparacionFirma, ingresoMut.isPending]);
 
   if (section === "sucursales") {
     return (
@@ -661,15 +645,23 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
       );
     }
     const origenSeleccionado = ORIGEN_OPCIONES.find((o) => o.value === origenIngreso) ?? ORIGEN_OPCIONES[0];
+    const formulariosBloqueados = preparacionTerminada;
     return (
       <>
         {errorDialogNode}
         <Card className="space-y-2.5 rounded-xl border p-3">
+          {formulariosBloqueados ? (
+            <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-medium text-amber-900">
+              <Lock className="h-3.5 w-3.5" />
+              Preparación terminada: sin cambios hasta abrirla o crear una nueva.
+            </div>
+          ) : null}
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label className={fieldLabelClass}>Origen</Label>
               <Select
                 value={origenIngreso}
+                disabled={formulariosBloqueados}
                 onValueChange={(v) => {
                   setOrigenIngreso(v);
                   if (v === "OTROS") {
@@ -698,7 +690,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
             </div>
             <div className="space-y-1.5">
               <Label className={fieldLabelClass}>Unidad de medida</Label>
-              <UnidadSelect value={unidadMedida} onChange={setUnidadMedida} />
+              <UnidadSelect value={unidadMedida} onChange={setUnidadMedida} disabled={formulariosBloqueados} />
             </div>
           </div>
 
@@ -725,7 +717,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
                 <Input
                   inputMode="decimal"
                   value={cantBonito}
-                  disabled={!requierePescadoCrudo}
+                  disabled={formulariosBloqueados || !requierePescadoCrudo}
                   onChange={(e) => setCantBonito(e.target.value)}
                   placeholder="0"
                   className={compactInputClass}
@@ -741,7 +733,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
                 <Input
                   inputMode="decimal"
                   value={cantAlbacora}
-                  disabled={!requierePescadoCrudo}
+                  disabled={formulariosBloqueados || !requierePescadoCrudo}
                   onChange={(e) => setCantAlbacora(e.target.value)}
                   placeholder="0"
                   className={compactInputClass}
@@ -807,8 +799,13 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
                 <Button
                   type="button"
                   className="h-9 w-full gap-1.5 rounded-xl bg-orange-500 text-xs font-semibold text-white shadow-sm hover:bg-orange-600 disabled:bg-orange-200"
-                  disabled={bandejasExistentesTotal <= 0 || bandejasPeso.length >= bandejasExistentesTotal}
+                  disabled={
+                    formulariosBloqueados
+                    || bandejasExistentesTotal <= 0
+                    || bandejasPeso.length >= bandejasExistentesTotal
+                  }
                   onClick={() => {
+                    if (formulariosBloqueados) return;
                     if (bandejasExistentesTotal <= 0) {
                       toast.error("Configura primero las bandejas en Sucursales");
                       return;
@@ -853,7 +850,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
                             rows.map((row) => (row.id === bandeja.id ? { ...row, numero: value } : row)),
                           );
                         }}
-                        disabled={bandejasExistentesTotal <= 0}
+                        disabled={formulariosBloqueados || bandejasExistentesTotal <= 0}
                       >
                         <SelectTrigger className="h-9 rounded-xl px-2 text-xs" aria-label="Bandeja">
                           <SelectValue placeholder="Elegir bandeja" />
@@ -874,6 +871,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
                       <Input
                         inputMode="decimal"
                         value={bandeja.peso}
+                        disabled={formulariosBloqueados}
                         onChange={(e) => {
                           const value = e.target.value;
                           setBandejasPeso((rows) =>
@@ -889,7 +887,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
                         variant="outline"
                         size="icon"
                         className="h-9 w-8 rounded-xl border-orange-200 text-orange-700 hover:bg-orange-50"
-                        disabled={bandejasPeso.length <= 1}
+                        disabled={formulariosBloqueados || bandejasPeso.length <= 1}
                         onClick={() => setBandejasPeso((rows) => rows.filter((row) => row.id !== bandeja.id))}
                         aria-label={`Quitar bandeja ${bandeja.numero || ""}`}
                       >
@@ -906,37 +904,57 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
             <Label className={fieldLabelClass}>Observación</Label>
             <Textarea
               value={obsIngreso}
+              disabled={formulariosBloqueados}
               onChange={(e) => setObsIngreso(e.target.value)}
               rows={2}
               className="min-h-[52px] rounded-lg px-2 py-1.5 text-sm"
             />
           </div>
-          <div
-            className={cn(
-              "flex items-center gap-2 rounded-xl border px-3 py-2 text-[11px] font-medium",
-              ingresoMut.isPending
-                ? "border-sky-200 bg-sky-50 text-sky-800"
-                : preparacionListaParaGuardar
-                  ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                  : "border-slate-200 bg-slate-50 text-slate-600",
-            )}
-          >
-            {ingresoMut.isPending ? (
-              <>
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Guardando preparación…
-              </>
-            ) : preparacionListaParaGuardar ? (
-              <>
-                <Check className="h-3.5 w-3.5" />
-                Datos listos: se guardan solos en un momento
-              </>
-            ) : (
-              <>
-                <Layers className="h-3.5 w-3.5" />
-                Completa origen, pesos y bandejas: se guarda automáticamente
-              </>
-            )}
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            <Button
+              className="h-10 gap-1.5 rounded-xl text-sm"
+              disabled={!preparacionListaParaGuardar || ingresoMut.isPending}
+              onClick={() => ingresoMut.mutate()}
+            >
+              {ingresoMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              Guardar
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className={cn(
+                "h-10 gap-1.5 rounded-xl text-sm",
+                preparacionTerminada
+                  ? "border-emerald-300 bg-emerald-50 text-emerald-900 hover:bg-emerald-100"
+                  : "border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100",
+              )}
+              onClick={() => setPreparacionTerminada((v) => !v)}
+            >
+              {preparacionTerminada ? (
+                <>
+                  <LockOpen className="h-4 w-4" />
+                  Abrir preparación
+                </>
+              ) : (
+                <>
+                  <Lock className="h-4 w-4" />
+                  Terminar preparación
+                </>
+              )}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="h-10 gap-1.5 rounded-xl border-sky-300 bg-sky-50 text-sm text-sky-900 hover:bg-sky-100"
+              disabled={!preparacionTerminada}
+              onClick={() => {
+                reiniciarPreparacion();
+                toast.success("Nueva preparación lista.");
+              }}
+            >
+              <FilePlus2 className="h-4 w-4" />
+              Nueva preparación
+            </Button>
           </div>
         </Card>
       </>
