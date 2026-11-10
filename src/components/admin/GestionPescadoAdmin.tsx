@@ -28,14 +28,13 @@ export type GestionPescadoSection = "sucursales" | "preparacion" | "ingreso-sali
 const GRAMOS_POR_LIBRA = 453.59237;
 const PESO_BANDEJA_LB = 0.78;
 type Unidad = "LIBRAS" | "GRAMOS";
-type BandejaPeso = { id: string; numero: string; peso: string; unidad: Unidad };
+type BandejaPeso = { id: string; numero: string; peso: string };
 
 function nuevaBandejaPeso(partial?: Partial<Omit<BandejaPeso, "id">>): BandejaPeso {
   return {
     id: `b-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     numero: partial?.numero ?? "",
     peso: partial?.peso ?? "",
-    unidad: partial?.unidad ?? "LIBRAS",
   };
 }
 
@@ -181,7 +180,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
   const [origenIngreso, setOrigenIngreso] = useState("PREPARACION_INICIAL");
   const [bandejasPeso, setBandejasPeso] = useState<BandejaPeso[]>(() => [nuevaBandejaPeso()]);
   const [obsIngreso, setObsIngreso] = useState("");
-  const [unidadCrudo, setUnidadCrudo] = useState<Unidad>("LIBRAS");
+  const [unidadMedida, setUnidadMedida] = useState<Unidad>("LIBRAS");
   const [cantBonito, setCantBonito] = useState("");
   const [cantAlbacora, setCantAlbacora] = useState("");
 
@@ -209,17 +208,17 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
   );
 
   const bonitoLb = useMemo(
-    () => aLibras(parseCantidad(cantBonito) || 0, unidadCrudo),
-    [cantBonito, unidadCrudo],
+    () => aLibras(parseCantidad(cantBonito) || 0, unidadMedida),
+    [cantBonito, unidadMedida],
   );
   const albacoraLb = useMemo(
-    () => aLibras(parseCantidad(cantAlbacora) || 0, unidadCrudo),
-    [cantAlbacora, unidadCrudo],
+    () => aLibras(parseCantidad(cantAlbacora) || 0, unidadMedida),
+    [cantAlbacora, unidadMedida],
   );
   const crudoTotalLb = Math.round((bonitoLb + albacoraLb) * 1000) / 1000;
   const pesosBandejasLb = useMemo(
-    () => bandejasPeso.map((b) => aLibras(parseCantidad(b.peso), b.unidad)),
-    [bandejasPeso],
+    () => bandejasPeso.map((b) => aLibras(parseCantidad(b.peso), unidadMedida)),
+    [bandejasPeso, unidadMedida],
   );
   const bandejasCount = pesosBandejasLb.filter((n) => n > 0).length;
   const cantidadTotalLb = useMemo(
@@ -269,7 +268,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
       }
 
       const detalleBandejas = bandejasPeso
-        .map((b) => `#${b.numero.trim()} ${formatLb(aLibras(parseCantidad(b.peso), b.unidad))} lb`)
+        .map((b) => `#${b.numero.trim()} ${formatLb(aLibras(parseCantidad(b.peso), unidadMedida))} lb`)
         .join(", ");
       const observacion = [obsIngreso.trim() || null, detalleBandejas ? `Bandejas: ${detalleBandejas}` : null]
         .filter(Boolean)
@@ -294,7 +293,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
       setObsIngreso("");
       setCantBonito("");
       setCantAlbacora("");
-      setUnidadCrudo("LIBRAS");
+      setUnidadMedida("LIBRAS");
       await invalidateAll();
       await qc.invalidateQueries({ queryKey: ["stock-pescado-fresco"] });
       await qc.invalidateQueries({ queryKey: ["historial-pescado-fresco"] });
@@ -524,25 +523,33 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
         {errorDialogNode}
         <Card className="space-y-2.5 rounded-xl border p-3">
           <div className="space-y-1">
-            <Label className={fieldLabelClass}>Origen</Label>
-            <Select
-              value={origenIngreso}
-              onValueChange={(v) => {
-                setOrigenIngreso(v);
-                if (v === "OTROS") {
-                  setCantBonito("");
-                  setCantAlbacora("");
-                }
-              }}
-            >
-              <SelectTrigger className={compactSelectClass}><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="PREPARACION_INICIAL">Prep. inicial</SelectItem>
-                <SelectItem value="PREPARACION_EXTRA">Prep. extra</SelectItem>
-                <SelectItem value="OTROS">Otros</SelectItem>
-              </SelectContent>
-            </Select>
-            <p className={helpTextClass}>Registra lo cocinado. Entra a Bodega General.</p>
+            <div className="grid grid-cols-[minmax(0,1fr)_6.5rem] gap-2">
+              <div className="space-y-1">
+                <Label className={fieldLabelClass}>Origen</Label>
+                <Select
+                  value={origenIngreso}
+                  onValueChange={(v) => {
+                    setOrigenIngreso(v);
+                    if (v === "OTROS") {
+                      setCantBonito("");
+                      setCantAlbacora("");
+                    }
+                  }}
+                >
+                  <SelectTrigger className={compactSelectClass}><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="PREPARACION_INICIAL">Prep. inicial</SelectItem>
+                    <SelectItem value="PREPARACION_EXTRA">Prep. extra</SelectItem>
+                    <SelectItem value="OTROS">Otros</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className={fieldLabelClass}>Unidad</Label>
+                <UnidadSelect value={unidadMedida} onChange={setUnidadMedida} />
+              </div>
+            </div>
+            <p className={helpTextClass}>Registra lo cocinado. Entra a Bodega General. La unidad aplica a todo.</p>
           </div>
 
           <div
@@ -560,15 +567,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
                 </span>
               ) : null}
             </div>
-            <div className="grid grid-cols-[5.75rem_1fr_1fr] gap-2">
-              <div className="space-y-1">
-                <Label className={fieldLabelClass}>Unidad</Label>
-                <UnidadSelect
-                  value={unidadCrudo}
-                  onChange={setUnidadCrudo}
-                  disabled={!requierePescadoCrudo}
-                />
-              </div>
+            <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
                 <Label className={fieldLabelClass}>Bonito</Label>
                 <Input
@@ -644,12 +643,11 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
               </div>
 
               <div className="min-w-0 space-y-1.5">
-                <div className="grid grid-cols-[7.25rem_5.5rem_minmax(0,1fr)_1.75rem] items-center gap-1.5 px-0.5">
+                <div className="grid grid-cols-[7.25rem_minmax(0,1fr)_1.75rem] items-center gap-1.5 px-0.5">
                   <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-muted-foreground">
                     <Hash className="h-3 w-3" />
                     Bandeja
                   </span>
-                  <span className="text-[10px] font-semibold text-muted-foreground">Unidad</span>
                   <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-muted-foreground">
                     <Scale className="h-3 w-3" />
                     Peso
@@ -661,7 +659,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
                   return (
                     <div
                       key={bandeja.id}
-                      className="grid grid-cols-[7.25rem_5.5rem_minmax(0,1fr)_1.75rem] items-center gap-1.5"
+                      className="grid grid-cols-[7.25rem_minmax(0,1fr)_1.75rem] items-center gap-1.5"
                     >
                       <Select
                         value={bandeja.numero || undefined}
@@ -683,14 +681,6 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
                           ))}
                         </SelectContent>
                       </Select>
-                      <UnidadSelect
-                        value={bandeja.unidad}
-                        onChange={(unidad) => {
-                          setBandejasPeso((rows) =>
-                            rows.map((row) => (row.id === bandeja.id ? { ...row, unidad } : row)),
-                          );
-                        }}
-                      />
                       <Input
                         inputMode="decimal"
                         value={bandeja.peso}
