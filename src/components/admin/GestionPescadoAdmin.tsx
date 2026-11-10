@@ -924,67 +924,61 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
               className="min-h-[52px] rounded-lg px-2 py-1.5 text-sm"
             />
           </div>
-          <div className="space-y-2">
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-              <Button
-                className="h-10 gap-1.5 rounded-xl text-sm"
-                disabled={preparacionTerminada || ingresoMut.isPending}
-                onClick={() => {
-                  if (motivoBloqueoGuardar) {
-                    toast.error(motivoBloqueoGuardar);
-                    return;
-                  }
-                  ingresoMut.mutate();
-                }}
-              >
-                {ingresoMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                Guardar
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                className={cn(
-                  "h-10 gap-1.5 rounded-xl text-sm",
-                  preparacionTerminada
-                    ? "border-emerald-300 bg-emerald-50 text-emerald-900 hover:bg-emerald-100"
-                    : "border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100",
-                )}
-                onClick={() => setPreparacionTerminada((v) => !v)}
-              >
-                {preparacionTerminada ? (
-                  <>
-                    <LockOpen className="h-4 w-4" />
-                    Abrir preparación
-                  </>
-                ) : (
-                  <>
-                    <Lock className="h-4 w-4" />
-                    Terminar preparación
-                  </>
-                )}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                className="h-10 gap-1.5 rounded-xl border-sky-300 bg-sky-50 text-sm text-sky-900 hover:bg-sky-100 disabled:opacity-50"
-                disabled={!preparacionTerminada}
-                onClick={() => {
-                  reiniciarPreparacion();
-                  toast.success("Nueva preparación lista.");
-                }}
-              >
-                <FilePlus2 className="h-4 w-4" />
-                Nueva preparación
-              </Button>
-            </div>
-            {!preparacionTerminada && motivoBloqueoGuardar ? (
-              <p className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-900">
-                {motivoBloqueoGuardar}
-              </p>
-            ) : null}
-            {!preparacionTerminada && preparacionListaParaGuardar ? (
-              <p className="text-[11px] text-emerald-700">Listo para guardar.</p>
-            ) : null}
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            <Button
+              className="h-10 gap-1.5 rounded-xl text-sm"
+              disabled={preparacionTerminada || ingresoMut.isPending}
+              onClick={() => {
+                if (motivoBloqueoGuardar) {
+                  const esStock = /stock insuficiente/i.test(motivoBloqueoGuardar);
+                  setErrorDialog({
+                    title: esStock ? "Stock insuficiente" : "No se puede guardar",
+                    description: motivoBloqueoGuardar,
+                  });
+                  return;
+                }
+                ingresoMut.mutate();
+              }}
+            >
+              {ingresoMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              Guardar
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className={cn(
+                "h-10 gap-1.5 rounded-xl text-sm",
+                preparacionTerminada
+                  ? "border-emerald-300 bg-emerald-50 text-emerald-900 hover:bg-emerald-100"
+                  : "border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100",
+              )}
+              onClick={() => setPreparacionTerminada((v) => !v)}
+            >
+              {preparacionTerminada ? (
+                <>
+                  <LockOpen className="h-4 w-4" />
+                  Abrir preparación
+                </>
+              ) : (
+                <>
+                  <Lock className="h-4 w-4" />
+                  Terminar preparación
+                </>
+              )}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="h-10 gap-1.5 rounded-xl border-sky-300 bg-sky-50 text-sm text-sky-900 hover:bg-sky-100 disabled:opacity-50"
+              disabled={!preparacionTerminada}
+              onClick={() => {
+                reiniciarPreparacion();
+                toast.success("Nueva preparación lista.");
+              }}
+            >
+              <FilePlus2 className="h-4 w-4" />
+              Nueva preparación
+            </Button>
           </div>
         </Card>
       </>
