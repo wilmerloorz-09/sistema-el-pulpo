@@ -48,12 +48,52 @@ const PESO_BANDEJA_LB = 0.78;
 type Unidad = "LIBRAS" | "GRAMOS";
 type BandejaPeso = { id: string; numero: string; peso: string };
 
+type PreparacionBorrador = {
+  origenIngreso: string;
+  unidadMedida: Unidad;
+  cantBonito: string;
+  cantAlbacora: string;
+  obsIngreso: string;
+  bandejasPeso: Array<{ numero: string; peso: string }>;
+  preparacionTerminada: boolean;
+};
+
+const PREPARACION_BORRADOR_KEY = "pescado-preparacion-ultima-v1";
+
 function nuevaBandejaPeso(partial?: Partial<Omit<BandejaPeso, "id">>): BandejaPeso {
   return {
     id: `b-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     numero: partial?.numero ?? "",
     peso: partial?.peso ?? "",
   };
+}
+
+function leerBorradorPreparacion(): PreparacionBorrador | null {
+  try {
+    const raw = localStorage.getItem(PREPARACION_BORRADOR_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as PreparacionBorrador;
+    if (!parsed || typeof parsed !== "object") return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function guardarBorradorPreparacion(draft: PreparacionBorrador) {
+  try {
+    localStorage.setItem(PREPARACION_BORRADOR_KEY, JSON.stringify(draft));
+  } catch {
+    // ignore quota / private mode
+  }
+}
+
+function limpiarBorradorPreparacion() {
+  try {
+    localStorage.removeItem(PREPARACION_BORRADOR_KEY);
+  } catch {
+    // ignore
+  }
 }
 
 function parseCantidad(raw: string): number {
@@ -261,18 +301,32 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
 
   // Preparación (cocina)
   const isPreparacionSection = section === "preparacion" || section === "ingreso-salida";
-  const [origenIngreso, setOrigenIngreso] = useState("PREPARACION_INICIAL");
-  const [bandejasPeso, setBandejasPeso] = useState<BandejaPeso[]>(() => [nuevaBandejaPeso()]);
-  const [obsIngreso, setObsIngreso] = useState("");
-  const [unidadMedida, setUnidadMedida] = useState<Unidad>("LIBRAS");
-  const [cantBonito, setCantBonito] = useState("");
-  const [cantAlbacora, setCantAlbacora] = useState("");
-  const [preparacionTerminada, setPreparacionTerminada] = useState(false);
+  const borradorInicial = useMemo(() => (isPreparacionSection ? leerBorradorPreparacion() : null), [isPreparacionSection]);
+  const [origenIngreso, setOrigenIngreso] = useState(
+    () => borradorInicial?.origenIngreso ?? "PREPARACION_INICIAL",
+  );
+  const [bandejasPeso, setBandejasPeso] = useState<BandejaPeso[]>(() => {
+    const rows = borradorInicial?.bandejasPeso;
+    if (Array.isArray(rows) && rows.length > 0) {
+      return rows.map((row) => nuevaBandejaPeso({ numero: String(row.numero ?? ""), peso: String(row.peso ?? "") }));
+    }
+    return [nuevaBandejaPeso()];
+  });
+  const [obsIngreso, setObsIngreso] = useState(() => borradorInicial?.obsIngreso ?? "");
+  const [unidadMedida, setUnidadMedida] = useState<Unidad>(
+    () => (borradorInicial?.unidadMedida === "GRAMOS" ? "GRAMOS" : "LIBRAS"),
+  );
+  const [cantBonito, setCantBonito] = useState(() => borradorInicial?.cantBonito ?? "");
+  const [cantAlbacora, setCantAlbacora] = useState(() => borradorInicial?.cantAlbacora ?? "");
+  const [preparacionTerminada, setPreparacionTerminada] = useState(
+    () => Boolean(borradorInicial?.preparacionTerminada),
+  );
 
   const requierePescadoCrudo =
     origenIngreso === "PREPARACION_INICIAL" || origenIngreso === "PREPARACION_EXTRA";
 
   const reiniciarPreparacion = () => {
+    limpiarBorradorPreparacion();
     setOrigenIngreso("PREPARACION_INICIAL");
     setBandejasPeso([nuevaBandejaPeso()]);
     setObsIngreso("");
@@ -281,6 +335,28 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
     setCantAlbacora("");
     setPreparacionTerminada(false);
   };
+
+  useEffect(() => {
+    if (!isPreparacionSection) return;
+    guardarBorradorPreparacion({
+      origenIngreso,
+      unidadMedida,
+      cantBonito,
+      cantAlbacora,
+      obsIngreso,
+      bandejasPeso: bandejasPeso.map((b) => ({ numero: b.numero, peso: b.peso })),
+      preparacionTerminada,
+    });
+  }, [
+    isPreparacionSection,
+    origenIngreso,
+    unidadMedida,
+    cantBonito,
+    cantAlbacora,
+    obsIngreso,
+    bandejasPeso,
+    preparacionTerminada,
+  ]);
 
   const stockFrescoQuery = useQuery({
     queryKey: ["stock-pescado-fresco"],
