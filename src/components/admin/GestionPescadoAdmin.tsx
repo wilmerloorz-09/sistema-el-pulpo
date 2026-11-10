@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Hash, Layers, Loader2, Minus, Plus, Scale, Weight } from "lucide-react";
+import { Hash, Layers, Loader2, Minus, Plus, Scale } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useBranch } from "@/contexts/BranchContext";
@@ -179,10 +179,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
   // Preparación (cocina)
   const isPreparacionSection = section === "preparacion" || section === "ingreso-salida";
   const [origenIngreso, setOrigenIngreso] = useState("PREPARACION_INICIAL");
-  const [bandejasPeso, setBandejasPeso] = useState<BandejaPeso[]>([]);
-  const [draftNumeroBandeja, setDraftNumeroBandeja] = useState("");
-  const [draftPesoBandeja, setDraftPesoBandeja] = useState("");
-  const [draftUnidadBandeja, setDraftUnidadBandeja] = useState<Unidad>("LIBRAS");
+  const [bandejasPeso, setBandejasPeso] = useState<BandejaPeso[]>(() => [nuevaBandejaPeso()]);
   const [obsIngreso, setObsIngreso] = useState("");
   const [unidadCrudo, setUnidadCrudo] = useState<Unidad>("LIBRAS");
   const [cantBonito, setCantBonito] = useState("");
@@ -230,33 +227,14 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
     [pesosBandejasLb],
   );
 
-  const agregarBandejaDraft = () => {
-    const numero = draftNumeroBandeja.trim();
-    const peso = parseCantidad(draftPesoBandeja);
-    if (!numero) {
-      toast.error("Ingresa el número de la bandeja");
-      return;
-    }
-    if (peso <= 0) {
-      toast.error("Ingresa el peso de la bandeja");
-      return;
-    }
-    if (bandejasPeso.some((b) => b.numero.trim().toLowerCase() === numero.toLowerCase())) {
-      toast.error(`La bandeja #${numero} ya está en la lista`);
-      return;
-    }
-    setBandejasPeso((rows) => [
-      ...rows,
-      nuevaBandejaPeso({ numero, peso: draftPesoBandeja.trim(), unidad: draftUnidadBandeja }),
-    ]);
-    setDraftNumeroBandeja("");
-    setDraftPesoBandeja("");
-  };
-
   const ingresoMut = useMutation({
     mutationFn: async () => {
       if (bandejasPeso.some((b) => !b.numero.trim() || !parseCantidad(b.peso))) {
         throw new Error("Todas las bandejas deben tener número y peso mayor a 0");
+      }
+      const numeros = bandejasPeso.map((b) => b.numero.trim().toLowerCase());
+      if (new Set(numeros).size !== numeros.length) {
+        throw new Error("Hay números de bandeja repetidos");
       }
       if (bandejasCount <= 0 || cantidadTotalLb <= 0) {
         throw new Error("Agrega al menos una bandeja con número y peso");
@@ -306,10 +284,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
     },
     onSuccess: async () => {
       toast.success("Preparación registrada en Bodega General.");
-      setBandejasPeso([]);
-      setDraftNumeroBandeja("");
-      setDraftPesoBandeja("");
-      setDraftUnidadBandeja("LIBRAS");
+      setBandejasPeso([nuevaBandejaPeso()]);
       setObsIngreso("");
       setCantBonito("");
       setCantAlbacora("");
@@ -529,117 +504,103 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
             </div>
           </div>
 
-          <div className="space-y-2 rounded-xl border border-orange-200/70 bg-gradient-to-br from-orange-50/90 via-amber-50/40 to-white p-2.5 shadow-sm">
+          <div className="space-y-2 rounded-xl border border-orange-200/80 bg-orange-50/40 p-2.5">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-1.5">
-                <span className="flex h-6 w-6 items-center justify-center rounded-md bg-orange-100 text-orange-700">
-                  <Layers className="h-3.5 w-3.5" />
-                </span>
+                <Layers className="h-3.5 w-3.5 text-orange-700" />
                 <Label className={fieldLabelClass}>Bandejas cocinadas</Label>
               </div>
-              <span className="inline-flex items-center gap-1 rounded-full border border-orange-200 bg-white/80 px-2 py-0.5 text-[10px] font-semibold text-orange-900">
-                <Hash className="h-3 w-3" />
-                {bandejasCount}
-                <span className="text-orange-300">·</span>
-                {formatLb(cantidadTotalLb)} lb
+              <span className="text-[10px] font-semibold text-orange-900">
+                {bandejasPeso.length} fila{bandejasPeso.length === 1 ? "" : "s"}
               </span>
             </div>
 
-            {bandejasPeso.length > 0 ? (
-              <div className="flex flex-wrap gap-1.5">
-                {bandejasPeso.map((bandeja) => (
-                  <div
-                    key={bandeja.id}
-                    className="inline-flex max-w-full items-center gap-1 rounded-full border border-orange-200/90 bg-white px-2 py-1 shadow-sm"
-                  >
-                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-orange-100 text-[10px] font-bold text-orange-800">
-                      {bandeja.numero}
-                    </span>
-                    <span className="truncate text-[11px] font-semibold text-orange-950">
-                      {formatLb(aLibras(parseCantidad(bandeja.peso), bandeja.unidad))} lb
-                    </span>
-                    <button
-                      type="button"
-                      className="ml-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted-foreground transition hover:bg-orange-100 hover:text-orange-900"
-                      onClick={() => setBandejasPeso((rows) => rows.filter((row) => row.id !== bandeja.id))}
-                      aria-label={`Quitar bandeja ${bandeja.numero}`}
-                    >
-                      <Minus className="h-3 w-3" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            ) : null}
-
-            <div className="grid grid-cols-[5.75rem_minmax(0,1fr)] items-stretch gap-2">
-              <div className="flex flex-col gap-1.5">
-                <div className="flex flex-1 flex-col items-center justify-center rounded-xl border border-sky-200/80 bg-sky-50/90 px-1.5 py-2 text-center shadow-sm">
-                  <Scale className="mb-1 h-3.5 w-3.5 text-sky-600" />
+            <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] items-start gap-2">
+              <div className="space-y-1.5">
+                <div className="rounded-lg border border-sky-200 bg-sky-50 px-1.5 py-2 text-center">
+                  <Scale className="mx-auto mb-0.5 h-3.5 w-3.5 text-sky-600" />
                   <p className="text-[9px] font-semibold uppercase tracking-wide text-sky-800">Total</p>
-                  <p className="font-display text-base font-black leading-none text-sky-700">
+                  <p className="font-display text-sm font-black leading-tight text-sky-700">
                     {cantidadTotalLb > 0 ? formatLb(cantidadTotalLb) : "—"}
                   </p>
-                  <p className="mt-0.5 text-[9px] font-medium text-sky-600">lb</p>
+                  <p className="text-[9px] text-sky-600">lb</p>
                 </div>
                 <Button
                   type="button"
                   variant="outline"
-                  className="h-8 w-full gap-0.5 rounded-xl border-orange-300 bg-white px-1 text-[10px] font-semibold text-orange-900 hover:bg-orange-50"
-                  onClick={agregarBandejaDraft}
+                  className="h-8 w-full gap-0.5 rounded-lg px-1 text-[10px]"
+                  onClick={() => setBandejasPeso((rows) => [...rows, nuevaBandejaPeso()])}
                 >
                   <Plus className="h-3.5 w-3.5" />
                   Agregar
                 </Button>
               </div>
 
-              <div className="rounded-xl border border-orange-200/80 bg-white/90 p-2 shadow-sm">
-                <div className="grid grid-cols-[4.25rem_5.5rem_minmax(0,1fr)] items-end gap-1.5">
-                  <div className="space-y-1">
-                    <Label className={cn(fieldLabelClass, "inline-flex items-center gap-0.5")}>
-                      <Hash className="h-3 w-3 text-orange-600" />
-                      Nº
-                    </Label>
+              <div className="min-w-0 space-y-1.5">
+                <div className="grid grid-cols-[4rem_5.75rem_minmax(0,1fr)_1.75rem] items-center gap-1.5 px-0.5">
+                  <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-muted-foreground">
+                    <Hash className="h-3 w-3" />
+                    Nº
+                  </span>
+                  <span className="text-[10px] font-semibold text-muted-foreground">Unidad</span>
+                  <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-muted-foreground">
+                    <Scale className="h-3 w-3" />
+                    Peso
+                  </span>
+                  <span />
+                </div>
+                {bandejasPeso.map((bandeja) => (
+                  <div
+                    key={bandeja.id}
+                    className="grid grid-cols-[4rem_5.75rem_minmax(0,1fr)_1.75rem] items-center gap-1.5"
+                  >
                     <Input
                       inputMode="numeric"
-                      value={draftNumeroBandeja}
-                      onChange={(e) => setDraftNumeroBandeja(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          agregarBandejaDraft();
-                        }
+                      value={bandeja.numero}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setBandejasPeso((rows) =>
+                          rows.map((row) => (row.id === bandeja.id ? { ...row, numero: value } : row)),
+                        );
                       }}
                       placeholder="12"
                       className={cn(compactInputClass, "text-center font-semibold")}
+                      aria-label="Número de bandeja"
                     />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className={cn(fieldLabelClass, "inline-flex items-center gap-0.5")}>
-                      <Weight className="h-3 w-3 text-orange-600" />
-                      Unidad
-                    </Label>
-                    <UnidadSelect value={draftUnidadBandeja} onChange={setDraftUnidadBandeja} />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className={cn(fieldLabelClass, "inline-flex items-center gap-0.5")}>
-                      <Scale className="h-3 w-3 text-orange-600" />
-                      Peso
-                    </Label>
+                    <UnidadSelect
+                      value={bandeja.unidad}
+                      onChange={(unidad) => {
+                        setBandejasPeso((rows) =>
+                          rows.map((row) => (row.id === bandeja.id ? { ...row, unidad } : row)),
+                        );
+                      }}
+                    />
                     <Input
                       inputMode="decimal"
-                      value={draftPesoBandeja}
-                      onChange={(e) => setDraftPesoBandeja(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          agregarBandejaDraft();
-                        }
+                      value={bandeja.peso}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setBandejasPeso((rows) =>
+                          rows.map((row) => (row.id === bandeja.id ? { ...row, peso: value } : row)),
+                        );
                       }}
                       placeholder="0"
                       className={compactInputClass}
+                      aria-label="Peso de bandeja"
                     />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="h-8 w-7 rounded-lg"
+                      disabled={bandejasPeso.length <= 1}
+                      onClick={() => setBandejasPeso((rows) => rows.filter((row) => row.id !== bandeja.id))}
+                      aria-label={`Quitar bandeja ${bandeja.numero || ""}`}
+                    >
+                      <Minus className="h-3.5 w-3.5" />
+                    </Button>
                   </div>
-                </div>
+                ))}
               </div>
             </div>
           </div>
