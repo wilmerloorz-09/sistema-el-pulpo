@@ -514,7 +514,8 @@ export async function fetchSiblingOrders(
         .eq("branch_id", branchId)
         .eq("order_type", "DINE_IN")
         .eq("cash_shift_id", openShift.id)
-        .in("status", ["DRAFT", "SENT_TO_KITCHEN", "READY", "PAID", "KITCHEN_DISPATCHED"]),
+        // Especial pagada ya no debe verse en la mesa (se libera special_origin_table_id al cobrar).
+        .in("status", ["DRAFT", "SENT_TO_KITCHEN", "READY", "KITCHEN_DISPATCHED"]),
     ]);
 
   if (tableBoundError) throw tableBoundError;
