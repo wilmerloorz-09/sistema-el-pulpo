@@ -1,4 +1,5 @@
 import { useMemo, type ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { BarChart3, ChefHat, CircleDollarSign, ConciergeBell, LayoutGrid, Package, PackagePlus, Settings, UtensilsCrossed, PlayCircle, ShoppingBag, Sparkles, Zap, Banknote, History, Users, Gift, Megaphone, Search, PowerOff, PackageCheck, ArrowLeftRight, FileText, HandCoins, Warehouse, Snowflake, Flame, Wallet } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
@@ -8,6 +9,7 @@ import { useAuxiliaryCashAssignment } from "@/hooks/useAuxiliaryCash";
 import { canSeeCajaFinanceNav, isCajaFinanceNavPath } from "@/components/nav/cajaTerminalNav";
 import { isNavItemBlockedForUser } from "@/lib/menuAccessRestrictions";
 import { canManage, canView, canOperate } from "@/lib/permissions";
+import { supabase } from "@/integrations/supabase/client";
 
 /** Ocultar sección PROMOCIONES del menú hasta habilitarla en producción. */
 const SHOW_PROMOCIONES_NAV = false;
@@ -361,6 +363,19 @@ const NAV_ITEMS: AppNavItem[] = [
       || canManage(permissions, "admin_sucursal"),
   },
   {
+    to: "/gestion-pescado/preparacion",
+    label: "Preparación",
+    icon: <ChefHat className="h-5 w-5" />,
+    group: "GESTIÓN DE PESCADO",
+    tone: {
+      active: "from-orange-500 to-amber-400",
+      idle: "hover:border-orange-200 hover:bg-orange-50/90 hover:text-orange-700",
+      iconIdle: "bg-orange-50 text-orange-600",
+    },
+    // Visibilidad fina en useVisibleNavItems (admin o usuario configurado).
+    visible: () => true,
+  },
+  {
     to: "/reportes",
     label: "Reportes",
     icon: <BarChart3 className="h-5 w-5" />,
@@ -432,6 +447,21 @@ export function useVisibleNavItems() {
   const { hasAccess: hasDispatchAccess, fallbackVisible, isLoading: dispatchAccessLoading } = useDispatchAccess();
   const shiftGateQuery = useBranchShiftGate();
   const auxiliaryAssignmentQuery = useAuxiliaryCashAssignment();
+  const isAdminPescadoPrep =
+    isGlobalAdmin
+    || canManage(permissions, "admin_global")
+    || canManage(permissions, "admin_sucursal");
+  const prepAccessQuery = useQuery({
+    queryKey: ["pescado-prep-access", profile?.id ?? null],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("puede_acceder_preparacion_pescado" as any);
+      if (error) throw error;
+      return Boolean(data);
+    },
+    enabled: Boolean(profile?.id) && !isAdminPescadoPrep,
+    staleTime: 60_000,
+  });
+  const canAccessPreparacionNav = isAdminPescadoPrep || Boolean(prepAccessQuery.data);
 
   return useMemo(() => {
     const sg = shiftGateQuery.data;
@@ -496,6 +526,12 @@ export function useVisibleNavItems() {
       return false;
     };
     const canAccessGestionPescadoPath = (path: string) => {
+      if (
+        path === "/gestion-pescado/preparacion"
+        || path.startsWith("/gestion-pescado/preparacion/")
+      ) {
+        return canAccessPreparacionNav;
+      }
       if (
         path === "/gestion-pescado/fresco"
         || path.startsWith("/gestion-pescado/fresco/")
@@ -668,6 +704,7 @@ export function useVisibleNavItems() {
     activeBranch?.workflow_mode,
     auxiliaryAssignmentQuery.data?.isAssigned,
     branches.length,
+    canAccessPreparacionNav,
     dispatchAccessLoading,
     fallbackVisible,
     hasDispatchAccess,

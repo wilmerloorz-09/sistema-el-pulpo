@@ -24,8 +24,14 @@ function isTransientDbError(message: string): boolean {
     || m.includes("connection")
     || m.includes("503")
     || m.includes("502")
+    || m.includes("429")
     || m.includes("fetch failed")
     || m.includes("network")
+    || m.includes("rate limit")
+    || m.includes("over_request_rate_limit")
+    || m.includes("too many requests")
+    || m.includes("temporarily unavailable")
+    || m.includes("service unavailable")
   );
 }
 
@@ -138,9 +144,11 @@ Deno.serve(async (req) => {
       resolvedEmail = lookup.email.toLowerCase();
     }
 
+    // Más reintentos con backoff: protege el ingreso cuando Auth está momentáneamente saturado.
     let signInData = null;
     let signInError = null;
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < 4; attempt++) {
+      if (attempt > 0) await sleep(350 * (2 ** (attempt - 1)));
       const result = await anonClient.auth.signInWithPassword({
         email: resolvedEmail,
         password,
@@ -148,14 +156,20 @@ Deno.serve(async (req) => {
       signInData = result.data;
       signInError = result.error;
       if (!signInError && signInData.session && signInData.user) break;
-      if (signInError && isTransientDbError(signInError.message) && attempt === 0) {
-        await sleep(300);
+      if (signInError && isTransientDbError(signInError.message) && attempt < 3) {
         continue;
       }
       break;
     }
 
     if (signInError || !signInData?.session || !signInData?.user) {
+      // No enmascarar saturación/timeout de Auth como contraseña incorrecta.
+      if (signInError && isTransientDbError(signInError.message)) {
+        return toJson(
+          { error: "Servidor saturado. Espera unos segundos e intenta de nuevo." },
+          503,
+        );
+      }
       return toJson({ error: "Credenciales invalidas" }, 401);
     }
 

@@ -1,3 +1,5 @@
+import { useMemo } from "react";
+import { Navigate, useSearchParams } from "react-router-dom";
 import { Fish, Lock } from "lucide-react";
 import { useBranch } from "@/contexts/BranchContext";
 import { canManage, canOperate, canView } from "@/lib/permissions";
@@ -7,6 +9,9 @@ import GestionPescadoAdmin from "@/components/admin/GestionPescadoAdmin";
 
 const InventarioGestionPescado = () => {
   const { permissions, isGlobalAdmin } = useBranch();
+  const [searchParams] = useSearchParams();
+  const requestedTab = String(searchParams.get("tab") ?? "").trim().toLowerCase();
+
   const hasAccess =
     isGlobalAdmin
     || canOperate(permissions, "gestion_pescado")
@@ -15,6 +20,31 @@ const InventarioGestionPescado = () => {
     || canView(permissions, "bodega_general")
     || canManage(permissions, "admin_global")
     || canManage(permissions, "admin_sucursal");
+
+  const canManageConfig =
+    isGlobalAdmin
+    || canManage(permissions, "admin_global")
+    || canManage(permissions, "admin_sucursal");
+
+  const tabs = useMemo(() => {
+    const items = [
+      ...(canManageConfig
+        ? [{
+            value: "configuracion",
+            label: "Configuración",
+            content: <GestionPescadoAdmin section="configuracion" />,
+          }]
+        : []),
+      { value: "sucursales", label: "Sucursales", content: <GestionPescadoAdmin section="sucursales" /> },
+      { value: "movimientos", label: "Movim.", content: <GestionPescadoAdmin section="movimientos" /> },
+      { value: "historial", label: "Historial", content: <GestionPescadoAdmin section="historial" /> },
+    ];
+    return items;
+  }, [canManageConfig]);
+
+  if (requestedTab === "preparacion" || requestedTab === "ingreso-salida") {
+    return <Navigate to="/gestion-pescado/preparacion" replace />;
+  }
 
   if (!hasAccess) {
     return (
@@ -33,17 +63,12 @@ const InventarioGestionPescado = () => {
   return (
     <InventarioModuleShell
       title="Pescado cocido"
-      description="Stock · preparación · movimientos"
+      description="Stock · configuración · movimientos"
       icon={<Fish className="h-4 w-4" />}
       iconClassName="border-sky-200 text-sky-700"
       defaultTab="sucursales"
       compactTabs
-      tabs={[
-        { value: "sucursales", label: "Sucursales", content: <GestionPescadoAdmin section="sucursales" /> },
-        { value: "preparacion", label: "Preparación", content: <GestionPescadoAdmin section="preparacion" /> },
-        { value: "movimientos", label: "Movim.", content: <GestionPescadoAdmin section="movimientos" /> },
-        { value: "historial", label: "Historial", content: <GestionPescadoAdmin section="historial" /> },
-      ]}
+      tabs={tabs}
     />
   );
 };

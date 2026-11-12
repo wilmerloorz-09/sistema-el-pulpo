@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,16 +12,18 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { motion } from "framer-motion";
-import { AlertCircle, Loader2, LogIn } from "lucide-react";
+import { AlertCircle, Loader2, LogIn, RefreshCw } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
+  AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { clearLocalAuthDebris, isTransientLoginMessage } from "@/lib/authLogin";
 import { supabase } from "@/integrations/supabase/client";
 
 type LoginBranch = {
@@ -38,21 +40,17 @@ const getLoginErrorMessage = (rawMessage?: string) => {
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase();
 
+  // Saturación / red primero: no confundir con contraseña incorrecta.
+  if (isTransientLoginMessage(message)) {
+    return "El servidor esta saturado o la tablet tiene sesion vieja. Espera 15–30 segundos e intenta de nuevo. Si sigue fallando, usa \"Limpiar datos locales\" (no hace falta reiniciar el equipo). Preferible ingresar con el correo (email).";
+  }
+
   if (
     normalized.includes("credenciales invalidas") ||
     normalized.includes("invalid login") ||
     normalized.includes("invalid credentials")
   ) {
     return "No se puede ingresar porque el correo/usuario/alias o la contrasena son incorrectos. Revisa los datos e intenta nuevamente.";
-  }
-
-  if (
-    normalized.includes("saturado")
-    || normalized.includes("validando identificador")
-    || normalized.includes("503")
-    || normalized.includes("timeout")
-  ) {
-    return "El servidor esta saturado. Espera 15–30 segundos e intenta de nuevo. Si sigue fallando, ingresa con el correo (email) del usuario en lugar del username.";
   }
 
   if (normalized.includes("identificador") && normalized.includes("contrasena")) {
@@ -78,6 +76,12 @@ const getLoginErrorMessage = (rawMessage?: string) => {
 
 const Login = () => {
   const { signIn, user, loading: authLoading } = useAuth();
+  const [searchParams] = useSearchParams();
+  const nextPathRaw = searchParams.get("next");
+  const nextPath =
+    nextPathRaw && nextPathRaw.startsWith("/") && !nextPathRaw.startsWith("//")
+      ? nextPathRaw
+      : "/";
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [branchId, setBranchId] = useState(LOGIN_BRANCH_DEFAULT);
@@ -86,6 +90,33 @@ const Login = () => {
   const [branchesError, setBranchesError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorIsTransient, setErrorIsTransient] = useState(false);
+  const [clearingLocal, setClearingLocal] = useState(false);
+
+  // Solo con auth resuelta y sin usuario: corta JWT/refresh basura que satura Auth.
+  // No tocar mientras loading (evitar botar una sesión válida al abrir /login).
+  useEffect(() => {
+    if (authLoading || user) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        await supabase.auth.signOut({ scope: "local" });
+      } catch {
+        // ignore
+      }
+      if (!cancelled) {
+        try {
+          localStorage.removeItem("authOwnedSingleSession");
+          localStorage.removeItem("authSessionActivity");
+        } catch {
+          // ignore
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [authLoading, user]);
 
   useEffect(() => {
     let cancelled = false;
@@ -127,21 +158,38 @@ const Login = () => {
       </div>
     );
   }
-  if (user) return <Navigate to="/" replace />;
+  if (user) return <Navigate to={nextPath} replace />;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
+    setErrorIsTransient(false);
     try {
       const selectedBranchId =
         branchId && branchId !== LOGIN_BRANCH_DEFAULT ? branchId : null;
       await signIn(identifier, password, selectedBranchId);
     } catch (err: any) {
-      const msg = getLoginErrorMessage(err.message || "Error al iniciar sesion");
-      setError(msg);
+      const raw = err.message || "Error al iniciar sesion";
+      setErrorIsTransient(isTransientLoginMessage(raw));
+      setError(getLoginErrorMessage(raw));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleClearLocalAndRetry = async () => {
+    setClearingLocal(true);
+    try {
+      try {
+        await supabase.auth.signOut({ scope: "local" });
+      } catch {
+        // ignore
+      }
+      clearLocalAuthDebris();
+      window.location.reload();
+    } finally {
+      setClearingLocal(false);
     }
   };
 
@@ -248,7 +296,15 @@ const Login = () => {
         </form>
       </motion.div>
 
-      <AlertDialog open={Boolean(error)} onOpenChange={(open) => !open && setError(null)}>
+      <AlertDialog
+        open={Boolean(error)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setError(null);
+            setErrorIsTransient(false);
+          }
+        }}
+      >
         <AlertDialogContent className="max-w-sm rounded-[24px] border-orange-200">
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2 text-lg font-bold text-foreground">
@@ -259,8 +315,27 @@ const Login = () => {
               {error}
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogAction onClick={() => setError(null)}>Aceptar</AlertDialogAction>
+          <AlertDialogFooter className="flex-col gap-2 sm:flex-col">
+            {errorIsTransient ? (
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={clearingLocal}
+                className="w-full gap-2"
+                onClick={() => void handleClearLocalAndRetry()}
+              >
+                {clearingLocal ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4" />
+                )}
+                Limpiar datos locales
+              </Button>
+            ) : null}
+            <AlertDialogCancel disabled={clearingLocal}>Cerrar</AlertDialogCancel>
+            <AlertDialogAction disabled={clearingLocal} onClick={() => setError(null)}>
+              Reintentar
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

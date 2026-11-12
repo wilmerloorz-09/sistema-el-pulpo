@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Check,
   ChefHat,
   FilePlus2,
   Fish,
@@ -21,6 +20,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
 import { canManage, canOperate, canView } from "@/lib/permissions";
 import { Button } from "@/components/ui/button";
@@ -41,7 +41,13 @@ import {
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 
-export type GestionPescadoSection = "sucursales" | "preparacion" | "ingreso-salida" | "movimientos" | "historial";
+export type GestionPescadoSection =
+  | "configuracion"
+  | "sucursales"
+  | "preparacion"
+  | "ingreso-salida"
+  | "movimientos"
+  | "historial";
 
 const GRAMOS_POR_LIBRA = 453.59237;
 const PESO_BANDEJA_LB = 0.78;
@@ -218,6 +224,7 @@ const compactInputClass = "h-10 rounded-xl px-2.5 text-base shadow-none";
 const compactSelectClass = "h-10 rounded-xl text-sm";
 
 export default function GestionPescadoAdmin({ section }: { section: GestionPescadoSection }) {
+  const { profile } = useAuth();
   const { branches, activeBranchId, permissions, isGlobalAdmin } = useBranch();
   const qc = useQueryClient();
   const [errorDialog, setErrorDialog] = useState<{ title: string; description: string } | null>(null);
@@ -259,6 +266,10 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
   );
 
   const canOperateFull = isGlobalAdmin || canOperate(permissions, "gestion_pescado") || canOperate(permissions, "bodega_general") || canManage(permissions, "admin_global");
+  const canManageConfig =
+    isGlobalAdmin
+    || canManage(permissions, "admin_global")
+    || canManage(permissions, "admin_sucursal");
   const canMoveFromBranch = canOperateFull || canManage(permissions, "admin_sucursal") || canView(permissions, "gestion_pescado");
 
   const stockQuery = useQuery({
@@ -497,7 +508,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
         throw new Error("La preparación está terminada. Edítala para guardar cambios.");
       }
       if (bandejasExistentesTotal <= 0) {
-        throw new Error("Configura primero la cantidad de bandejas existentes en Sucursales");
+        throw new Error("Configura primero la cantidad de bandejas existentes en Configuración");
       }
       if (bandejasPeso.some((b) => !b.numero.trim() || !parseCantidad(b.peso))) {
         throw new Error("Todas las bandejas deben tener número y peso mayor a 0");
@@ -507,7 +518,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
         throw new Error("Hay números de bandeja repetidos");
       }
       if (numeros.some((n) => !numerosBandejaCatalogo.includes(n))) {
-        throw new Error("Hay bandejas fuera del catálogo configurado en Sucursales");
+        throw new Error("Hay bandejas fuera del catálogo configurado en Configuración");
       }
       if (bandejasCount <= 0 || cantidadTotalLb <= 0) {
         throw new Error("Agrega al menos una bandeja con número y peso");
@@ -663,19 +674,84 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
     return map;
   }, [stockQuery.data]);
 
-  const bandejasExistentesQuery = useQuery({
-    queryKey: ["pescado-bandejas-existentes"],
+  type PrepConfig = {
+    bandejas_existentes: number;
+    preparacion_usuario_id: string | null;
+    preparacion_usuario_nombre: string | null;
+    puede_editar: boolean;
+  };
+
+  const prepAccessQuery = useQuery({
+    queryKey: ["pescado-prep-access", profile?.id ?? null],
     queryFn: async () => {
-      const { data, error } = await supabase.rpc("obtener_bandejas_existentes_pescado" as any);
+      const { data, error } = await supabase.rpc("puede_acceder_preparacion_pescado" as any);
       if (error) throw error;
-      return Number(data ?? 0);
+      return Boolean(data);
     },
-    enabled: section === "sucursales" || isPreparacionSection,
+    enabled: Boolean(profile?.id) && (isPreparacionSection || section === "configuracion"),
   });
+
+  const canAccessPreparacion = canManageConfig || Boolean(prepAccessQuery.data);
+
+  const configQuery = useQuery({
+    queryKey: ["pescado-prep-config"],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("obtener_config_preparacion_pescado" as any);
+      if (error) throw error;
+      const row = (data ?? {}) as Partial<PrepConfig>;
+      return {
+        bandejas_existentes: Number(row.bandejas_existentes ?? 0),
+        preparacion_usuario_id: row.preparacion_usuario_id ? String(row.preparacion_usuario_id) : null,
+        preparacion_usuario_nombre: row.preparacion_usuario_nombre
+          ? String(row.preparacion_usuario_nombre)
+          : null,
+        puede_editar: Boolean(row.puede_editar),
+      } satisfies PrepConfig;
+    },
+    enabled: section === "configuracion" || isPreparacionSection,
+  });
+
+  const usersQuery = useQuery({
+    queryKey: ["admin-users-access", "pescado-prep-config"],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("admin_list_users_access" as never);
+      if (error) throw error;
+      return (data ?? []) as Array<{
+        id: string;
+        username: string;
+        alias?: string | null;
+        first_name?: string | null;
+        last_name?: string | null;
+        full_name?: string | null;
+        is_active: boolean;
+      }>;
+    },
+    enabled: section === "configuracion" && canManageConfig,
+  });
+
+  const userOptions = useMemo(() => {
+    return (usersQuery.data ?? [])
+      .filter((user) => user.is_active)
+      .map((user) => {
+        const realName = [user.first_name, user.last_name].filter(Boolean).join(" ").trim()
+          || String(user.full_name ?? "").trim();
+        const alias = String(user.alias || user.username || "").trim() || "usuario";
+        return {
+          id: user.id,
+          label: realName ? `${realName} (${alias})` : alias,
+        };
+      })
+      .sort((a, b) => a.label.localeCompare(b.label, "es"));
+  }, [usersQuery.data]);
+
   const bandejasExistentesTotal = useMemo(() => {
-    const n = Number(bandejasExistentesQuery.data ?? 0);
+    const n = Number(
+      section === "configuracion" || isPreparacionSection
+        ? (configQuery.data?.bandejas_existentes ?? 0)
+        : 0,
+    );
     return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
-  }, [bandejasExistentesQuery.data]);
+  }, [configQuery.data?.bandejas_existentes, isPreparacionSection, section]);
   const numerosBandejaCatalogo = useMemo(
     () => Array.from({ length: bandejasExistentesTotal }, (_, i) => String(i + 1)),
     [bandejasExistentesTotal],
@@ -684,32 +760,39 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
     () => new Set(bandejasPeso.map((b) => b.numero.trim()).filter(Boolean)),
     [bandejasPeso],
   );
-  const opcionesBandejaParaFila = (filaId: string, numeroActual: string) =>
+  const opcionesBandejaParaFila = (_filaId: string, numeroActual: string) =>
     numerosBandejaCatalogo.filter((n) => n === numeroActual.trim() || !numerosBandejaUsados.has(n));
   const [bandejasExistentesInput, setBandejasExistentesInput] = useState("");
+  const [prepUsuarioId, setPrepUsuarioId] = useState<string>("__none__");
   useEffect(() => {
-    if (bandejasExistentesQuery.data == null || !Number.isFinite(bandejasExistentesQuery.data)) return;
-    setBandejasExistentesInput(String(bandejasExistentesQuery.data));
-  }, [bandejasExistentesQuery.data]);
+    if (!configQuery.data) return;
+    setBandejasExistentesInput(String(configQuery.data.bandejas_existentes ?? 0));
+    setPrepUsuarioId(configQuery.data.preparacion_usuario_id ?? "__none__");
+  }, [configQuery.data]);
 
-  const guardarBandejasExistentesMut = useMutation({
+  const guardarConfigMut = useMutation({
     mutationFn: async () => {
       const n = Number.parseInt(String(bandejasExistentesInput ?? "").trim(), 10);
       if (!Number.isFinite(n) || n < 0) {
         throw new Error("Ingresa un número de bandejas válido (0 o más)");
       }
-      const { data, error } = await supabase.rpc("actualizar_bandejas_existentes_pescado" as any, {
-        p_cantidad: n,
+      const usuarioId = prepUsuarioId && prepUsuarioId !== "__none__" ? prepUsuarioId : null;
+      const { data, error } = await supabase.rpc("actualizar_config_preparacion_pescado" as any, {
+        p_bandejas_existentes: n,
+        p_preparacion_usuario_id: usuarioId,
       });
       if (error) throw error;
-      return Number(data ?? n);
+      return data;
     },
-    onSuccess: async (n) => {
-      toast.success(`Bandejas existentes actualizadas: ${n}`);
-      setBandejasExistentesInput(String(n));
-      await qc.invalidateQueries({ queryKey: ["pescado-bandejas-existentes"] });
+    onSuccess: async () => {
+      toast.success("Configuración de preparación guardada");
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["pescado-prep-config"] }),
+        qc.invalidateQueries({ queryKey: ["pescado-prep-access"] }),
+        qc.invalidateQueries({ queryKey: ["pescado-bandejas-existentes"] }),
+      ]);
     },
-    onError: (e: any) => mostrarError(e, "No se pudo guardar la cantidad de bandejas."),
+    onError: (e: any) => mostrarError(e, "No se pudo guardar la configuración."),
   });
 
   const ubicaciones = useMemo(() => [
@@ -729,9 +812,9 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
     ubicaciones.find((u) => u.value === value)?.stockLb ?? 0;
 
   const motivoBloqueoGuardar = useMemo(() => {
-    if (!isPreparacionSection || !canOperateFull) return "Sin permiso para guardar preparación.";
+    if (!isPreparacionSection || !canAccessPreparacion) return "Sin permiso para guardar preparación.";
     if (preparacionTerminada) return "La preparación está terminada. Edítala para guardar.";
-    if (bandejasExistentesTotal <= 0) return "Configura la cantidad de bandejas en Sucursales.";
+    if (bandejasExistentesTotal <= 0) return "Configura la cantidad de bandejas en Configuración.";
     if (bandejasPeso.length === 0) return "Agrega al menos una bandeja.";
     if (bandejasPeso.some((b) => !b.numero.trim() || !parseCantidad(b.peso))) {
       return "Completa bandeja y peso en todas las filas.";
@@ -757,7 +840,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
     return null;
   }, [
     isPreparacionSection,
-    canOperateFull,
+    canAccessPreparacion,
     preparacionTerminada,
     bandejasExistentesTotal,
     bandejasPeso,
@@ -773,50 +856,94 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
     unidadMedida,
   ]);
 
+  if (section === "configuracion") {
+    if (!canManageConfig) {
+      return (
+        <p className="text-xs text-muted-foreground">
+          Solo administradores pueden editar la configuración de preparación.
+        </p>
+      );
+    }
+    const puedeEditar = Boolean(configQuery.data?.puede_editar ?? canManageConfig);
+    return (
+      <div className="space-y-4">
+        {errorDialogNode}
+        <Card className="space-y-4 rounded-[24px] border border-orange-200 bg-gradient-to-br from-orange-50 via-white to-amber-50 p-4 shadow-sm sm:p-5">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-orange-700">Configuración</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Cantidad de bandejas y usuario con acceso al módulo Preparación.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label className="inline-flex items-center gap-1 text-xs font-semibold text-orange-950">
+                <Hash className="h-3.5 w-3.5" />
+                Cantidad de bandejas
+              </Label>
+              <Input
+                inputMode="numeric"
+                value={bandejasExistentesInput}
+                disabled={!puedeEditar || configQuery.isLoading || guardarConfigMut.isPending}
+                onChange={(e) => setBandejasExistentesInput(e.target.value.replace(/[^\d]/g, ""))}
+                placeholder="0"
+                className="h-11 rounded-xl border-orange-200 bg-white"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-orange-950">Usuario con acceso a Preparación</Label>
+              <Select
+                value={prepUsuarioId}
+                onValueChange={setPrepUsuarioId}
+                disabled={!puedeEditar || usersQuery.isLoading || guardarConfigMut.isPending}
+              >
+                <SelectTrigger className="h-11 rounded-xl border-orange-200 bg-white">
+                  <SelectValue placeholder={usersQuery.isLoading ? "Cargando usuarios..." : "Selecciona un usuario"} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">Sin usuario asignado</SelectItem>
+                  {userOptions.map((user) => (
+                    <SelectItem key={user.id} value={user.id}>
+                      {user.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {configQuery.data?.preparacion_usuario_nombre ? (
+                <p className="text-[11px] text-muted-foreground">
+                  Actual: {configQuery.data.preparacion_usuario_nombre}
+                </p>
+              ) : null}
+            </div>
+          </div>
+
+          <Button
+            type="button"
+            className="h-11 gap-2 rounded-xl bg-orange-600 text-white hover:bg-orange-700"
+            disabled={!puedeEditar || guardarConfigMut.isPending || configQuery.isLoading}
+            onClick={() => guardarConfigMut.mutate()}
+          >
+            {guardarConfigMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            Guardar configuración
+          </Button>
+        </Card>
+      </div>
+    );
+  }
+
   if (section === "sucursales") {
     return (
       <div className="space-y-4">
         {errorDialogNode}
         <Card className="rounded-[24px] border border-sky-200 bg-gradient-to-br from-sky-50 via-white to-blue-50 p-4 shadow-sm sm:p-5">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">Bodega General</p>
-              <p className="mt-1 font-display text-3xl font-black text-sky-950">
-                {stockQuery.isLoading ? "…" : formatLb(stockCentral?.cantidad_libras)} <span className="text-base font-semibold text-sky-700">lb</span>
-                <span className="ml-2 text-base font-semibold text-muted-foreground">({formatG(stockCentral?.cantidad_libras)} g)</span>
-              </p>
-            </div>
-            <div className="w-[7.25rem] shrink-0 space-y-1">
-              <Label className="inline-flex items-center gap-1 text-[10px] font-semibold leading-none text-sky-900">
-                <Hash className="h-3 w-3" />
-                Bandejas
-              </Label>
-              <div className="flex items-center gap-1">
-                <Input
-                  inputMode="numeric"
-                  value={bandejasExistentesInput}
-                  disabled={!canOperateFull || bandejasExistentesQuery.isLoading || guardarBandejasExistentesMut.isPending}
-                  onChange={(e) => setBandejasExistentesInput(e.target.value.replace(/[^\d]/g, ""))}
-                  placeholder="0"
-                  className="h-8 w-14 rounded-lg border-sky-200 bg-white/90 px-2 text-center text-sm"
-                />
-                <Button
-                  type="button"
-                  size="icon"
-                  className="h-8 w-8 rounded-lg bg-sky-600 text-white shadow-sm hover:bg-sky-700"
-                  disabled={!canOperateFull || guardarBandejasExistentesMut.isPending || bandejasExistentesQuery.isLoading}
-                  onClick={() => guardarBandejasExistentesMut.mutate()}
-                  aria-label="Guardar bandejas existentes"
-                  title="Guardar"
-                >
-                  {guardarBandejasExistentesMut.isPending ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Check className="h-4 w-4" strokeWidth={2.5} />
-                  )}
-                </Button>
-              </div>
-            </div>
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">Bodega General</p>
+            <p className="mt-1 font-display text-3xl font-black text-sky-950">
+              {stockQuery.isLoading ? "…" : formatLb(stockCentral?.cantidad_libras)} <span className="text-base font-semibold text-sky-700">lb</span>
+              <span className="ml-2 text-base font-semibold text-muted-foreground">({formatG(stockCentral?.cantidad_libras)} g)</span>
+            </p>
           </div>
         </Card>
         <div className="overflow-x-auto rounded-2xl border">
@@ -845,10 +972,18 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
   }
 
   if (isPreparacionSection) {
-    if (!canOperateFull) {
+    if (prepAccessQuery.isLoading) {
+      return (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          Verificando acceso a preparación…
+        </div>
+      );
+    }
+    if (!canAccessPreparacion) {
       return (
         <p className="text-xs text-muted-foreground">
-          Solo bodega general / administrador puede registrar la preparación.
+          Solo administradores o el usuario configurado pueden registrar la preparación.
         </p>
       );
     }
@@ -996,7 +1131,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
 
             {bandejasExistentesTotal <= 0 ? (
               <p className="rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-900">
-                Configura la cantidad de bandejas existentes en la pestaña Sucursales.
+                Configura la cantidad de bandejas existentes en la pestaña Configuración.
               </p>
             ) : null}
 
@@ -1027,7 +1162,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
                   onClick={() => {
                     if (formulariosBloqueados) return;
                     if (bandejasExistentesTotal <= 0) {
-                      toast.error("Configura primero las bandejas en Sucursales");
+                      toast.error("Configura primero las bandejas en Configuración");
                       return;
                     }
                     if (bandejasPeso.length >= bandejasExistentesTotal) {

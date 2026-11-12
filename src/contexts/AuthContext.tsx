@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { Session, User } from "@supabase/supabase-js";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { isTransientLoginMessage, sleep } from "@/lib/authLogin";
 import { logBackgroundTaskError } from "@/lib/benignAsyncErrors";
 import { AUTH_SESSION_POLL_MS } from "@/lib/queryEgress";
 import { decideSingleSessionAction } from "@/lib/singleSession";
@@ -173,6 +174,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // scope "local": cerrar solo este dispositivo. El scope global por defecto revoca
   // las sesiones del mismo usuario en sus otros dispositivos.
+  // Orden crítico: signOut local primero. Si el RPC de limpieza cuelga por saturación,
+  // el usuario igual debe poder salir de este dispositivo.
   const signOut = useCallback(async () => {
     const ownedSession = readOwnedSingleSession();
     confirmedOwnedSessionRef.current = null;
@@ -180,13 +183,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     clearOwnedSingleSession();
     localStorage.removeItem("activeBranchId");
 
-    if (ownedSession?.sessionId) {
-      await supabase.rpc("clear_my_single_session" as any, {
-        p_session_id: ownedSession.sessionId,
-      } as any);
-    }
-
     await supabase.auth.signOut({ scope: "local" });
+
+    if (ownedSession?.sessionId) {
+      void supabase
+        .rpc("clear_my_single_session" as any, {
+          p_session_id: ownedSession.sessionId,
+        } as any)
+        .then(({ error }) => {
+          if (error) {
+            logBackgroundTaskError("AuthContext.signOut.clear_my_single_session", error);
+          }
+        });
+    }
   }, [clearOwnedSingleSession, clearSessionTracking]);
 
   const refreshProfile = useCallback(async () => {
@@ -228,13 +237,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       clearOwnedSingleSession();
       localStorage.removeItem("activeBranchId");
 
+      await supabase.auth.signOut({ scope: "local" });
+
       if (ownedSession?.sessionId) {
-        await supabase.rpc("clear_my_single_session" as any, {
-          p_session_id: ownedSession.sessionId,
-        } as any);
+        void supabase
+          .rpc("clear_my_single_session" as any, {
+            p_session_id: ownedSession.sessionId,
+          } as any)
+          .then(({ error }) => {
+            if (error) {
+              logBackgroundTaskError(
+                "AuthContext.forceSignOutDueToConcurrentSession.clear_my_single_session",
+                error,
+              );
+            }
+          });
       }
 
-      await supabase.auth.signOut({ scope: "local" });
       toast.error("Tu sesion fue cerrada porque se inicio sesion con este usuario en otro dispositivo.");
     } finally {
       expiringSessionRef.current = false;
@@ -429,30 +448,56 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         logBackgroundTaskError("AuthContext.signIn.clearStaleSession", error);
       }
 
-      const res = await supabase.functions.invoke("login-with-identifier", {
-        body: {
-          identifier: normalized,
-          password,
-          ...(selectedBranchId ? { branch_id: selectedBranchId } : {}),
-        },
-        headers: {
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-        },
-      });
+      let accessToken: string | null = null;
+      let refreshToken: string | null = null;
+      let lastInvokeError: Error | null = null;
 
-      if (res.error) {
-        throw new Error(await resolveEdgeError(res.error));
+      // Reintentos con jitter: varias tablets no golpean Auth al mismo milisegundo.
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (attempt > 0) {
+          await sleep(900 * attempt + Math.floor(Math.random() * 500));
+        }
+
+        const res = await supabase.functions.invoke("login-with-identifier", {
+          body: {
+            identifier: normalized,
+            password,
+            ...(selectedBranchId ? { branch_id: selectedBranchId } : {}),
+          },
+          headers: {
+            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          },
+        });
+
+        if (res.error) {
+          const message = await resolveEdgeError(res.error);
+          lastInvokeError = new Error(message);
+          if (isTransientLoginMessage(message) && attempt < 2) continue;
+          throw lastInvokeError;
+        }
+
+        if (res.data?.error) {
+          const message = String(res.data.error);
+          lastInvokeError = new Error(message);
+          if (isTransientLoginMessage(message) && attempt < 2) continue;
+          throw lastInvokeError;
+        }
+
+        accessToken = res.data?.access_token ?? null;
+        refreshToken = res.data?.refresh_token ?? null;
+
+        if (!accessToken || !refreshToken) {
+          lastInvokeError = new Error("No se recibio sesion valida del servidor");
+          if (attempt < 2) continue;
+          throw lastInvokeError;
+        }
+
+        lastInvokeError = null;
+        break;
       }
 
-      if (res.data?.error) {
-        throw new Error(res.data.error);
-      }
-
-      const accessToken = res.data?.access_token;
-      const refreshToken = res.data?.refresh_token;
-
-      if (!accessToken || !refreshToken) {
-        throw new Error("No se recibio sesion valida del servidor");
+      if (lastInvokeError || !accessToken || !refreshToken) {
+        throw lastInvokeError ?? new Error("No se recibio sesion valida del servidor");
       }
 
       const { data: sessionData, error: setSessionError } = await supabase.auth.setSession({
