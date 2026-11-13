@@ -64,6 +64,8 @@ import { sumNonCashPaymentChangeOut } from "@/lib/transferCashChange";
 import { fetchPaymentsForRegisterSummary } from "@/lib/cajaRegisterPayments";
 import { fetchRegisterOpeningCollectedPayments } from "@/lib/cajaRegisterOpeningSummary";
 import { ALL_CASHIERS, scopeCajaSummary, belongsToCashierRegisterActivity, resolveCashierOpening } from "@/lib/cajaSummaryScope";
+import { filterPayableOrdersWhenPackerPresent } from "@/lib/cajaPayableWhenPacker";
+import { useEnabledPackerPresence } from "@/hooks/useDispatchAccess";
 
 const initialCompletedFilters: CompletedPaymentsFilters = {
   scope: "ALL",
@@ -317,6 +319,12 @@ const Caja = () => {
   // las muestra con botón Cobrar rojo + AlertDialog (ready_to_collect=false).
   // Filtrarlas aquí causaba parpadeo (aparecen/desaparecen) al recalcular
   // undispatched_units entre refetches.
+  // Si hay ≥1 empaquetador habilitado en el turno: solo para llevar (TAKEOUT).
+  const packerPresenceQuery = useEnabledPackerPresence(shift?.id);
+  const recaudarOrders = useMemo(
+    () => filterPayableOrdersWhenPackerPresent(payableOrders, packerPresenceQuery.data === true),
+    [payableOrders, packerPresenceQuery.data],
+  );
 
   const activeCaptureRequest = useMemo(
     () => pendingCaptureRequests.find((request) => request.id === activeCaptureRequestId) ?? null,
@@ -1291,7 +1299,7 @@ const Caja = () => {
                 />
               ) : null}
               <PayableOrdersList
-                orders={payableOrders}
+                orders={recaudarOrders}
                 paymentMethods={paymentMethods}
                 denominations={denominations}
                 shiftDenoms={shift.denoms}

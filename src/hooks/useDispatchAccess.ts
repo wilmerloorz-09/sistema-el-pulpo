@@ -30,19 +30,26 @@ async function hasEnabledPackerForShift(shiftId: string): Promise<boolean> {
   return (rows ?? []).length > 0;
 }
 
+/** True si el turno tiene ≥1 usuario habilitado con Empaquetador. */
+export function useEnabledPackerPresence(shiftId: string | null | undefined) {
+  return useQuery({
+    queryKey: shiftId
+      ? [...qk.shiftEnabledUsers(shiftId), "packer-presence"]
+      : ["shift-enabled-users", null, "packer-presence"],
+    queryFn: () => hasEnabledPackerForShift(shiftId!),
+    enabled: Boolean(shiftId),
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+  });
+}
+
 export function useDispatchAccess() {
   const { permissions, isGlobalAdmin } = useBranch();
   const { user } = useAuth();
   const { config, assignments, isLoading: isDispatchConfigLoading } = useDispatchConfig();
   const shiftGateQuery = useBranchShiftGate();
   const shiftId = shiftGateQuery.data?.shiftId ?? null;
-  const enabledPackerQuery = useQuery({
-    queryKey: shiftId ? [...qk.shiftEnabledUsers(shiftId), "packer-presence"] : ["shift-enabled-users", null, "packer-presence"],
-    queryFn: () => hasEnabledPackerForShift(shiftId!),
-    enabled: Boolean(shiftId),
-    staleTime: 30_000,
-    refetchOnWindowFocus: false,
-  });
+  const enabledPackerQuery = useEnabledPackerPresence(shiftId);
 
   const access = useMemo(() => {
     const takeoutReservedForPacking = Boolean(shiftId) && enabledPackerQuery.data !== false;
