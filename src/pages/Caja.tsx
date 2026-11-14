@@ -319,11 +319,17 @@ const Caja = () => {
   // las muestra con botón Cobrar rojo + AlertDialog (ready_to_collect=false).
   // Filtrarlas aquí causaba parpadeo (aparecen/desaparecen) al recalcular
   // undispatched_units entre refetches.
-  // Si hay ≥1 empaquetador habilitado en el turno: solo para llevar y Express.
+  // Si hay ≥1 empaquetador: principal = para llevar/Express; secundaria = el resto.
   const packerPresenceQuery = useEnabledPackerPresence(shift?.id);
+  const isSecondaryCashier = Boolean(shiftGateQuery.data?.isSecondaryCashier);
   const recaudarOrders = useMemo(
-    () => filterPayableOrdersWhenPackerPresent(payableOrders, packerPresenceQuery.data === true),
-    [payableOrders, packerPresenceQuery.data],
+    () =>
+      filterPayableOrdersWhenPackerPresent(
+        payableOrders,
+        packerPresenceQuery.data === true,
+        isSecondaryCashier,
+      ),
+    [payableOrders, packerPresenceQuery.data, isSecondaryCashier],
   );
 
   const activeCaptureRequest = useMemo(
