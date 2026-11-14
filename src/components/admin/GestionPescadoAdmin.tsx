@@ -987,6 +987,16 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
               {rows.map((row) => {
                 const draft = verificacionDraft[row.numero] ?? "";
                 const saving = guardandoBandeja === row.numero;
+                const draftTrim = String(draft).trim().replace(",", ".");
+                const draftNum = draftTrim === "" ? null : Number(draftTrim);
+                const savedNum = row.cantidad_verificada_lb;
+                const draftValido = draftNum != null && Number.isFinite(draftNum) && draftNum >= 0;
+                const hayCambio =
+                  draftValido
+                  && (
+                    savedNum == null
+                    || Math.round(draftNum * 1000) !== Math.round(Number(savedNum) * 1000)
+                  );
                 return (
                   <tr key={row.numero} className="border-t">
                     <td className="px-3 py-2 font-semibold">#{row.numero}</td>
@@ -1009,15 +1019,14 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
                         type="button"
                         size="sm"
                         className="h-10 gap-1.5 rounded-xl bg-teal-600 text-white hover:bg-teal-700"
-                        disabled={saving || guardarVerificacionMut.isPending}
+                        disabled={!hayCambio || saving || guardarVerificacionMut.isPending}
                         onClick={() => {
-                          const qty = Number(String(draft).trim().replace(",", "."));
-                          if (!Number.isFinite(qty) || qty < 0) {
+                          if (!draftValido || draftNum == null) {
                             toast.error("Ingresa una cantidad verificada válida (≥ 0)");
                             return;
                           }
                           setGuardandoBandeja(row.numero);
-                          guardarVerificacionMut.mutate({ numero: row.numero, cantidad: qty });
+                          guardarVerificacionMut.mutate({ numero: row.numero, cantidad: draftNum });
                         }}
                       >
                         {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
