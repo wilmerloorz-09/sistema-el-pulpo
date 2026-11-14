@@ -28,6 +28,7 @@ const InventarioGestionPescado = () => {
 
   const tabs = useMemo(() => {
     const items = [
+      { value: "verificacion", label: "Verificación", content: <GestionPescadoAdmin section="verificacion" /> },
       ...(canManageConfig
         ? [{
             value: "configuracion",
@@ -63,10 +64,10 @@ const InventarioGestionPescado = () => {
   return (
     <InventarioModuleShell
       title="Pescado cocido"
-      description="Stock · configuración · movimientos"
+      description="Stock · verificación · configuración · movimientos"
       icon={<Fish className="h-4 w-4" />}
       iconClassName="border-sky-200 text-sky-700"
-      defaultTab="sucursales"
+      defaultTab="verificacion"
       compactTabs
       tabs={tabs}
     />

@@ -42,6 +42,7 @@ import {
 import { cn } from "@/lib/utils";
 
 export type GestionPescadoSection =
+  | "verificacion"
   | "configuracion"
   | "sucursales"
   | "preparacion"
@@ -49,6 +50,11 @@ export type GestionPescadoSection =
   | "movimientos"
   | "historial";
 
+type BandejaVerificacion = {
+  numero: string;
+  cantidad_cocida_lb: number;
+  cantidad_verificada_lb: number | null;
+};
 const GRAMOS_POR_LIBRA = 453.59237;
 const PESO_BANDEJA_LB = 0.78;
 type Unidad = "LIBRAS" | "GRAMOS";
@@ -281,6 +287,56 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
     },
   });
 
+  const verificacionQuery = useQuery({
+    queryKey: ["pescado-bandejas-verificacion"],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("listar_bandejas_verificacion_pescado" as any);
+      if (error) throw error;
+      return ((data as unknown as BandejaVerificacion[]) ?? []).map((r) => ({
+        numero: String(r.numero ?? ""),
+        cantidad_cocida_lb: Number(r.cantidad_cocida_lb ?? 0),
+        cantidad_verificada_lb:
+          r.cantidad_verificada_lb == null ? null : Number(r.cantidad_verificada_lb),
+      }));
+    },
+    enabled: section === "verificacion",
+  });
+
+  const [verificacionDraft, setVerificacionDraft] = useState<Record<string, string>>({});
+  const [guardandoBandeja, setGuardandoBandeja] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!verificacionQuery.data) return;
+    setVerificacionDraft((prev) => {
+      const next: Record<string, string> = {};
+      for (const row of verificacionQuery.data) {
+        next[row.numero] =
+          prev[row.numero]
+          ?? (row.cantidad_verificada_lb == null ? "" : String(row.cantidad_verificada_lb));
+      }
+      return next;
+    });
+  }, [verificacionQuery.data]);
+
+  const guardarVerificacionMut = useMutation({
+    mutationFn: async ({ numero, cantidad }: { numero: string; cantidad: number }) => {
+      const { data, error } = await supabase.rpc("guardar_verificacion_bandeja_pescado" as any, {
+        p_numero: numero,
+        p_cantidad_verificada_lb: cantidad,
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: async () => {
+      toast.success("Cantidad verificada guardada");
+      await qc.invalidateQueries({ queryKey: ["pescado-bandejas-verificacion"] });
+    },
+    onError: (e: any) => {
+      toast.error(e?.message || "No se pudo guardar la verificación");
+    },
+    onSettled: () => setGuardandoBandeja(null),
+  });
+
   const historialQuery = useQuery({
     queryKey: ["pescado-historial-completo"],
     queryFn: async () => {
@@ -308,6 +364,7 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
     await Promise.all([
       qc.invalidateQueries({ queryKey: ["pescado-stock"] }),
       qc.invalidateQueries({ queryKey: ["pescado-historial-completo"] }),
+      qc.invalidateQueries({ queryKey: ["pescado-bandejas-verificacion"] }),
     ]);
   };
 
@@ -552,7 +609,14 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
 
       // Misma preparación sin cambios: no volver a descontar stock.
       if (ingresoIdGuardado && firmaGuardada === preparacionFirmaActual) {
-        return { id: ingresoIdGuardado, modo: "noop" as const, bonito, albacora };
+        return {
+          id: ingresoIdGuardado,
+          modo: "noop" as const,
+          bonito,
+          albacora,
+          numerosBandejas: [] as string[],
+          pesosBandejasLb: [] as number[],
+        };
       }
 
       const detalleBandejas = bandejasPeso
@@ -579,12 +643,26 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
           ...payload,
         });
         if (error) throw error;
-        return { id: String(data ?? ingresoIdGuardado), modo: "update" as const, bonito, albacora };
+        return {
+          id: String(data ?? ingresoIdGuardado),
+          modo: "update" as const,
+          bonito,
+          albacora,
+          numerosBandejas: numeros,
+          pesosBandejasLb,
+        };
       }
 
       const { data, error } = await supabase.rpc("registrar_ingreso_pescado" as any, payload);
       if (error) throw error;
-      return { id: String(data), modo: "create" as const, bonito, albacora };
+      return {
+        id: String(data),
+        modo: "create" as const,
+        bonito,
+        albacora,
+        numerosBandejas: numeros,
+        pesosBandejasLb,
+      };
     },
     onSuccess: async (result) => {
       if (result?.id) setIngresoIdGuardado(result.id);
@@ -592,6 +670,15 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
       setBonitoGuardadoLb(Number(result?.bonito ?? 0));
       setAlbacoraGuardadoLb(Number(result?.albacora ?? 0));
       if (result?.modo !== "noop") {
+        if (result?.numerosBandejas?.length && result?.pesosBandejasLb?.length) {
+          const { error: syncErr } = await supabase.rpc("sincronizar_bandejas_pescado_cocido" as any, {
+            p_numeros: result.numerosBandejas,
+            p_pesos_lb: result.pesosBandejasLb,
+          });
+          if (syncErr) {
+            toast.error(syncErr.message || "Preparación guardada, pero no se sincronizaron las bandejas");
+          }
+        }
         await invalidateAll();
         await qc.invalidateQueries({ queryKey: ["stock-pescado-fresco"] });
         await qc.refetchQueries({ queryKey: ["stock-pescado-fresco"] });
@@ -855,6 +942,97 @@ export default function GestionPescadoAdmin({ section }: { section: GestionPesca
     stockAlbacoraDisponibleLb,
     unidadMedida,
   ]);
+
+  if (section === "verificacion") {
+    const rows = verificacionQuery.data ?? [];
+    return (
+      <div className="space-y-4">
+        {errorDialogNode}
+        <Card className="rounded-[24px] border border-teal-200 bg-gradient-to-br from-teal-50 via-white to-cyan-50 p-4 shadow-sm sm:p-5">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-teal-700">Verificación</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Bandejas con pescado cocido. Ingresa la cantidad verificada y guárdala.
+            </p>
+          </div>
+        </Card>
+        <div className="overflow-x-auto rounded-2xl border">
+          <table className="w-full min-w-[560px] text-left text-sm">
+            <thead className="bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2">Nº bandeja</th>
+                <th className="px-3 py-2">Cantidad cocida (lb)</th>
+                <th className="px-3 py-2">Cantidad verificada (lb)</th>
+                <th className="px-3 py-2" />
+              </tr>
+            </thead>
+            <tbody>
+              {verificacionQuery.isLoading ? (
+                <tr>
+                  <td className="px-3 py-4 text-muted-foreground" colSpan={4}>
+                    <span className="inline-flex items-center gap-2">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      Cargando bandejas…
+                    </span>
+                  </td>
+                </tr>
+              ) : null}
+              {!verificacionQuery.isLoading && rows.length === 0 ? (
+                <tr>
+                  <td className="px-3 py-4 text-muted-foreground" colSpan={4}>
+                    No hay bandejas con pescado cocido. Se llenan al guardar una preparación.
+                  </td>
+                </tr>
+              ) : null}
+              {rows.map((row) => {
+                const draft = verificacionDraft[row.numero] ?? "";
+                const saving = guardandoBandeja === row.numero;
+                return (
+                  <tr key={row.numero} className="border-t">
+                    <td className="px-3 py-2 font-semibold">#{row.numero}</td>
+                    <td className="px-3 py-2 font-medium">{formatLb(row.cantidad_cocida_lb)}</td>
+                    <td className="px-3 py-2">
+                      <Input
+                        inputMode="decimal"
+                        value={draft}
+                        disabled={saving || guardarVerificacionMut.isPending}
+                        onChange={(e) => {
+                          const raw = e.target.value.replace(/[^\d.,]/g, "");
+                          setVerificacionDraft((prev) => ({ ...prev, [row.numero]: raw }));
+                        }}
+                        placeholder="0"
+                        className="h-10 w-28 rounded-xl"
+                      />
+                    </td>
+                    <td className="px-3 py-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="h-10 gap-1.5 rounded-xl bg-teal-600 text-white hover:bg-teal-700"
+                        disabled={saving || guardarVerificacionMut.isPending}
+                        onClick={() => {
+                          const qty = Number(String(draft).trim().replace(",", "."));
+                          if (!Number.isFinite(qty) || qty < 0) {
+                            toast.error("Ingresa una cantidad verificada válida (≥ 0)");
+                            return;
+                          }
+                          setGuardandoBandeja(row.numero);
+                          guardarVerificacionMut.mutate({ numero: row.numero, cantidad: qty });
+                        }}
+                      >
+                        {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                        Guardar
+                      </Button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
 
   if (section === "configuracion") {
     if (!canManageConfig) {
