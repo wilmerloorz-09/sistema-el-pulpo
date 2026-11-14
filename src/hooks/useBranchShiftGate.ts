@@ -175,9 +175,9 @@ function mapGateRow(
       canAuthorizeOrderCancel: true,
       canDoubleSession: true,
       isSupervisor: true,
-      isSecondaryCashier: false,
-      secondaryCajaTakeoutEnabled: false,
-      secondaryCajaExpressEnabled: false,
+      // No forzar isSecondaryCashier=false: con empaquetador, Recaudar
+      // reparte mesas a la caja secundaria; un admin que no es cajero
+      // principal debe seguir viendo ese filtro (ej. DINE_IN / M002).
       puedeRegistrarPromociones: true,
     };
   }

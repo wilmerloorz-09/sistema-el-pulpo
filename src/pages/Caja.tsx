@@ -321,7 +321,13 @@ const Caja = () => {
   // undispatched_units entre refetches.
   // Si hay ≥1 empaquetador: principal = para llevar/Express; secundaria = el resto.
   const packerPresenceQuery = useEnabledPackerPresence(shift?.id);
-  const isSecondaryCashier = Boolean(shiftGateQuery.data?.isSecondaryCashier);
+  // Secundario = tiene caja y no es primary_cashier_id (aunque sea admin/supervisor).
+  const isSecondaryCashier = Boolean(
+    shiftGateQuery.data?.canUseCaja
+    && shiftGateQuery.data?.primaryCashierId
+    && user?.id
+    && shiftGateQuery.data.primaryCashierId !== user.id,
+  );
   const recaudarOrders = useMemo(
     () =>
       filterPayableOrdersWhenPackerPresent(
