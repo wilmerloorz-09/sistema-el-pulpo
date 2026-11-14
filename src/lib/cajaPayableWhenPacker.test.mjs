@@ -15,7 +15,7 @@ assert.deepEqual(
 
 assert.deepEqual(
   filterPayableOrdersWhenPackerPresent(orders, true).map((o) => o.id),
-  ["2"],
+  ["2", "3"],
 );
 
 console.log("cajaPayableWhenPacker.test.mjs OK");
