@@ -55,6 +55,8 @@ type FiltroOrden = "mesa" | "llevar";
 const IDLE_DESELECCION_ACTIVA = false;
 /** Sin interacción con la mesa/orden seleccionada, se limpia el contexto. */
 const IDLE_DESELECCION_MS = 20_000;
+/** Por ahora oculto: el teclado de tablet molesta; se usan atajos/Menú. */
+const MOSTRAR_INPUT_CODIGO = false;
 
 export default function LectorCodigosPage() {
   const { user, signOut, loading: authLoading } = useAuth();
@@ -92,6 +94,9 @@ export default function LectorCodigosPage() {
   const [actividad, setActividad] = useState<OperacionActividad[]>([]);
   const [catalogo, setCatalogo] = useState<ProductoCatalogo[]>([]);
   const [menuAbierto, setMenuAbierto] = useState(false);
+  /** Si es false, el input recibe el escáner sin abrir el teclado virtual de la tablet. */
+  const [tecladoManual, setTecladoManual] = useState(false);
+  const tecladoManualRef = useRef(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
   /** Ítems confirmados en servidor; la UI = servidor + adds − removes pendientes. */
   const serverItemsRef = useRef<ItemOrden[]>([]);
@@ -355,11 +360,33 @@ export default function LectorCodigosPage() {
     void listarCatalogoProductos().then(setCatalogo).catch(() => undefined);
   }, [sucursal]);
 
-  useEffect(() => {
-    if (vista === "work" && ordenActiva && inputRef.current) {
-      inputRef.current.focus();
+  const enfocarLector = useCallback((abrirTeclado = false) => {
+    const el = inputRef.current;
+    if (!el) return;
+    if (abrirTeclado) {
+      tecladoManualRef.current = true;
+      setTecladoManual(true);
+      el.removeAttribute("readonly");
+      el.focus({ preventScroll: true });
+      return;
     }
-  }, [vista, ordenActiva]);
+    // readonly + inputMode=none: mantiene foco para pistola/HID sin teclado virtual.
+    tecladoManualRef.current = false;
+    setTecladoManual(false);
+    el.setAttribute("readonly", "true");
+    el.focus({ preventScroll: true });
+    window.setTimeout(() => {
+      if (!inputRef.current || tecladoManualRef.current) return;
+      inputRef.current.removeAttribute("readonly");
+    }, 80);
+  }, []);
+
+  useEffect(() => {
+    if (!MOSTRAR_INPUT_CODIGO) return;
+    if (vista === "work" && ordenActiva) {
+      enfocarLector(false);
+    }
+  }, [vista, ordenActiva?.id, enfocarLector]);
 
   useEffect(() => {
     const dialog = pickerRef.current;
@@ -550,7 +577,7 @@ export default function LectorCodigosPage() {
         setErrorScan(e?.message || "No se pudo agregar. Puedes reintentar la misma lectura.");
       } finally {
         if (!esAtajoOMenu) setProcesando(false);
-        if (inputRef.current) inputRef.current.focus();
+        if (MOSTRAR_INPUT_CODIGO) enfocarLector(false);
       }
     },
     [
@@ -563,6 +590,7 @@ export default function LectorCodigosPage() {
       aplicarItemsServidor,
       refrescarOrdenes,
       vista,
+      enfocarLector,
     ],
   );
 
@@ -895,41 +923,83 @@ export default function LectorCodigosPage() {
                   {ordenActiva && (
                     <div className="order-summary">
                       <div className="summary-top">
-                        <form className="code-entry-form" onSubmit={onSubmitCodigo}>
-                          <div className="code-input-row">
-                            <div className="code-input">
-                              <Icono name="barcode" />
-                              <input
-                                ref={inputRef}
-                                id="barcodeInput"
-                                value={codigo}
-                                onChange={(e) => setCodigo(e.target.value)}
-                                placeholder="Escanea o escribe el código"
-                                autoComplete="off"
-                                spellCheck={false}
-                                maxLength={80}
+                        {MOSTRAR_INPUT_CODIGO ? (
+                          <form className="code-entry-form" onSubmit={onSubmitCodigo}>
+                            <div className="code-input-row">
+                              <div className="code-input">
+                                <Icono name="barcode" />
+                                <input
+                                  ref={inputRef}
+                                  id="barcodeInput"
+                                  value={codigo}
+                                  onChange={(e) => setCodigo(e.target.value)}
+                                  onBlur={() => {
+                                    if (tecladoManualRef.current) {
+                                      tecladoManualRef.current = false;
+                                      setTecladoManual(false);
+                                    }
+                                  }}
+                                  placeholder="Escanea el código"
+                                  autoComplete="off"
+                                  autoCorrect="off"
+                                  autoCapitalize="off"
+                                  spellCheck={false}
+                                  inputMode={tecladoManual ? "text" : "none"}
+                                  enterKeyHint="done"
+                                  maxLength={80}
+                                  disabled={procesando}
+                                  aria-label="Código de barras"
+                                />
+                              </div>
+                              <button
+                                className={`btn btn-menu${tecladoManual ? " active" : ""}`}
+                                type="button"
                                 disabled={procesando}
-                                aria-label="Código de barras"
-                              />
+                                title={tecladoManual ? "Ocultar teclado" : "Escribir código a mano"}
+                                onClick={() => {
+                                  if (tecladoManual) {
+                                    setTecladoManual(false);
+                                    enfocarLector(false);
+                                  } else {
+                                    enfocarLector(true);
+                                  }
+                                }}
+                              >
+                                ABC
+                              </button>
+                              <button
+                                className="btn btn-dark"
+                                type="submit"
+                                disabled={procesando || !codigo.trim()}
+                              >
+                                Agregar <Icono name="plus" />
+                              </button>
+                              <button
+                                className="btn btn-menu"
+                                type="button"
+                                disabled={procesando}
+                                onClick={() => setMenuAbierto(true)}
+                              >
+                                <Icono name="grid" />
+                                Menú
+                              </button>
                             </div>
-                            <button
-                              className="btn btn-dark"
-                              type="submit"
-                              disabled={procesando || !codigo.trim()}
-                            >
-                              Agregar <Icono name="plus" />
-                            </button>
-                            <button
-                              className="btn btn-menu"
-                              type="button"
-                              disabled={procesando}
-                              onClick={() => setMenuAbierto(true)}
-                            >
-                              <Icono name="grid" />
-                              Menú
-                            </button>
+                          </form>
+                        ) : (
+                          <div className="code-entry-form">
+                            <div className="code-input-row">
+                              <button
+                                className="btn btn-menu"
+                                type="button"
+                                disabled={procesando}
+                                onClick={() => setMenuAbierto(true)}
+                              >
+                                <Icono name="grid" />
+                                Menú
+                              </button>
+                            </div>
                           </div>
-                        </form>
+                        )}
                         <div className="summary-ident">
                           <span
                             className={`order-type-icon ${

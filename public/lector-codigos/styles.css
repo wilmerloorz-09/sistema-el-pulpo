@@ -99,6 +99,7 @@
   background:#fff;border:1px solid #c8d5be;color:#3d6143
 }
 .tablet-shell .btn-menu:hover:not(:disabled){background:#f3f7ee;border-color:#638b60}
+.tablet-shell .btn-menu.active{background:#eaf1e6;border-color:#638b60;color:#2f5a32}
 .tablet-shell .qty-stepper button{width:44px;height:44px;font-size:20px}
 .tablet-shell .qty-stepper input{width:44px;font-size:16px;min-height:44px}
 .tablet-shell .input-tabs button{font-size:13px;padding:0 0 12px;min-height:40px}
