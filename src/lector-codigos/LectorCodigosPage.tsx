@@ -902,7 +902,6 @@ export default function LectorCodigosPage() {
                       {ordenActiva ? (
                         <strong className="lector-orden-chip">
                           {etiquetaOrden(ordenActiva)}
-                          {ordenActiva.codigo ? ` · ${ordenActiva.codigo}` : ""}
                         </strong>
                       ) : (
                         <span className="lector-orden-chip muted">Selecciona una mesa u orden</span>
