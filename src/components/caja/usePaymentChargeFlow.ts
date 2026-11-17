@@ -187,9 +187,8 @@ export function usePaymentChargeFlow({
     if (paymentMethods.length === 0) return "No hay metodos de pago activos configurados";
     if (totalDelivered + 0.005 < orderChargeTotal) return "El total entregado es menor al total a cobrar";
     if (appliedTransfer > 0.005 && !transferMethod) return "No hay metodo de transferencia activo";
-    if (appliedTransfer > 0.005 && !transferDatos?.bancoId) return "Registra la transferencia con banco y numero";
-    if (appliedTransfer > 0.005 && !transferDatos?.numeroTransferencia?.trim()) {
-      return "El numero de transferencia es obligatorio";
+    if (appliedTransfer > 0.005 && Number(transferDatos?.monto ?? 0) <= 0.005) {
+      return "Registra el valor de la transferencia";
     }
     if (appliedCash > 0.005 && !cashMethod) return "No hay metodo de efectivo activo";
     if (appliedCash > 0.005 && !hasReceivedDenoms) return "Efectivo requiere registrar el monto recibido por denominaciones";
@@ -278,8 +277,8 @@ export function usePaymentChargeFlow({
         toast.error("No hay metodo de transferencia activo");
         return;
       }
-      if (!transferDatos?.bancoId || !transferDatos.numeroTransferencia.trim()) {
-        toast.error("Registra la transferencia con banco y numero");
+      if (!transferDatos || Number(transferDatos.monto ?? 0) <= 0.005) {
+        toast.error("Registra el valor de la transferencia");
         return;
       }
       tenderedSplits.push({ methodId: transferMethod.id, amount: transferAmount });
