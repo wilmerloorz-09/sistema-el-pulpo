@@ -1,15 +1,6 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
-import MenuNavigator from "@/components/order/MenuNavigator";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import type { MenuNode } from "@/hooks/useMenuTree";
-import { resolveMenuNodeProductId } from "@/lib/inventarioMenuData";
 import AtajosBebidas from "./componentes/AtajosBebidas";
 import { Icono, MarcaPulpo } from "./componentes/iconos";
 import {
@@ -91,7 +82,6 @@ export default function LectorCodigosPage() {
 
   const [actividad, setActividad] = useState<OperacionActividad[]>([]);
   const [catalogo, setCatalogo] = useState<ProductoCatalogo[]>([]);
-  const [menuAbierto, setMenuAbierto] = useState(false);
   /** Ítems confirmados en servidor; la UI = servidor + adds − removes pendientes. */
   const serverItemsRef = useRef<ItemOrden[]>([]);
   const pendingAddsRef = useRef(
@@ -214,7 +204,7 @@ export default function LectorCodigosPage() {
       const link = document.createElement("link");
       link.id = cssId;
       link.rel = "stylesheet";
-      link.href = "/lector-codigos/styles.css?v=20261117-mesas-sq";
+      link.href = "/lector-codigos/styles.css?v=20261117-orden-chip";
       document.head.appendChild(link);
     }
   }, []);
@@ -262,7 +252,6 @@ export default function LectorCodigosPage() {
     setUltimoProductoId(null);
     setPendienteRetry(null);
     setPickerMesa(null);
-    setMenuAbierto(false);
   }, []);
 
   // Si hay mesa/orden seleccionada y pasan 20s sin uso, se deselecciona.
@@ -488,7 +477,6 @@ export default function LectorCodigosPage() {
         registrarAddOptimista(idProducto, nombreOptimistic, precioOptimistic);
         setErrorScan(null);
         setCodigo("");
-        setMenuAbierto(false);
       } else {
         setProcesando(true);
         setErrorScan(null);
@@ -507,7 +495,6 @@ export default function LectorCodigosPage() {
         const pid = String(res.id_producto || idProducto || "");
         if (pid) setUltimoProductoId(pid);
         setCodigo("");
-        setMenuAbierto(false);
         // Refresh en segundo plano: no bloquea el siguiente clic.
         // Liberamos el pendiente solo al aplicar ítems del servidor (evita parpadeo).
         void (async () => {
@@ -557,23 +544,6 @@ export default function LectorCodigosPage() {
       vista,
     ],
   );
-
-  const onSelectMenuProduct = (node: MenuNode) => {
-    if (!ordenActiva) {
-      setErrorScan("Selecciona una orden antes de agregar del menú.");
-      return;
-    }
-    const productId = resolveMenuNodeProductId(node);
-    if (!productId) {
-      setErrorScan("Producto no válido.");
-      return;
-    }
-    const mapped = catalogo.find((c) => c.id_producto === productId);
-    void procesarCodigo(mapped?.codigo_barras ?? null, "menu", undefined, productId, {
-      nombre: node.name,
-      precio: Number(node.price ?? mapped?.precio ?? 0),
-    });
-  };
 
   const onSubmitCodigo = (e: React.FormEvent) => {
     e.preventDefault();
@@ -943,15 +913,13 @@ export default function LectorCodigosPage() {
                       <h2>
                         En la orden <span>{totalUnidadesLector}</span>
                       </h2>
-                      <button
-                        className="btn btn-menu"
-                        type="button"
-                        disabled={procesando || !ordenActiva}
-                        onClick={() => setMenuAbierto(true)}
-                      >
-                        <Icono name="grid" />
-                        Menú
-                      </button>
+                      {ordenActiva ? (
+                        <strong className="lector-orden-chip">
+                          {etiquetaOrden(ordenActiva)}
+                        </strong>
+                      ) : (
+                        <span className="lector-orden-chip muted">Sin orden</span>
+                      )}
                     </div>
                     <div>
                       {lineasConsolidadas.map((linea, index) => {
@@ -1007,7 +975,7 @@ export default function LectorCodigosPage() {
                       {!lineasConsolidadas.length ? (
                         <div className="empty-draft">
                           <strong>Sin productos del lector</strong>
-                          <small>Usa los atajos o Menú para agregar.</small>
+                          <small>Usa los atajos para agregar.</small>
                         </div>
                       ) : null}
                     </div>
@@ -1083,22 +1051,6 @@ export default function LectorCodigosPage() {
           )}
         </main>
       </div>
-
-      <Dialog open={menuAbierto} onOpenChange={setMenuAbierto}>
-        <DialogContent className="max-h-[92vh] w-[min(960px,calc(100%-1.5rem))] max-w-none overflow-y-auto rounded-[24px] p-4 sm:p-6">
-          <DialogHeader>
-            <DialogTitle className="text-left text-lg font-bold">Menú</DialogTitle>
-          </DialogHeader>
-          <div className="mt-2 min-h-[420px]">
-            <MenuNavigator
-              menuScope="TABLE"
-              excludedRootCategoryNames={["PLATOS"]}
-              disabled={!ordenActiva || procesando}
-              onSelectProduct={onSelectMenuProduct}
-            />
-          </div>
-        </DialogContent>
-      </Dialog>
 
       <dialog
         ref={pickerRef}
