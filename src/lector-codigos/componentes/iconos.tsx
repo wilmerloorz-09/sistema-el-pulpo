@@ -5,6 +5,7 @@ const paths: Record<string, string> = {
   history: "M3 11a9 9 0 1 1 2.5 7M3 4v7h7m2-4v5l3 2",
   grid: "M3 3h7v7H3zm11 0h7v7h-7zM3 14h7v7H3zm11 0h7v7h-7z",
   arrow: "M5 12h14m-5-5 5 5-5 5",
+  back: "M19 12H5m0 0 6-6M5 12l6 6",
   spark: "m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5Z",
   store:
     "M3 10v10h18V10M2 10l2-7h16l2 7M2 10c0 4 5 4 5 0 0 4 5 4 5 0 0 4 5 4 5 0 0 4 5 4 5 0M8 20v-6h8v6",

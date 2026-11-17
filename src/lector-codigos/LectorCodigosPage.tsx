@@ -727,6 +727,16 @@ export default function LectorCodigosPage() {
 
       <div className="app-shell tablet-shell">
         <main id="main" className="tablet-main">
+          <div className="lector-backbar">
+            <Link to="/mesas" className="btn btn-white lector-back-btn">
+              <Icono name="back" />
+              Volver al sistema
+            </Link>
+            <span className="lector-branch-chip" title={sucursal.nombre}>
+              <Icono name="store" />
+              <span>{sucursal.nombre}</span>
+            </span>
+          </div>
           {vista === "work" && (
             <section>
               <div className="work-grid">
