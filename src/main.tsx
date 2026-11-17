@@ -13,13 +13,16 @@ window.addEventListener("unhandledrejection", (event) => {
 import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import "./index.css";
- 
+
 createRoot(document.getElementById("root")!).render(<App />);
 
+declare const __APP_BUILD_VERSION__: string;
+
 const isLocalAppHost = ["localhost", "127.0.0.1"].includes(window.location.hostname);
-const LOCAL_SW_RESET_FLAG = "elpulpo-local-sw-reset";
 const APP_VERSION_KEY = "elpulpo-app-version";
 const APP_RELOAD_FLAG = "elpulpo-version-reload";
+const RUNNING_VERSION = String(__APP_BUILD_VERSION__ ?? "").trim();
+const VERSION_QUERY = "_epv";
 
 async function readRemoteAppVersion() {
   const response = await fetch(`/app-version.json?t=${Date.now()}`, {
@@ -34,34 +37,54 @@ async function readRemoteAppVersion() {
   return version || null;
 }
 
+async function clearAppCaches() {
+  if ("serviceWorker" in navigator) {
+    const registrations = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(registrations.map((registration) => registration.unregister()));
+  }
+
+  if ("caches" in window) {
+    const cacheKeys = await caches.keys();
+    await Promise.all(cacheKeys.map((cacheKey) => caches.delete(cacheKey)));
+  }
+}
+
+function hardReloadForVersion(remoteVersion: string) {
+  const url = new URL(window.location.href);
+  url.searchParams.set(VERSION_QUERY, remoteVersion.slice(0, 12));
+  window.location.replace(url.toString());
+}
+
+function stripVersionQuery() {
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has(VERSION_QUERY)) return;
+  url.searchParams.delete(VERSION_QUERY);
+  window.history.replaceState({}, "", url.toString());
+}
+
 async function reloadForNewAppVersion() {
   if (!import.meta.env.PROD || isLocalAppHost) return;
+  if (!RUNNING_VERSION || RUNNING_VERSION === "dev") return;
 
   const remoteVersion = await readRemoteAppVersion();
   if (!remoteVersion) return;
 
-  const currentVersion = window.localStorage.getItem(APP_VERSION_KEY);
-  if (!currentVersion) {
-    window.localStorage.setItem(APP_VERSION_KEY, remoteVersion);
-    return;
-  }
+  // Persistir la versión del bundle que realmente está corriendo (no la remota).
+  window.localStorage.setItem(APP_VERSION_KEY, RUNNING_VERSION);
 
-  if (currentVersion === remoteVersion) {
+  if (remoteVersion === RUNNING_VERSION) {
     window.sessionStorage.removeItem(APP_RELOAD_FLAG);
+    stripVersionQuery();
     return;
   }
 
-  window.localStorage.setItem(APP_VERSION_KEY, remoteVersion);
-
-  if ("serviceWorker" in navigator) {
-    const registrations = await navigator.serviceWorker.getRegistrations();
-    await Promise.all(registrations.map((registration) => registration.update()));
+  if (window.sessionStorage.getItem(APP_RELOAD_FLAG) === remoteVersion) {
+    return;
   }
 
-  if (!window.sessionStorage.getItem(APP_RELOAD_FLAG)) {
-    window.sessionStorage.setItem(APP_RELOAD_FLAG, "1");
-    window.location.reload();
-  }
+  window.sessionStorage.setItem(APP_RELOAD_FLAG, remoteVersion);
+  await clearAppCaches();
+  hardReloadForVersion(remoteVersion);
 }
 
 function startAppVersionMonitor() {
@@ -76,7 +99,7 @@ function startAppVersionMonitor() {
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") check();
   });
-  window.setInterval(check, 5 * 60 * 1000);
+  window.setInterval(check, 60 * 1000);
 }
 
 if ("serviceWorker" in navigator) {
@@ -84,13 +107,7 @@ if ("serviceWorker" in navigator) {
     try {
       const registrations = await navigator.serviceWorker.getRegistrations();
       if (registrations.length > 0) {
-        await Promise.all(registrations.map((registration) => registration.unregister()));
-        
-        if ("caches" in window) {
-          const cacheKeys = await caches.keys();
-          await Promise.all(cacheKeys.map((cacheKey) => caches.delete(cacheKey)));
-        }
-        
+        await clearAppCaches();
         console.log("Service worker and caches cleared successfully.");
         window.location.reload();
       }

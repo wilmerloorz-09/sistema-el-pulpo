@@ -1,4 +1,4 @@
-const CACHE_NAME = "elpulpo-v8";
+const CACHE_NAME = "elpulpo-v9";
 const APP_SHELL = [
   "/manifest.json",
   "/icons/icon-192.png",
@@ -14,9 +14,14 @@ self.addEventListener("install", (event) => {
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)))
-    )
+    (async () => {
+      const keys = await caches.keys();
+      await Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)));
+      const clients = await self.clients.matchAll({ type: "window" });
+      for (const client of clients) {
+        client.postMessage({ type: "ELPULPO_SW_ACTIVATED", cache: CACHE_NAME });
+      }
+    })()
   );
   self.clients.claim();
 });

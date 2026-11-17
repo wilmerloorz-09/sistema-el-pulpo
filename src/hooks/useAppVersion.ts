@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 const VERSION_STORAGE_KEY = "elpulpo-app-version";
 const BUILT_AT_STORAGE_KEY = "elpulpo-app-built-at";
+const RUNNING_VERSION = String(__APP_BUILD_VERSION__ ?? "").trim();
 
 function formatVersion(value: string | null) {
   const clean = String(value ?? "").trim();
@@ -16,8 +17,8 @@ function normalizeText(value: unknown) {
 
 export function useAppVersion() {
   const [versionInfo, setVersionInfo] = useState(() => ({
-    version: formatVersion(window.localStorage.getItem(VERSION_STORAGE_KEY)),
-    fullVersion: normalizeText(window.localStorage.getItem(VERSION_STORAGE_KEY)),
+    version: formatVersion(RUNNING_VERSION || window.localStorage.getItem(VERSION_STORAGE_KEY)),
+    fullVersion: normalizeText(RUNNING_VERSION || window.localStorage.getItem(VERSION_STORAGE_KEY)),
     builtAt: normalizeText(window.localStorage.getItem(BUILT_AT_STORAGE_KEY)),
   }));
 
@@ -26,6 +27,10 @@ export function useAppVersion() {
 
     const loadVersion = async () => {
       try {
+        if (RUNNING_VERSION && RUNNING_VERSION !== "dev") {
+          window.localStorage.setItem(VERSION_STORAGE_KEY, RUNNING_VERSION);
+        }
+
         const response = await fetch(`/app-version.json?t=${Date.now()}`, {
           cache: "no-store",
           headers: { "Cache-Control": "no-cache" },
@@ -33,12 +38,11 @@ export function useAppVersion() {
         if (!response.ok) return;
 
         const payload = await response.json();
-        const fullVersion = normalizeText(payload?.version);
+        const fullVersion = normalizeText(RUNNING_VERSION || payload?.version);
         const nextVersion = formatVersion(fullVersion);
         const builtAt = normalizeText(payload?.builtAt);
         if (!cancelled && nextVersion) {
           setVersionInfo({ version: nextVersion, fullVersion, builtAt });
-          window.localStorage.setItem(VERSION_STORAGE_KEY, fullVersion ?? nextVersion);
           if (builtAt) {
             window.localStorage.setItem(BUILT_AT_STORAGE_KEY, builtAt);
           }

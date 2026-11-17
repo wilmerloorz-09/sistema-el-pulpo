@@ -24,6 +24,29 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      (function () {
+        var BUILD = "%APP_BUILD_VERSION%";
+        var FLAG = "elpulpo-cache-bust-v9";
+        if (!BUILD || BUILD.indexOf("%APP_BUILD") === 0) return;
+        if (sessionStorage.getItem(FLAG) === BUILD) return;
+        sessionStorage.setItem(FLAG, BUILD);
+        Promise.resolve()
+          .then(function () {
+            if (!("serviceWorker" in navigator)) return null;
+            return navigator.serviceWorker.getRegistrations().then(function (regs) {
+              return Promise.all(regs.map(function (reg) { return reg.unregister(); }));
+            });
+          })
+          .then(function () {
+            if (!("caches" in window)) return null;
+            return caches.keys().then(function (keys) {
+              return Promise.all(keys.map(function (key) { return caches.delete(key); }));
+            });
+          })
+          .catch(function () {});
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
