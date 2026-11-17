@@ -9,12 +9,12 @@ import { dinero } from "../dominio/formato";
 import {
   FILA_MARCAS_COCA,
   FILA_MARCAS_PEPSI,
-  FILA_OTRAS,
   type MarcaAtajo,
   type ProductoAtajo,
-  marcasConStock,
   productosDeMarcaConStock,
   productosFila1,
+  productosFila4,
+  tieneStock,
 } from "../dominio/atajosLayout";
 
 type Props = {
@@ -77,26 +77,14 @@ export default function AtajosBebidas({ branchId, disabled, onAddProduct }: Prop
   }, [menuQuery.data, stockQuery.data]);
 
   const fila1 = useMemo(() => productosFila1(productos), [productos]);
-  const marcasCoca = useMemo(
-    () => marcasConStock(FILA_MARCAS_COCA, productos),
-    [productos],
-  );
-  const marcasPepsi = useMemo(
-    () => marcasConStock(FILA_MARCAS_PEPSI, productos),
-    [productos],
-  );
-  const marcasOtras = useMemo(
-    () => marcasConStock(FILA_OTRAS, productos),
-    [productos],
-  );
+  const marcasCoca = FILA_MARCAS_COCA;
+  const marcasPepsi = FILA_MARCAS_PEPSI;
+  const fila4 = useMemo(() => productosFila4(productos), [productos]);
 
   const abrirMarca = (marca: MarcaAtajo) => {
     const matches = productosDeMarcaConStock(productos, marca);
     if (!matches.length) return;
-    if (matches.length === 1) {
-      tocarYAgregar(`marca-${marca.id}`, matches[0].productId, matches[0].nombre);
-      return;
-    }
+    // Las marcas siempre abren el selector de presentaciones (aunque haya una sola).
     setPicker({ title: marca.label, productos: matches });
   };
 
@@ -107,7 +95,10 @@ export default function AtajosBebidas({ branchId, disabled, onAddProduct }: Prop
 
   return (
     <div className="atajos-bebidas">
-      <div className="atajos-row">
+      <div
+        className="atajos-row atajos-row-fila1"
+        style={{ ["--atajos-cols" as string]: Math.max(fila1.length, 1) }}
+      >
         {fila1.map((p) => (
           <button
             key={p.id}
@@ -132,58 +123,76 @@ export default function AtajosBebidas({ branchId, disabled, onAddProduct }: Prop
 
       {marcasCoca.length > 0 ? (
         <div className="atajos-row atajos-row-brands">
-          {marcasCoca.map((marca) => (
-            <button
-              key={marca.id}
-              type="button"
-              className={`atajo-brand${flashKey === `marca-${marca.id}` ? " atajo-flash" : ""}`}
-              disabled={disabled}
-              onClick={() => abrirMarca(marca)}
-            >
-              <span className="atajo-brand-logo">
-                <img src={marca.logo} alt="" />
-              </span>
-              <strong>{marca.label}</strong>
-            </button>
-          ))}
+          {marcasCoca.map((marca) => {
+            const conStock = productosDeMarcaConStock(productos, marca);
+            const sinStock = conStock.length === 0;
+            return (
+              <button
+                key={marca.id}
+                type="button"
+                className={`atajo-brand${flashKey === `marca-${marca.id}` ? " atajo-flash" : ""}${sinStock ? " atajo-brand-empty" : ""}`}
+                disabled={disabled || sinStock}
+                onClick={() => abrirMarca(marca)}
+              >
+                <span className="atajo-brand-logo">
+                  <img src={marca.logo} alt="" />
+                </span>
+                <strong>{marca.label}</strong>
+                {sinStock ? <small>Sin stock</small> : null}
+              </button>
+            );
+          })}
         </div>
       ) : null}
 
       {marcasPepsi.length > 0 ? (
         <div className="atajos-row atajos-row-brands">
-          {marcasPepsi.map((marca) => (
-            <button
-              key={marca.id}
-              type="button"
-              className={`atajo-brand${flashKey === `marca-${marca.id}` ? " atajo-flash" : ""}`}
-              disabled={disabled}
-              onClick={() => abrirMarca(marca)}
-            >
-              <span className="atajo-brand-logo">
-                <img src={marca.logo} alt="" />
-              </span>
-              <strong>{marca.label}</strong>
-            </button>
-          ))}
+          {marcasPepsi.map((marca) => {
+            const conStock = productosDeMarcaConStock(productos, marca);
+            const sinStock = conStock.length === 0;
+            return (
+              <button
+                key={marca.id}
+                type="button"
+                className={`atajo-brand${flashKey === `marca-${marca.id}` ? " atajo-flash" : ""}${sinStock ? " atajo-brand-empty" : ""}`}
+                disabled={disabled || sinStock}
+                onClick={() => abrirMarca(marca)}
+              >
+                <span className="atajo-brand-logo">
+                  <img src={marca.logo} alt="" />
+                </span>
+                <strong>{marca.label}</strong>
+                {sinStock ? <small>Sin stock</small> : null}
+              </button>
+            );
+          })}
         </div>
       ) : null}
 
-      {marcasOtras.length > 0 ? (
-        <div className="atajos-row atajos-row-brands">
-          {marcasOtras.map((marca) => (
-            <button
-              key={marca.id}
-              type="button"
-              className={`atajo-brand${flashKey === `marca-${marca.id}` ? " atajo-flash" : ""}`}
-              disabled={disabled}
-              onClick={() => abrirMarca(marca)}
-            >
-              <span className="atajo-brand-logo">
-                <img src={marca.logo} alt="" />
-              </span>
-              <strong>{marca.label}</strong>
-            </button>
-          ))}
+      {fila4.length > 0 ? (
+        <div className="atajos-row">
+          {fila4.map((producto) => {
+            const sinStock = !tieneStock(producto);
+            return (
+              <button
+                key={producto.id}
+                type="button"
+                className={`atajo-product${flashKey === `p-${producto.id}` ? " atajo-flash" : ""}${sinStock ? " atajo-product-empty" : ""}`}
+                disabled={disabled || sinStock}
+                onClick={() =>
+                  tocarYAgregar(`p-${producto.id}`, producto.productId, producto.nombre)
+                }
+              >
+                {producto.imageUrl ? (
+                  <img src={producto.imageUrl} alt="" className="atajo-thumb" />
+                ) : (
+                  <span className="atajo-thumb atajo-thumb-empty" />
+                )}
+                <strong>{producto.nombre}</strong>
+                <small>{sinStock ? "Sin stock" : dinero(producto.precio)}</small>
+              </button>
+            );
+          })}
         </div>
       ) : null}
 

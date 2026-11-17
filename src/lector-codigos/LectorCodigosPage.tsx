@@ -33,7 +33,6 @@ import {
   etiquetaPago,
   etiquetaTipoOrden,
   formatearHora,
-  iniciales,
   normalizarCodigo,
   nuevoIdOperacion,
 } from "./dominio/formato";
@@ -53,12 +52,13 @@ type FiltroOrden = "mesa" | "llevar";
 
 const SUCURSAL_KEY = "lector.sucursalId";
 const SUCURSAL_CONFIRMADA_KEY = "lector.sucursalConfirmada";
+/** Temporalmente off: al avisar, poner en true para reactivar el auto-deseleccionado. */
+const IDLE_DESELECCION_ACTIVA = false;
 /** Sin interacción con la mesa/orden seleccionada, se limpia el contexto. */
 const IDLE_DESELECCION_MS = 20_000;
 
 export default function LectorCodigosPage() {
-  const { user, profile, signOut, loading: authLoading } = useAuth();
-  const nombreUsuario = profile?.full_name || user?.email || "Operador";
+  const { user, signOut, loading: authLoading } = useAuth();
 
   const [sucursales, setSucursales] = useState<Sucursal[]>([]);
   const [sucursal, setSucursal] = useState<Sucursal | null>(null);
@@ -270,6 +270,7 @@ export default function LectorCodigosPage() {
 
   // Si hay mesa/orden seleccionada y pasan 20s sin uso, se deselecciona.
   useEffect(() => {
+    if (!IDLE_DESELECCION_ACTIVA) return;
     if (!mesaId && !ordenId) return;
     marcarActividad();
     const timer = window.setInterval(() => {
@@ -688,13 +689,6 @@ export default function LectorCodigosPage() {
     setVista("work");
   };
 
-  const onCambiarSucursal = () => {
-    localStorage.removeItem(SUCURSAL_KEY);
-    sessionStorage.removeItem(SUCURSAL_CONFIRMADA_KEY);
-    limpiarContextoOrden();
-    setSucursal(null);
-  };
-
   if (authLoading) {
     return (
       <div className="app-shell" style={{ marginLeft: 0, padding: 40 }}>
@@ -764,64 +758,6 @@ export default function LectorCodigosPage() {
       </a>
 
       <div className="app-shell tablet-shell">
-        <header className="topbar tablet-topbar">
-          <div className="tablet-brand">
-            <MarcaPulpo />
-            <div>
-              <strong>
-                el pulpo<span className="brand-dot">.</span>
-              </strong>
-              <small>Lector de códigos</small>
-            </div>
-          </div>
-
-          <div className="tablet-tabs" role="tablist" aria-label="Vistas">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={vista === "work"}
-              className={vista === "work" ? "active" : ""}
-              onClick={() => setVista("work")}
-            >
-              <Icono name="scan" />
-              Escanear
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={vista === "history"}
-              className={vista === "history" ? "active" : ""}
-              onClick={() => setVista("history")}
-            >
-              <Icono name="history" />
-              Actividad
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={vista === "catalog"}
-              className={vista === "catalog" ? "active" : ""}
-              onClick={() => setVista("catalog")}
-            >
-              <Icono name="grid" />
-              Catálogo
-            </button>
-          </div>
-
-          <div className="top-actions tablet-actions">
-            <button type="button" className="chip-branch" onClick={onCambiarSucursal} title="Cambiar sucursal">
-              <Icono name="store" />
-              <span>{sucursal.nombre}</span>
-            </button>
-            <span className="avatar" title={nombreUsuario}>
-              {iniciales(nombreUsuario)}
-            </span>
-            <button type="button" className="btn btn-white btn-small" onClick={() => void signOut()}>
-              Salir
-            </button>
-          </div>
-        </header>
-
         <main id="main" className="tablet-main">
           {vista === "work" && (
             <section>
@@ -981,6 +917,41 @@ export default function LectorCodigosPage() {
                   {ordenActiva && (
                     <div className="order-summary">
                       <div className="summary-top">
+                        <form className="code-entry-form" onSubmit={onSubmitCodigo}>
+                          <div className="code-input-row">
+                            <div className="code-input">
+                              <Icono name="barcode" />
+                              <input
+                                ref={inputRef}
+                                id="barcodeInput"
+                                value={codigo}
+                                onChange={(e) => setCodigo(e.target.value)}
+                                placeholder="Escanea o escribe el código"
+                                autoComplete="off"
+                                spellCheck={false}
+                                maxLength={80}
+                                disabled={procesando}
+                                aria-label="Código de barras"
+                              />
+                            </div>
+                            <button
+                              className="btn btn-dark"
+                              type="submit"
+                              disabled={procesando || !codigo.trim()}
+                            >
+                              Agregar <Icono name="plus" />
+                            </button>
+                            <button
+                              className="btn btn-menu"
+                              type="button"
+                              disabled={procesando}
+                              onClick={() => setMenuAbierto(true)}
+                            >
+                              <Icono name="grid" />
+                              Menú
+                            </button>
+                          </div>
+                        </form>
                         <div className="summary-ident">
                           <span
                             className={`order-type-icon ${
@@ -1007,61 +978,22 @@ export default function LectorCodigosPage() {
                     onPointerDownCapture={marcarActividad}
                     onKeyDownCapture={marcarActividad}
                   >
-                    <form onSubmit={onSubmitCodigo}>
-                      <div className="code-input-row">
-                        <div className="code-input">
-                          <Icono name="barcode" />
-                          <input
-                            ref={inputRef}
-                            id="barcodeInput"
-                            value={codigo}
-                            onChange={(e) => setCodigo(e.target.value)}
-                            placeholder={
-                              ordenActiva
-                                ? "Escanea o escribe el código"
-                                : "Elige una orden"
-                            }
-                            autoComplete="off"
-                            spellCheck={false}
-                            maxLength={80}
-                            disabled={!ordenActiva || procesando}
-                            aria-label="Código de barras"
-                          />
-                        </div>
+                    {pendienteRetry && (
+                      <div className="reader-controls">
                         <button
-                          className="btn btn-dark"
-                          type="submit"
-                          disabled={!ordenActiva || procesando || !codigo.trim()}
-                        >
-                          Agregar <Icono name="plus" />
-                        </button>
-                        <button
-                          className="btn btn-menu"
                           type="button"
-                          disabled={!ordenActiva || procesando}
-                          onClick={() => setMenuAbierto(true)}
+                          onClick={() =>
+                            void procesarCodigo(
+                              pendienteRetry.codigo,
+                              "reintento",
+                              pendienteRetry.idOperacion,
+                            )
+                          }
                         >
-                          <Icono name="grid" />
-                          Menú
+                          Reintentar
                         </button>
                       </div>
-                      {pendienteRetry && (
-                        <div className="reader-controls">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              void procesarCodigo(
-                                pendienteRetry.codigo,
-                                "reintento",
-                                pendienteRetry.idOperacion,
-                              )
-                            }
-                          >
-                            Reintentar
-                          </button>
-                        </div>
-                      )}
-                    </form>
+                    )}
 
                     {errorScan && (
                       <div className="inline-error" role="alert">

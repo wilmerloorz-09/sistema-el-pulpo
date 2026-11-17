@@ -43,7 +43,7 @@ export const FILA_MARCAS_COCA: MarcaAtajo[] = [
   {
     id: "coca-cola",
     label: "Coca Cola",
-    logo: "/lector-codigos/marcas/coca-cola.jpg",
+    logo: "/lector-codigos/marcas/coca-cola.webp",
     match: (n) => n.includes("coca"),
   },
   {
@@ -174,6 +174,29 @@ export function productosFila1(
     out.push(p);
   }
   return out;
+}
+
+/** Accesos directos fijos de la cuarta fila, en este orden. */
+export function productosFila4(productos: ProductoAtajo[]): ProductoAtajo[] {
+  const objetivos: Array<(nombre: string) => boolean> = [
+    (nombre) => nombre === "agua" || nombre.startsWith("agua "),
+    (nombre) => nombre === "cafe" || nombre.startsWith("cafe "),
+    (nombre) => nombre.includes("fuze tea") || nombre.includes("fuze"),
+    (nombre) => nombre.includes("del valle") && nombre.includes("950"),
+  ];
+  const usados = new Set<string>();
+  const resultado: ProductoAtajo[] = [];
+
+  for (const coincide of objetivos) {
+    const producto = productos
+      .filter((item) => !usados.has(item.productId) && coincide(normalizarNombreProducto(item.nombre)))
+      .sort((a, b) => Number(tieneStock(b)) - Number(tieneStock(a)) || a.nombre.localeCompare(b.nombre))[0];
+    if (!producto) continue;
+    usados.add(producto.productId);
+    resultado.push(producto);
+  }
+
+  return resultado;
 }
 
 function chiflesUnicos(items: ProductoAtajo[]): ProductoAtajo[] {
