@@ -120,7 +120,9 @@ const NAV_ITEMS: AppNavItem[] = [
       idle: "hover:border-emerald-200 hover:bg-emerald-50/90 hover:text-emerald-700",
       iconIdle: "bg-emerald-50 text-emerald-600",
     },
-    visible: (permissions) => canView(permissions, "mesas"),
+    // Temporal: solo administradores mientras se valida el módulo.
+    visible: (permissions) =>
+      canView(permissions, "admin_sucursal") || canView(permissions, "admin_global"),
   },
   {
     to: "/clientes?origin=clientes",
@@ -608,8 +610,13 @@ export function useVisibleNavItems() {
           || (item.to === "/personal" && item.visible(permissions))
           || (item.to === "/caja-chica" && item.visible(permissions))
           || (item.to === "/cierres-caja" && canAccessAdmin)
+          || (item.to === "/lector" && canAccessAdmin)
           || (item.to === "/monitoreo-global" && isGlobalAdmin)
         );
+      }
+
+      if (item.to === "/lector") {
+        return canAccessAdmin;
       }
 
       if (item.to === "/admin" && isGlobalAdmin) {
@@ -644,7 +651,7 @@ export function useVisibleNavItems() {
         return puedeRegistrarPromociones || isGlobalAdmin;
       }
 
-      if (item.to === "/mesas" || item.to === "/para-llevar" || item.to === "/express" || item.to === "/extra" || item.to === "/orden-especial" || item.to === "/lector" || item.to === "/ordenes") {
+      if (item.to === "/mesas" || item.to === "/para-llevar" || item.to === "/express" || item.to === "/extra" || item.to === "/orden-especial" || item.to === "/ordenes") {
         if (item.to === "/extra" && isDispatchFirstWorkflow) {
           return false;
         }
@@ -659,7 +666,7 @@ export function useVisibleNavItems() {
         if (item.to === "/extra") {
           return hasSupervisorBypass || Boolean(sg?.canServeTables) || Boolean(sg?.canPackOrders);
         }
-        if (item.to === "/para-llevar" || item.to === "/express" || item.to === "/orden-especial" || item.to === "/lector") {
+        if (item.to === "/para-llevar" || item.to === "/express" || item.to === "/orden-especial") {
           return hasSupervisorBypass || isGlobalAdmin || Boolean(sg?.canServeTables);
         }
         return hasSupervisorBypass

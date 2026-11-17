@@ -24,6 +24,7 @@ import { canManage, canOperate, canView } from "@/lib/permissions";
 import { isTemporarilyMenuRestrictedUser } from "@/lib/menuAccessRestrictions";
 import { logBackgroundTaskError } from "@/lib/benignAsyncErrors";
 import { guardarSesionTurno, leerSesionTurno, turnoDeSesionTerminado } from "@/lib/sesionTurno";
+import { supabase } from "@/integrations/supabase/client";
 import { toast as sonnerToast } from "sonner";
 import { Download, Share2, X, AlertTriangle } from "lucide-react";
 import ProtectedRoute from "@/components/ProtectedRoute";
@@ -264,18 +265,62 @@ const AuthGate = ({ children }: { children: React.ReactNode }) => {
 /**
  * Misma sesión del POS, sin BranchGate ni CierreSesionPorTurno.
  * El lector elige sucursal en local (no llama set_my_active_branch).
+ * Temporal: solo administradores.
  */
 const AuthGateLector = ({ children }: { children: React.ReactNode }) => {
   const { user, loading } = useAuth();
   const location = useLocation();
+  const [adminAccess, setAdminAccess] = useState<"loading" | "allowed" | "denied">("loading");
 
-  if (loading) {
+  useEffect(() => {
+    let cancelled = false;
+
+    const checkAdmin = async () => {
+      if (!user) {
+        if (!cancelled) setAdminAccess("denied");
+        return;
+      }
+
+      try {
+        const { data, error } = await supabase.rpc("get_my_access_context" as any);
+        if (error) throw error;
+
+        const payload = (data ?? {}) as {
+          is_global_admin?: boolean;
+          permissions?: Record<string, unknown>;
+        };
+        const permissions = payload.permissions ?? {};
+        const allowed =
+          Boolean(payload.is_global_admin)
+          || canView(permissions, "admin_sucursal")
+          || canView(permissions, "admin_global");
+
+        if (!cancelled) setAdminAccess(allowed ? "allowed" : "denied");
+      } catch {
+        if (!cancelled) setAdminAccess("denied");
+      }
+    };
+
+    if (!loading) {
+      void checkAdmin();
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user, loading]);
+
+  if (loading || (user && adminAccess === "loading")) {
     return <LoadingScreen />;
   }
 
   if (!user) {
     const next = `${location.pathname}${location.search || ""}`;
     return <Navigate to={`/login?next=${encodeURIComponent(next)}`} replace />;
+  }
+
+  if (adminAccess !== "allowed") {
+    return <Navigate to="/" replace />;
   }
 
   // Sin BranchProvider: evita fijar sucursal activa del POS al usar el lector.
