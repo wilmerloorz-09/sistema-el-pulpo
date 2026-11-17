@@ -9,7 +9,7 @@ import {
   notifyOfflineActionBlocked,
   asOfflineActionErrorIfNeeded,
 } from "@/lib/offlineAction";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { BranchProvider, useBranch } from "@/contexts/BranchContext";
 import { usePreferredHomePath } from "@/hooks/usePreferredHomePath";
@@ -67,6 +67,7 @@ import GestionPescadoPreparacion from "./pages/GestionPescadoPreparacion";
 import MonitoreoGlobal from "./pages/MonitoreoGlobal";
 import NotFound from "./pages/NotFound";
 import PrintCashReport from "./pages/PrintCashReport";
+import LectorCodigosPage from "./lector-codigos/LectorCodigosPage";
 
 const queryClient = new QueryClient({
   mutationCache: new MutationCache({
@@ -260,6 +261,27 @@ const AuthGate = ({ children }: { children: React.ReactNode }) => {
   );
 };
 
+/**
+ * Misma sesión del POS, sin BranchGate ni CierreSesionPorTurno.
+ * El lector elige sucursal en local (no llama set_my_active_branch).
+ */
+const AuthGateLector = ({ children }: { children: React.ReactNode }) => {
+  const { user, loading } = useAuth();
+  const location = useLocation();
+
+  if (loading) {
+    return <LoadingScreen />;
+  }
+
+  if (!user) {
+    const next = `${location.pathname}${location.search || ""}`;
+    return <Navigate to={`/login?next=${encodeURIComponent(next)}`} replace />;
+  }
+
+  // Sin BranchProvider: evita fijar sucursal activa del POS al usar el lector.
+  return <>{children}</>;
+};
+
 const BranchGate = ({ children }: { children: React.ReactNode }) => {
   const { branches, activeBranch, setActiveBranch, loading, isGlobalAdmin } = useBranch();
   const { signOut } = useAuth();
@@ -376,6 +398,9 @@ const InstallPrompt = () => {
   const [dismissed, setDismissed] = useState(false);
 
   if (window.location.pathname.startsWith("/promociones/registro")) {
+    return null;
+  }
+  if (window.location.pathname.startsWith("/lector")) {
     return null;
   }
   if (window.location.pathname.startsWith("/qr-pedido")) {
@@ -495,6 +520,15 @@ const App = () => (
               <Route path="/promociones/registro" element={<PromocionRegistro />} />
               <Route path="/qr-pedido/:token" element={<QrPedido />} />
               <Route path="/imprimir-reporte-caja" element={<PrintCashReport />} />
+              <Route
+                path="/lector"
+                element={
+                  <AuthGateLector>
+                    <LectorCodigosPage />
+                  </AuthGateLector>
+                }
+              />
+              <Route path="/bebidas" element={<Navigate to="/lector" replace />} />
               <Route
                 element={
                   <AuthGate>

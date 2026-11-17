@@ -384,6 +384,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           return;
         }
 
+        // /lector (y /bebidas) puede convivir con el POS: no registrar un slot nuevo
+        // que desplace la sesión principal, ni cerrarse si el POS ya ocupa el slot.
+        const path = typeof window !== "undefined" ? window.location.pathname : "";
+        const esLector = path.startsWith("/lector") || path.startsWith("/bebidas");
+        if (esLector) {
+          if (
+            (action === "register-new" || action === "claim")
+            && activeSessionIds.length === 0
+          ) {
+            // Nadie tiene el slot: el lector puede tomarlo.
+            if (action === "claim" && ownedSession?.sessionId) {
+              await registerOwnedSingleSession(userId, ownedSession.sessionId);
+            } else {
+              await registerOwnedSingleSession(userId);
+            }
+          }
+          return;
+        }
+
         if (action === "register-new") {
           await registerOwnedSingleSession(userId);
           return;
