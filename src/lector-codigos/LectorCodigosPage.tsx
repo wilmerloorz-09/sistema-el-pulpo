@@ -1,4 +1,5 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import MenuNavigator from "@/components/order/MenuNavigator";
 import {
@@ -18,7 +19,7 @@ import {
   listarItemsLectorOrden,
   listarMesasSucursal,
   listarOrdenesAbiertas,
-  listarSucursalesAccesibles,
+  obtenerSucursalActiva,
   quitarCantidadesOrden,
 } from "./dominio/api";
 import {
@@ -50,8 +51,6 @@ import type {
 type Vista = "work" | "history" | "catalog";
 type FiltroOrden = "mesa" | "llevar";
 
-const SUCURSAL_KEY = "lector.sucursalId";
-const SUCURSAL_CONFIRMADA_KEY = "lector.sucursalConfirmada";
 /** Temporalmente off: al avisar, poner en true para reactivar el auto-deseleccionado. */
 const IDLE_DESELECCION_ACTIVA = false;
 /** Sin interacción con la mesa/orden seleccionada, se limpia el contexto. */
@@ -60,7 +59,6 @@ const IDLE_DESELECCION_MS = 20_000;
 export default function LectorCodigosPage() {
   const { user, signOut, loading: authLoading } = useAuth();
 
-  const [sucursales, setSucursales] = useState<Sucursal[]>([]);
   const [sucursal, setSucursal] = useState<Sucursal | null>(null);
   const [cargandoSucursales, setCargandoSucursales] = useState(false);
   const [errorSucursal, setErrorSucursal] = useState<string | null>(null);
@@ -229,17 +227,17 @@ export default function LectorCodigosPage() {
       setCargandoSucursales(true);
       setErrorSucursal(null);
       try {
-        const list = await listarSucursalesAccesibles();
+        // Misma sucursal del POS; no pedir selección ni tocar set_my_active_branch.
+        const activa = await obtenerSucursalActiva();
         if (cancel) return;
-        setSucursales(list);
-        // Solo reanuda sucursal si el operador ya la confirmó en este lector.
-        if (sessionStorage.getItem(SUCURSAL_CONFIRMADA_KEY) === "1") {
-          const guardada = localStorage.getItem(SUCURSAL_KEY);
-          const match = list.find((s) => s.id === guardada) ?? null;
-          if (match) setSucursal(match);
+        if (!activa) {
+          setSucursal(null);
+          setErrorSucursal("No hay sucursal activa. Entra desde el menú con una sucursal ya seleccionada.");
+          return;
         }
+        setSucursal(activa);
       } catch (e: any) {
-        if (!cancel) setErrorSucursal(e?.message || "No se pudieron cargar sucursales");
+        if (!cancel) setErrorSucursal(e?.message || "No se pudo cargar la sucursal activa");
       } finally {
         if (!cancel) setCargandoSucursales(false);
       }
@@ -679,17 +677,7 @@ export default function LectorCodigosPage() {
     })();
   };
 
-  // Solo estado local del lector: no llamar set_my_active_branch.
-  // Si se cambia la sucursal activa del POS, el otro tab puede cerrar sesión por turno.
-  const onElegirSucursal = (s: Sucursal) => {
-    localStorage.setItem(SUCURSAL_KEY, s.id);
-    sessionStorage.setItem(SUCURSAL_CONFIRMADA_KEY, "1");
-    limpiarContextoOrden();
-    setSucursal(s);
-    setVista("work");
-  };
-
-  if (authLoading) {
+  if (authLoading || cargandoSucursales) {
     return (
       <div className="app-shell" style={{ marginLeft: 0, padding: 40 }}>
         <p>Cargando…</p>
@@ -711,40 +699,20 @@ export default function LectorCodigosPage() {
                 <small>PICANTERÍA</small>
               </span>
             </a>
-            <h1 style={{ fontSize: 24, marginBottom: 16 }}>Sucursal</h1>
-            {cargandoSucursales && <p style={{ color: "var(--muted)" }}>Cargando sucursales…</p>}
-            {errorSucursal && <div className="inline-error">{errorSucursal}</div>}
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {sucursales.map((s) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  className="order-card"
-                  onClick={() => onElegirSucursal(s)}
-                  style={{ display: "flex", alignItems: "center", gap: 12 }}
-                >
-                  <span className="order-type-icon">
-                    <Icono name="store" />
-                  </span>
-                  <span style={{ flex: 1, textAlign: "left" }}>
-                    <strong style={{ display: "block" }}>{s.nombre}</strong>
-                    {s.codigo && <span className="order-number">{s.codigo}</span>}
-                  </span>
-                  <Icono name="arrow" />
-                </button>
-              ))}
-              {!cargandoSucursales && !sucursales.length && (
-                <p className="no-orders">No tienes sucursales asignadas.</p>
-              )}
+            <h1 style={{ fontSize: 24, marginBottom: 12 }}>Lector</h1>
+            {errorSucursal ? (
+              <div className="inline-error">{errorSucursal}</div>
+            ) : (
+              <p style={{ color: "var(--muted)" }}>No hay sucursal activa.</p>
+            )}
+            <div style={{ display: "flex", gap: 10, marginTop: 18, flexWrap: "wrap" }}>
+              <Link to="/mesas" className="btn btn-dark">
+                Ir a Mesas
+              </Link>
+              <button type="button" className="btn btn-white" onClick={() => void signOut()}>
+                Cerrar sesión
+              </button>
             </div>
-            <button
-              type="button"
-              className="btn btn-white"
-              style={{ marginTop: 18 }}
-              onClick={() => void signOut()}
-            >
-              Cerrar sesión
-            </button>
           </div>
         </main>
       </div>

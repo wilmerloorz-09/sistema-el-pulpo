@@ -11,6 +11,14 @@ import type {
 } from "./tipos";
 import { normalizarCodigo } from "./formato";
 
+function mapSucursal(b: any): Sucursal {
+  return {
+    id: String(b.id),
+    nombre: String(b.name ?? "Sucursal"),
+    codigo: b.branch_code ?? null,
+  };
+}
+
 export async function listarSucursalesAccesibles(): Promise<Sucursal[]> {
   const { data: ctx, error } = await supabase.rpc("get_my_access_context" as any);
   if (error) throw error;
@@ -19,11 +27,7 @@ export async function listarSucursalesAccesibles(): Promise<Sucursal[]> {
   if (branches.length) {
     return branches
       .filter((b: any) => b?.id && b?.is_active !== false)
-      .map((b: any) => ({
-        id: String(b.id),
-        nombre: String(b.name ?? "Sucursal"),
-        codigo: b.branch_code ?? null,
-      }));
+      .map(mapSucursal);
   }
 
   const { data: ub } = await supabase.from("user_branches").select("branch_id");
@@ -38,11 +42,34 @@ export async function listarSucursalesAccesibles(): Promise<Sucursal[]> {
     .order("name");
   if (e2) throw e2;
 
-  return (data ?? []).map((b: any) => ({
-    id: b.id,
-    nombre: b.name,
-    codigo: (b as any).branch_code ?? null,
-  }));
+  return (data ?? []).map(mapSucursal);
+}
+
+/** Sucursal ya activa en el POS (sin pedir otra ni llamar set_my_active_branch). */
+export async function obtenerSucursalActiva(): Promise<Sucursal | null> {
+  const { data: ctx, error } = await supabase.rpc("get_my_access_context" as any);
+  if (error) throw error;
+
+  const activeId =
+    (ctx as any)?.active_branch_id
+    ?? localStorage.getItem("activeBranchId");
+  if (!activeId) return null;
+
+  const branches = Array.isArray((ctx as any)?.branches) ? (ctx as any).branches : [];
+  const match = branches.find(
+    (b: any) => String(b?.id) === String(activeId) && b?.is_active !== false,
+  );
+  if (match) return mapSucursal(match);
+
+  const { data, error: e2 } = await supabase
+    .from("branches")
+    .select("id, name, branch_code")
+    .eq("id", activeId)
+    .eq("is_active", true)
+    .maybeSingle();
+  if (e2) throw e2;
+  if (!data) return null;
+  return mapSucursal(data);
 }
 
 /** Mesas activas: misma fuente y reglas visuales que /mesas del POS. */
