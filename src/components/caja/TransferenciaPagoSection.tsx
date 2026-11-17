@@ -43,7 +43,7 @@ export default function TransferenciaPagoSection({
           type="button"
           variant="outline"
           size="sm"
-          disabled={readOnly || bancos.length === 0}
+          disabled={readOnly}
           onClick={() => setDialogOpen(true)}
           className="h-9 rounded-xl border-violet-300 bg-white font-semibold text-violet-800 hover:bg-violet-100"
         >

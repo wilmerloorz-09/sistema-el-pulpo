@@ -517,12 +517,8 @@ export default function PaymentDialogV2({
         toast.error("No hay metodo de transferencia activo");
         return;
       }
-      if (!transferDatos?.bancoId) {
-        toast.error("Registra la transferencia con banco y numero");
-        return;
-      }
-      if (!transferDatos.numeroTransferencia.trim()) {
-        toast.error("El numero de transferencia es obligatorio");
+      if (!transferDatos || Number(transferDatos.monto ?? 0) <= 0.005) {
+        toast.error("Registra el valor de la transferencia");
         return;
       }
       tenderedSplits.push({ methodId: transferMethod.id, amount: transferAmount });

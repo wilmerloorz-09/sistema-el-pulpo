@@ -3079,20 +3079,16 @@ export function useCaja(params?: {
         (split) => transferMethodIds.has(split.methodId) && Number(split.amount) > 0.005,
       );
       if (hasTransferPayment) {
-        if (!transferencia?.bancoId) {
-          throw new Error("El banco es obligatorio para pagos por transferencia");
-        }
-        if (!String(transferencia?.numeroTransferencia ?? "").trim()) {
-          throw new Error("El numero de transferencia es obligatorio");
-        }
-        const duplicada = await existeTransferenciaDuplicada(
-          transferencia.bancoId,
-          transferencia.numeroTransferencia,
-        );
-        // Solo bloquear si la RPC confirma duplicado. Si falla la consulta (null),
-        // el registro en servidor / índice único sigue protegiendo.
-        if (duplicada === true) {
-          throw new Error(MENSAJE_TRANSFERENCIA_DUPLICADA);
+        const bancoId = String(transferencia?.bancoId ?? "").trim();
+        const numeroTransferencia = String(transferencia?.numeroTransferencia ?? "").trim();
+        // Banco y número son opcionales; solo valida unicidad si ambos vienen.
+        if (bancoId && numeroTransferencia) {
+          const duplicada = await existeTransferenciaDuplicada(bancoId, numeroTransferencia);
+          // Solo bloquear si la RPC confirma duplicado. Si falla la consulta (null),
+          // el registro en servidor / índice único sigue protegiendo.
+          if (duplicada === true) {
+            throw new Error(MENSAJE_TRANSFERENCIA_DUPLICADA);
+          }
         }
       }
 
