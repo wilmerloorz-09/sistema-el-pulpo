@@ -214,7 +214,7 @@ export default function LectorCodigosPage() {
       const link = document.createElement("link");
       link.id = cssId;
       link.rel = "stylesheet";
-      link.href = "/lector-codigos/styles.css?v=20261117-fila";
+      link.href = "/lector-codigos/styles.css?v=20261117-sin-head";
       document.head.appendChild(link);
     }
   }, []);
@@ -889,24 +889,6 @@ export default function LectorCodigosPage() {
                     onPointerDownCapture={marcarActividad}
                     onKeyDownCapture={marcarActividad}
                   >
-                    <div className="lector-atajos-head">
-                      <button
-                        className="btn btn-menu"
-                        type="button"
-                        disabled={procesando || !ordenActiva}
-                        onClick={() => setMenuAbierto(true)}
-                      >
-                        <Icono name="grid" />
-                        Menú
-                      </button>
-                      {ordenActiva ? (
-                        <strong className="lector-orden-chip">
-                          {etiquetaOrden(ordenActiva)}
-                        </strong>
-                      ) : (
-                        <span className="lector-orden-chip muted">Selecciona una mesa u orden</span>
-                      )}
-                    </div>
                     {pendienteRetry && (
                       <div className="reader-controls">
                         <button
@@ -961,6 +943,15 @@ export default function LectorCodigosPage() {
                       <h2>
                         En la orden <span>{totalUnidadesLector}</span>
                       </h2>
+                      <button
+                        className="btn btn-menu"
+                        type="button"
+                        disabled={procesando || !ordenActiva}
+                        onClick={() => setMenuAbierto(true)}
+                      >
+                        <Icono name="grid" />
+                        Menú
+                      </button>
                     </div>
                     <div>
                       {lineasConsolidadas.map((linea, index) => {
@@ -1096,9 +1087,7 @@ export default function LectorCodigosPage() {
       <Dialog open={menuAbierto} onOpenChange={setMenuAbierto}>
         <DialogContent className="max-h-[92vh] w-[min(960px,calc(100%-1.5rem))] max-w-none overflow-y-auto rounded-[24px] p-4 sm:p-6">
           <DialogHeader>
-            <DialogTitle className="text-left text-lg font-bold">
-              Menú{ordenActiva ? ` · ${etiquetaOrden(ordenActiva)}` : ""}
-            </DialogTitle>
+            <DialogTitle className="text-left text-lg font-bold">Menú</DialogTitle>
           </DialogHeader>
           <div className="mt-2 min-h-[420px]">
             <MenuNavigator
