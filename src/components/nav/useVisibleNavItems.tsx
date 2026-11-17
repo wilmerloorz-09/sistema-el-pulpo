@@ -1,6 +1,6 @@
 import { useMemo, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { BarChart3, ChefHat, CircleDollarSign, ConciergeBell, LayoutGrid, Package, PackagePlus, Settings, UtensilsCrossed, PlayCircle, ShoppingBag, Sparkles, Zap, Banknote, History, Users, Gift, Megaphone, Search, PowerOff, PackageCheck, ArrowLeftRight, FileText, HandCoins, Warehouse, Snowflake, Flame, Wallet } from "lucide-react";
+import { BarChart3, ChefHat, CircleDollarSign, ConciergeBell, LayoutGrid, Package, PackagePlus, ScanBarcode, Settings, UtensilsCrossed, PlayCircle, ShoppingBag, Sparkles, Zap, Banknote, History, Users, Gift, Megaphone, Search, PowerOff, PackageCheck, ArrowLeftRight, FileText, HandCoins, Warehouse, Snowflake, Flame, Wallet } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
@@ -107,6 +107,18 @@ const NAV_ITEMS: AppNavItem[] = [
       active: "from-orange-500 to-amber-400",
       idle: "hover:border-orange-200 hover:bg-orange-50/90 hover:text-orange-700",
       iconIdle: "bg-orange-50 text-orange-600",
+    },
+    visible: (permissions) => canView(permissions, "mesas"),
+  },
+  {
+    to: "/lector",
+    label: "Lector",
+    icon: <ScanBarcode className="h-5 w-5" />,
+    group: "VENTA",
+    tone: {
+      active: "from-emerald-500 to-lime-400",
+      idle: "hover:border-emerald-200 hover:bg-emerald-50/90 hover:text-emerald-700",
+      iconIdle: "bg-emerald-50 text-emerald-600",
     },
     visible: (permissions) => canView(permissions, "mesas"),
   },
@@ -632,7 +644,7 @@ export function useVisibleNavItems() {
         return puedeRegistrarPromociones || isGlobalAdmin;
       }
 
-      if (item.to === "/mesas" || item.to === "/para-llevar" || item.to === "/express" || item.to === "/extra" || item.to === "/orden-especial" || item.to === "/ordenes") {
+      if (item.to === "/mesas" || item.to === "/para-llevar" || item.to === "/express" || item.to === "/extra" || item.to === "/orden-especial" || item.to === "/lector" || item.to === "/ordenes") {
         if (item.to === "/extra" && isDispatchFirstWorkflow) {
           return false;
         }
@@ -647,7 +659,7 @@ export function useVisibleNavItems() {
         if (item.to === "/extra") {
           return hasSupervisorBypass || Boolean(sg?.canServeTables) || Boolean(sg?.canPackOrders);
         }
-        if (item.to === "/para-llevar" || item.to === "/express" || item.to === "/orden-especial") {
+        if (item.to === "/para-llevar" || item.to === "/express" || item.to === "/orden-especial" || item.to === "/lector") {
           return hasSupervisorBypass || isGlobalAdmin || Boolean(sg?.canServeTables);
         }
         return hasSupervisorBypass
