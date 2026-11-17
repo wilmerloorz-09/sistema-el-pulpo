@@ -36,33 +36,36 @@
 .chip-branch span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tablet-topbar .avatar{background:#294b3e;border-color:#355045;color:#e9f0e7;width:40px;height:40px;font-size:12px}
 .tablet-topbar .btn-white{background:#234137;border-color:#355045;color:#e9f0e7;min-height:44px;padding:10px 14px;font-size:12px}
-.tablet-main{padding:6px 12px 16px!important;max-width:none!important;width:100%}
+.tablet-main{
+  padding:4px 10px 10px!important;max-width:none!important;width:100%;
+  min-height:100dvh;box-sizing:border-box
+}
 .lector-backbar{
-  display:flex;align-items:center;justify-content:space-between;gap:10px;
-  margin:0 0 8px;padding:6px 2px;flex-wrap:wrap
+  display:flex;align-items:center;justify-content:space-between;gap:8px;
+  margin:0 0 6px;padding:4px 0;flex-wrap:nowrap
 }
 .lector-back-btn{
-  display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:8px 14px;
-  font-size:13px;font-weight:650;text-decoration:none
+  display:inline-flex;align-items:center;gap:6px;min-height:36px;padding:6px 12px;
+  font-size:12px;font-weight:650;text-decoration:none
 }
-.lector-back-btn .icon{width:17px;height:17px}
+.lector-back-btn .icon{width:16px;height:16px}
 .lector-branch-chip{
-  display:inline-flex;align-items:center;gap:7px;max-width:min(280px,60vw);
-  border:1px solid var(--line);background:#fff;color:var(--text);border-radius:10px;
-  padding:8px 12px;min-height:40px;font-size:12px;font-weight:600
+  display:inline-flex;align-items:center;gap:6px;max-width:min(240px,46vw);
+  border:1px solid var(--line);background:#fff;color:var(--text);border-radius:9px;
+  padding:6px 10px;min-height:36px;font-size:11px;font-weight:600
 }
-.lector-branch-chip .icon{width:16px;height:16px;color:var(--forest);flex-shrink:0}
+.lector-branch-chip .icon{width:15px;height:15px;color:var(--forest);flex-shrink:0}
 .lector-branch-chip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tablet-shell .panel-title h2{font-size:15px}
 .tablet-shell .quick-products{margin-top:12px}
 
-/* Mesas izquierda + escáner derecha */
+/* Mesas izquierda + productos derecha — fluido para tablets 11" */
 .tablet-shell .work-grid{
-  grid-template-columns:minmax(240px,548px) minmax(420px,1.35fr);
-  gap:12px;
+  grid-template-columns:minmax(260px,.92fr) minmax(0,1.2fr);
+  gap:10px;
   align-items:start;
 }
-.tablet-shell .order-panel{padding:0 8px 0;width:100%;max-width:548px;min-width:0}
+.tablet-shell .order-panel{padding:0 4px 0;width:100%;max-width:none;min-width:0}
 .tablet-shell .working-column{min-width:0;width:100%;max-width:none}
 .tablet-shell .order-list{
   display:flex;flex-direction:row;gap:10px;overflow-x:auto;overflow-y:hidden;
@@ -131,11 +134,66 @@
   .tablet-shell .catalog-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
 }
 
-@media(max-width:980px){
+/* Solo apilar en portrait; landscape de tablet se mantiene en 2 columnas */
+@media(max-width:980px) and (orientation:portrait){
   .tablet-shell .work-grid{grid-template-columns:1fr}
   .tablet-shell .order-panel{width:100%}
   .tablet-shell .order-summary .summary-top{flex-wrap:wrap}
   .tablet-shell .order-summary .code-entry-form{flex-basis:100%}
+}
+
+/* Infinix X1102B / XPad 30E y tablets 11" landscape (~960–1280 CSS) */
+@media(max-width:1280px) and (orientation:landscape){
+  .tablet-main{padding:2px 8px 8px!important}
+  .lector-backbar{margin-bottom:4px}
+  .tablet-shell .work-grid{
+    grid-template-columns:minmax(240px,.88fr) minmax(0,1.25fr);
+    gap:8px;
+  }
+  .tablet-shell .filter-tabs{margin:0 0 6px;padding-bottom:6px}
+  .tablet-shell .filter-tabs button{min-height:34px;font-size:12px;padding:6px 0}
+  .tablet-shell .scanner-panel,.tablet-shell .order-summary,.tablet-shell .draft-panel{padding:10px 12px}
+  .tablet-shell .code-input{flex:1 1 160px;width:auto;min-width:140px;min-height:44px}
+  .tablet-shell .code-input input{height:44px;font-size:15px}
+  .tablet-shell .code-input-row .btn,.tablet-shell .btn-dark,.tablet-shell .btn-white,
+  .tablet-shell .btn-menu{min-height:44px;padding:10px 12px;font-size:13px}
+  .tablet-shell .summary-ident h2{font-size:15px}
+  .tablet-shell .working-column{gap:10px}
+  .atajos-bebidas{margin-top:8px;gap:8px;--atajo-size:86px;--atajo-gap:7px}
+  .atajo-product strong,.atajo-brand strong{font-size:10px}
+  .atajo-product small,.atajo-brand small{font-size:9px}
+  .atajo-thumb,.atajo-brand-logo{width:38px;height:38px;border-radius:9px}
+  .mesa-grid{
+    grid-template-columns:repeat(3,minmax(0,1fr));
+    width:100%;
+    gap:8px;
+    max-height:calc(100dvh - 92px);
+    overflow:auto;
+    padding-bottom:4px;
+  }
+  .mesa-tile{
+    width:100%;
+    min-height:118px;
+    gap:5px;
+    padding:8px 6px;
+    border-radius:16px;
+  }
+  .mesa-tile.con-total{padding-bottom:32px}
+  .mesa-art{width:40px;height:40px;border-radius:14px}
+  .mesa-art svg{width:20px;height:20px}
+  .mesa-badge{min-width:2rem;min-height:2rem;font-size:1.05rem;right:6px;top:6px;padding:0 4px}
+  .mesa-orders-badge,.mesa-plus{left:6px;top:6px;font-size:8px}
+  .mesa-status{font-size:10px}
+  .mesa-creator,.mesa-ready{font-size:8px;padding:2px 6px}
+  .mesa-total{font-size:12px;padding:5px 8px;right:6px;bottom:6px}
+  .mesa-total-split-a,.mesa-total-split-b{font-size:11px;padding:4px 7px}
+  .tablet-shell .order-panel .panel-title,
+  .tablet-shell .order-panel .order-search,
+  .tablet-shell .order-panel .filter-tabs{max-width:none}
+  .draft-row-latest{padding:10px}
+  .draft-row-latest .draft-product strong{font-size:14px}
+  .draft-row-latest .qty-stepper button{width:34px;height:34px}
+  .atajo-picker{max-height:min(72dvh,520px)}
 }
 
 @media(max-width:700px){
@@ -296,7 +354,13 @@
 .tablet-shell .order-panel.panel{border:0;background:transparent;box-shadow:none;padding:0 4px}
 .tablet-shell .order-panel .panel-title,
 .tablet-shell .order-panel .order-search,
-.tablet-shell .order-panel .filter-tabs{max-width:548px} /* 3*176 + 2*10 */
+.tablet-shell .order-panel .filter-tabs{max-width:none}
+.tablet-shell .mesa-grid{
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  width:100%;
+  gap:8px;
+}
+.tablet-shell .mesa-tile{width:100%}
 
 @media(max-width:720px){
   .mesa-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;width:100%}
@@ -379,9 +443,15 @@
 .tablet-shell .atajos-row-fila1{grid-template-columns:repeat(var(--atajos-cols,5),var(--atajo-size))}
 .tablet-shell .atajos-row:not(.atajos-row-fila1),.tablet-shell .atajos-row-brands{grid-template-columns:repeat(auto-fill,var(--atajo-size))}
 @media(max-width:1000px){
-  .atajos-bebidas{--atajo-size:104px;--atajo-gap:9px}
+  .atajos-bebidas{--atajo-size:96px;--atajo-gap:8px}
   .tablet-shell .atajos-row-fila1{grid-template-columns:repeat(var(--atajos-cols,5),var(--atajo-size))}
   .tablet-shell .atajos-row:not(.atajos-row-fila1),.tablet-shell .atajos-row-brands{grid-template-columns:repeat(auto-fill,var(--atajo-size))}
+}
+@media(max-width:1280px) and (max-height:820px) and (orientation:landscape){
+  .atajos-bebidas{--atajo-size:80px;--atajo-gap:6px}
+  .atajo-product,.atajo-brand{padding:6px 4px;border-radius:12px;gap:4px}
+  .atajo-thumb,.atajo-brand-logo{width:34px;height:34px}
+  .atajo-product strong,.atajo-brand strong{font-size:9px;line-height:1.15}
 }
 
 /* En la orden: consolidado + / - / basura */
