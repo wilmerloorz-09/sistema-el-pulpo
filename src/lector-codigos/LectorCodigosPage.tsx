@@ -55,8 +55,6 @@ type FiltroOrden = "mesa" | "llevar";
 const IDLE_DESELECCION_ACTIVA = false;
 /** Sin interacción con la mesa/orden seleccionada, se limpia el contexto. */
 const IDLE_DESELECCION_MS = 20_000;
-/** Por ahora oculto: el teclado de tablet molesta; se usan atajos/Menú. */
-const MOSTRAR_INPUT_CODIGO = false;
 
 export default function LectorCodigosPage() {
   const { user, signOut, loading: authLoading } = useAuth();
@@ -94,10 +92,6 @@ export default function LectorCodigosPage() {
   const [actividad, setActividad] = useState<OperacionActividad[]>([]);
   const [catalogo, setCatalogo] = useState<ProductoCatalogo[]>([]);
   const [menuAbierto, setMenuAbierto] = useState(false);
-  /** Si es false, el input recibe el escáner sin abrir el teclado virtual de la tablet. */
-  const [tecladoManual, setTecladoManual] = useState(false);
-  const tecladoManualRef = useRef(false);
-  const inputRef = useRef<HTMLInputElement | null>(null);
   /** Ítems confirmados en servidor; la UI = servidor + adds − removes pendientes. */
   const serverItemsRef = useRef<ItemOrden[]>([]);
   const pendingAddsRef = useRef(
@@ -220,7 +214,7 @@ export default function LectorCodigosPage() {
       const link = document.createElement("link");
       link.id = cssId;
       link.rel = "stylesheet";
-      link.href = "/lector-codigos/styles.css";
+      link.href = "/lector-codigos/styles.css?v=20261117-fila";
       document.head.appendChild(link);
     }
   }, []);
@@ -359,34 +353,6 @@ export default function LectorCodigosPage() {
     if (!sucursal) return;
     void listarCatalogoProductos().then(setCatalogo).catch(() => undefined);
   }, [sucursal]);
-
-  const enfocarLector = useCallback((abrirTeclado = false) => {
-    const el = inputRef.current;
-    if (!el) return;
-    if (abrirTeclado) {
-      tecladoManualRef.current = true;
-      setTecladoManual(true);
-      el.removeAttribute("readonly");
-      el.focus({ preventScroll: true });
-      return;
-    }
-    // readonly + inputMode=none: mantiene foco para pistola/HID sin teclado virtual.
-    tecladoManualRef.current = false;
-    setTecladoManual(false);
-    el.setAttribute("readonly", "true");
-    el.focus({ preventScroll: true });
-    window.setTimeout(() => {
-      if (!inputRef.current || tecladoManualRef.current) return;
-      inputRef.current.removeAttribute("readonly");
-    }, 80);
-  }, []);
-
-  useEffect(() => {
-    if (!MOSTRAR_INPUT_CODIGO) return;
-    if (vista === "work" && ordenActiva) {
-      enfocarLector(false);
-    }
-  }, [vista, ordenActiva?.id, enfocarLector]);
 
   useEffect(() => {
     const dialog = pickerRef.current;
@@ -577,7 +543,6 @@ export default function LectorCodigosPage() {
         setErrorScan(e?.message || "No se pudo agregar. Puedes reintentar la misma lectura.");
       } finally {
         if (!esAtajoOMenu) setProcesando(false);
-        if (MOSTRAR_INPUT_CODIGO) enfocarLector(false);
       }
     },
     [
@@ -590,7 +555,6 @@ export default function LectorCodigosPage() {
       aplicarItemsServidor,
       refrescarOrdenes,
       vista,
-      enfocarLector,
     ],
   );
 
@@ -920,65 +884,6 @@ export default function LectorCodigosPage() {
                 </section>
 
                 <div className="working-column">
-                  {MOSTRAR_INPUT_CODIGO && ordenActiva ? (
-                    <div className="order-summary">
-                      <div className="summary-top">
-                        <form className="code-entry-form" onSubmit={onSubmitCodigo}>
-                          <div className="code-input-row">
-                            <div className="code-input">
-                              <Icono name="barcode" />
-                              <input
-                                ref={inputRef}
-                                id="barcodeInput"
-                                value={codigo}
-                                onChange={(e) => setCodigo(e.target.value)}
-                                onBlur={() => {
-                                  if (tecladoManualRef.current) {
-                                    tecladoManualRef.current = false;
-                                    setTecladoManual(false);
-                                  }
-                                }}
-                                placeholder="Escanea el código"
-                                autoComplete="off"
-                                autoCorrect="off"
-                                autoCapitalize="off"
-                                spellCheck={false}
-                                inputMode={tecladoManual ? "text" : "none"}
-                                enterKeyHint="done"
-                                maxLength={80}
-                                disabled={procesando}
-                                aria-label="Código de barras"
-                              />
-                            </div>
-                            <button
-                              className={`btn btn-menu${tecladoManual ? " active" : ""}`}
-                              type="button"
-                              disabled={procesando}
-                              title={tecladoManual ? "Ocultar teclado" : "Escribir código a mano"}
-                              onClick={() => {
-                                if (tecladoManual) {
-                                  setTecladoManual(false);
-                                  enfocarLector(false);
-                                } else {
-                                  enfocarLector(true);
-                                }
-                              }}
-                            >
-                              ABC
-                            </button>
-                            <button
-                              className="btn btn-dark"
-                              type="submit"
-                              disabled={procesando || !codigo.trim()}
-                            >
-                              Agregar <Icono name="plus" />
-                            </button>
-                          </div>
-                        </form>
-                      </div>
-                    </div>
-                  ) : null}
-
                   <section
                     className="panel scanner-panel"
                     onPointerDownCapture={marcarActividad}
@@ -1112,7 +1017,7 @@ export default function LectorCodigosPage() {
                       {!lineasConsolidadas.length ? (
                         <div className="empty-draft">
                           <strong>Sin productos del lector</strong>
-                          <small>Escanea o usa los atajos para agregar.</small>
+                          <small>Usa los atajos o Menú para agregar.</small>
                         </div>
                       ) : null}
                     </div>
