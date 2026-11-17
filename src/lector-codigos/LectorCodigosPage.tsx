@@ -214,7 +214,7 @@ export default function LectorCodigosPage() {
       const link = document.createElement("link");
       link.id = cssId;
       link.rel = "stylesheet";
-      link.href = "/lector-codigos/styles.css?v=20261117-sin-head";
+      link.href = "/lector-codigos/styles.css?v=20261117-mesas-sq";
       document.head.appendChild(link);
     }
   }, []);

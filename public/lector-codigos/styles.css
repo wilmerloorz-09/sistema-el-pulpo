@@ -59,9 +59,9 @@
 .tablet-shell .panel-title h2{font-size:15px}
 .tablet-shell .quick-products{margin-top:12px}
 
-/* Mesas izquierda + productos derecha — fluido para tablets 11" */
+/* Mesas izquierda (angosta) + productos derecha (ancha) */
 .tablet-shell .work-grid{
-  grid-template-columns:minmax(260px,.92fr) minmax(0,1.2fr);
+  grid-template-columns:minmax(210px,28%) minmax(0,1fr);
   gap:10px;
   align-items:start;
 }
@@ -150,7 +150,7 @@
   .tablet-main{padding:2px 8px 8px!important}
   .lector-backbar{margin-bottom:4px}
   .tablet-shell .work-grid{
-    grid-template-columns:minmax(240px,.88fr) minmax(0,1.25fr);
+    grid-template-columns:minmax(200px,26%) minmax(0,1fr);
     gap:8px;
   }
   .tablet-shell .filter-tabs{margin:0 0 6px;padding-bottom:6px}
@@ -176,20 +176,22 @@
   }
   .mesa-tile{
     width:100%;
-    min-height:118px;
-    gap:5px;
-    padding:8px 6px;
-    border-radius:16px;
+    aspect-ratio:1/1;
+    height:auto;
+    min-height:0;
+    gap:4px;
+    padding:6px 4px;
+    border-radius:14px;
   }
-  .mesa-tile.con-total{padding-bottom:32px}
-  .mesa-art{width:40px;height:40px;border-radius:14px}
-  .mesa-art svg{width:20px;height:20px}
-  .mesa-badge{min-width:2rem;min-height:2rem;font-size:1.05rem;right:6px;top:6px;padding:0 4px}
-  .mesa-orders-badge,.mesa-plus{left:6px;top:6px;font-size:8px}
-  .mesa-status{font-size:10px}
-  .mesa-creator,.mesa-ready{font-size:8px;padding:2px 6px}
-  .mesa-total{font-size:12px;padding:5px 8px;right:6px;bottom:6px}
-  .mesa-total-split-a,.mesa-total-split-b{font-size:11px;padding:4px 7px}
+  .mesa-tile.con-total{padding-bottom:6px}
+  .mesa-art{width:34px;height:34px;border-radius:12px}
+  .mesa-art svg{width:18px;height:18px}
+  .mesa-badge{min-width:1.7rem;min-height:1.7rem;font-size:.95rem;right:4px;top:4px;padding:0 3px}
+  .mesa-orders-badge,.mesa-plus{left:4px;top:4px;font-size:8px}
+  .mesa-status{font-size:9px}
+  .mesa-creator,.mesa-ready{font-size:7px;padding:2px 5px}
+  .mesa-total{font-size:11px;padding:4px 7px;right:4px;bottom:4px}
+  .mesa-total-split-a,.mesa-total-split-b{font-size:10px;padding:3px 5px}
   .tablet-shell .order-panel .panel-title,
   .tablet-shell .order-panel .order-search,
   .tablet-shell .order-panel .filter-tabs{max-width:none}
@@ -222,23 +224,26 @@
   position:relative;
   box-sizing:border-box;
   width:176px;
-  min-height:156px;
+  aspect-ratio:1/1;
+  height:auto;
+  min-height:0;
   display:flex;
   flex-direction:column;
   align-items:center;
   justify-content:center;
-  gap:8px;
-  padding:14px;
+  gap:6px;
+  padding:10px 8px;
   border:2px solid #7dd3fc; /* sky-300 */
-  border-radius:22px;
+  border-radius:18px;
   text-align:center;
   color:#0369a1; /* sky-700 */
   background:linear-gradient(to bottom right,#f0f9ff,#fff,#cffafe); /* sky-50 / white / cyan-100 */
   box-shadow:0 16px 36px -28px rgba(15,23,42,.18);
   transition:transform .12s,box-shadow .12s,border-color .12s,background .12s;
+  overflow:hidden;
 }
 .mesa-tile:active:not(:disabled){transform:scale(.95)}
-.mesa-tile.con-total{padding-bottom:40px}
+.mesa-tile.con-total{padding-bottom:10px}
 .mesa-tile.estado-ocupada,
 .mesa-tile.estado-por_cobrar{
   border-color:rgba(249,115,22,.4); /* primary/40 */
@@ -363,11 +368,16 @@
   width:100%;
   gap:8px;
 }
-.tablet-shell .mesa-tile{width:100%}
+.tablet-shell .mesa-tile{
+  width:100%;
+  aspect-ratio:1/1;
+  height:auto;
+  min-height:0;
+}
 
 @media(max-width:720px){
   .mesa-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;width:100%}
-  .mesa-tile{width:100%;min-height:142px;border-radius:20px;padding:10px;gap:6px}
+  .mesa-tile{width:100%;aspect-ratio:1/1;height:auto;min-height:0;border-radius:16px;padding:8px;gap:5px}
   .mesa-art{width:40px;height:40px;border-radius:16px}
   .mesa-art svg{width:22px;height:22px}
   .mesa-badge{min-width:2.45rem;min-height:2.45rem;font-size:1.15rem;right:8px;top:8px}
