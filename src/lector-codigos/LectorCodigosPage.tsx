@@ -920,112 +920,89 @@ export default function LectorCodigosPage() {
                 </section>
 
                 <div className="working-column">
-                  {ordenActiva && (
+                  {MOSTRAR_INPUT_CODIGO && ordenActiva ? (
                     <div className="order-summary">
                       <div className="summary-top">
-                        {MOSTRAR_INPUT_CODIGO ? (
-                          <form className="code-entry-form" onSubmit={onSubmitCodigo}>
-                            <div className="code-input-row">
-                              <div className="code-input">
-                                <Icono name="barcode" />
-                                <input
-                                  ref={inputRef}
-                                  id="barcodeInput"
-                                  value={codigo}
-                                  onChange={(e) => setCodigo(e.target.value)}
-                                  onBlur={() => {
-                                    if (tecladoManualRef.current) {
-                                      tecladoManualRef.current = false;
-                                      setTecladoManual(false);
-                                    }
-                                  }}
-                                  placeholder="Escanea el código"
-                                  autoComplete="off"
-                                  autoCorrect="off"
-                                  autoCapitalize="off"
-                                  spellCheck={false}
-                                  inputMode={tecladoManual ? "text" : "none"}
-                                  enterKeyHint="done"
-                                  maxLength={80}
-                                  disabled={procesando}
-                                  aria-label="Código de barras"
-                                />
-                              </div>
-                              <button
-                                className={`btn btn-menu${tecladoManual ? " active" : ""}`}
-                                type="button"
-                                disabled={procesando}
-                                title={tecladoManual ? "Ocultar teclado" : "Escribir código a mano"}
-                                onClick={() => {
-                                  if (tecladoManual) {
+                        <form className="code-entry-form" onSubmit={onSubmitCodigo}>
+                          <div className="code-input-row">
+                            <div className="code-input">
+                              <Icono name="barcode" />
+                              <input
+                                ref={inputRef}
+                                id="barcodeInput"
+                                value={codigo}
+                                onChange={(e) => setCodigo(e.target.value)}
+                                onBlur={() => {
+                                  if (tecladoManualRef.current) {
+                                    tecladoManualRef.current = false;
                                     setTecladoManual(false);
-                                    enfocarLector(false);
-                                  } else {
-                                    enfocarLector(true);
                                   }
                                 }}
-                              >
-                                ABC
-                              </button>
-                              <button
-                                className="btn btn-dark"
-                                type="submit"
-                                disabled={procesando || !codigo.trim()}
-                              >
-                                Agregar <Icono name="plus" />
-                              </button>
-                              <button
-                                className="btn btn-menu"
-                                type="button"
+                                placeholder="Escanea el código"
+                                autoComplete="off"
+                                autoCorrect="off"
+                                autoCapitalize="off"
+                                spellCheck={false}
+                                inputMode={tecladoManual ? "text" : "none"}
+                                enterKeyHint="done"
+                                maxLength={80}
                                 disabled={procesando}
-                                onClick={() => setMenuAbierto(true)}
-                              >
-                                <Icono name="grid" />
-                                Menú
-                              </button>
+                                aria-label="Código de barras"
+                              />
                             </div>
-                          </form>
-                        ) : (
-                          <div className="code-entry-form">
-                            <div className="code-input-row">
-                              <button
-                                className="btn btn-menu"
-                                type="button"
-                                disabled={procesando}
-                                onClick={() => setMenuAbierto(true)}
-                              >
-                                <Icono name="grid" />
-                                Menú
-                              </button>
-                            </div>
+                            <button
+                              className={`btn btn-menu${tecladoManual ? " active" : ""}`}
+                              type="button"
+                              disabled={procesando}
+                              title={tecladoManual ? "Ocultar teclado" : "Escribir código a mano"}
+                              onClick={() => {
+                                if (tecladoManual) {
+                                  setTecladoManual(false);
+                                  enfocarLector(false);
+                                } else {
+                                  enfocarLector(true);
+                                }
+                              }}
+                            >
+                              ABC
+                            </button>
+                            <button
+                              className="btn btn-dark"
+                              type="submit"
+                              disabled={procesando || !codigo.trim()}
+                            >
+                              Agregar <Icono name="plus" />
+                            </button>
                           </div>
-                        )}
-                        <div className="summary-ident">
-                          <span
-                            className={`order-type-icon ${
-                              etiquetaTipoOrden(ordenActiva.tipo) === "llevar" ? "takeaway" : ""
-                            }`}
-                          >
-                            <Icono
-                              name={etiquetaTipoOrden(ordenActiva.tipo) === "llevar" ? "bag" : "table"}
-                            />
-                          </span>
-                          <div>
-                            <h2>
-                              {etiquetaOrden(ordenActiva)}
-                              {ordenActiva.codigo && <span> · {ordenActiva.codigo}</span>}
-                            </h2>
-                          </div>
-                        </div>
+                        </form>
                       </div>
                     </div>
-                  )}
+                  ) : null}
 
                   <section
                     className="panel scanner-panel"
                     onPointerDownCapture={marcarActividad}
                     onKeyDownCapture={marcarActividad}
                   >
+                    <div className="lector-atajos-head">
+                      <button
+                        className="btn btn-menu"
+                        type="button"
+                        disabled={procesando || !ordenActiva}
+                        onClick={() => setMenuAbierto(true)}
+                      >
+                        <Icono name="grid" />
+                        Menú
+                      </button>
+                      {ordenActiva ? (
+                        <strong className="lector-orden-chip">
+                          {etiquetaOrden(ordenActiva)}
+                          {ordenActiva.codigo ? ` · ${ordenActiva.codigo}` : ""}
+                        </strong>
+                      ) : (
+                        <span className="lector-orden-chip muted">Selecciona una mesa u orden</span>
+                      )}
+                    </div>
                     {pendienteRetry && (
                       <div className="reader-controls">
                         <button
