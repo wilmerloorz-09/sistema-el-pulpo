@@ -51,6 +51,9 @@ import {
   type ResultadoValidacionComprobante,
 } from "@/lib/validacionComprobanteTransferencia";
 
+/** Temporal: ocultar captura de comprobante en cobro por transferencia. */
+const MOSTRAR_COMPROBANTE_FOTO = false;
+
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -460,6 +463,7 @@ export default function TransferenciaPagoDialog({
                 />
               </div>
 
+              {MOSTRAR_COMPROBANTE_FOTO ? (
               <div className="space-y-2">
                 <Label>Comprobante (opcional)</Label>
                 <div className="flex flex-wrap items-center gap-2">
@@ -636,6 +640,7 @@ export default function TransferenciaPagoDialog({
                   </p>
                 )}
               </div>
+              ) : null}
             </div>
 
             <DialogFooter className="footer-safe-bottom shrink-0 flex-row justify-end gap-2 space-x-0 border-t border-border/60 pt-3 sm:gap-2 sm:pb-0">
