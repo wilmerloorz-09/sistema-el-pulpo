@@ -1629,7 +1629,7 @@ const OrdenesContent = () => {
       } else if (sourceParams.includes("origin=express")) {
         navigate("/express", { replace: true });
       } else if (sourceParams.includes("origin=extra")) {
-        navigate("/extra", { replace: true });
+        navigate("/ordenes-extra", { replace: true });
       } else if (sourceParams.includes("origin=orden-especial")) {
         navigate("/orden-especial", { replace: true });
       } else {
@@ -1716,7 +1716,7 @@ const OrdenesContent = () => {
         : originValue === "express"
           ? "/express"
           : originValue === "extra"
-            ? "/extra"
+            ? "/ordenes-extra"
         : originValue === "orden-especial"
           ? "/orden-especial"
           : isMesasListOrigin(originValue)
@@ -1961,10 +1961,10 @@ const OrdenesContent = () => {
         if (currentOrderIsStillActive) return;
 
         const nextOrderId = orders.find((extraOrder) => extraOrder.id !== order.id)?.id ?? null;
-        navigate(nextOrderId ? `/ordenes?order=${nextOrderId}${sourceParams}` : "/extra", { replace: true });
+        navigate(nextOrderId ? `/ordenes?order=${nextOrderId}${sourceParams}` : "/ordenes-extra", { replace: true });
       })
       .catch(() => {
-        if (!cancelled) navigate("/extra", { replace: true });
+        if (!cancelled) navigate("/ordenes-extra", { replace: true });
       });
 
     return () => {
@@ -2036,7 +2036,7 @@ const OrdenesContent = () => {
     }
 
     if (origin === "extra" || isExtraOrder) {
-      navigate("/extra", { replace: true });
+      navigate("/ordenes-extra", { replace: true });
       return;
     }
 

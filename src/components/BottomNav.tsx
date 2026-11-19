@@ -102,7 +102,7 @@ const BottomNav = ({ isDark, onToggleTheme, onOpenAccount }: BottomNavProps) => 
             if (item.to === "/ordenes") isItemActive = false;
           }
           if (fromExtra) {
-            if (item.to === "/extra") isItemActive = true;
+            if (item.to === "/ordenes-extra") isItemActive = true;
             if (item.to === "/ordenes") isItemActive = false;
           }
           if (fromOrdenEspecial) {

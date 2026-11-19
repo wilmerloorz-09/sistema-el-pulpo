@@ -145,8 +145,8 @@ const SidebarNav = ({ isDark, onToggleTheme, onOpenAccount, onOpenAutopedidos, o
                       ? (location.pathname === "/para-llevar" || (location.pathname === "/ordenes" && isOriginParaLlevar))
                       : item.to === "/express"
                         ? (location.pathname === "/express" || (location.pathname === "/ordenes" && isOriginExpress))
-                      : item.to === "/extra"
-                        ? (location.pathname === "/extra" || (location.pathname === "/ordenes" && isOriginExtra))
+                      : item.to === "/ordenes-extra"
+                        ? (location.pathname === "/ordenes-extra" || (location.pathname === "/ordenes" && isOriginExtra))
                       : item.to === "/orden-especial"
                         ? (location.pathname === "/orden-especial" || (location.pathname === "/ordenes" && isOriginOrdenEspecial))
                       : item.to.startsWith("/clientes")

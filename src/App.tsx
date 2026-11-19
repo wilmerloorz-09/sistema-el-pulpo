@@ -445,7 +445,11 @@ const InstallPrompt = () => {
   if (window.location.pathname.startsWith("/promociones/registro")) {
     return null;
   }
-  if (window.location.pathname.startsWith("/lector")) {
+  if (
+    window.location.pathname === "/extra"
+    || window.location.pathname.startsWith("/lector")
+    || window.location.pathname.startsWith("/bebidas")
+  ) {
     return null;
   }
   if (window.location.pathname.startsWith("/qr-pedido")) {
@@ -566,14 +570,15 @@ const App = () => (
               <Route path="/qr-pedido/:token" element={<QrPedido />} />
               <Route path="/imprimir-reporte-caja" element={<PrintCashReport />} />
               <Route
-                path="/lector"
+                path="/extra"
                 element={
                   <AuthGateLector>
                     <LectorCodigosPage />
                   </AuthGateLector>
                 }
               />
-              <Route path="/bebidas" element={<Navigate to="/lector" replace />} />
+              <Route path="/lector" element={<Navigate to="/extra" replace />} />
+              <Route path="/bebidas" element={<Navigate to="/extra" replace />} />
               <Route
                 element={
                   <AuthGate>
@@ -616,7 +621,7 @@ const App = () => (
                   }
                 />
                 <Route
-                  path="/extra"
+                  path="/ordenes-extra"
                   element={
                     <ProtectedRoute requiredPermission={{ module: "mesas", level: "VIEW" }} requiresOpenShift requiredShiftRoles={["canServeTables", "canPackOrders"]}>
                       <Extra />

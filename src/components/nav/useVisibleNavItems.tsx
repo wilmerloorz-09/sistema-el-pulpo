@@ -87,7 +87,7 @@ const NAV_ITEMS: AppNavItem[] = [
     visible: (permissions) => canView(permissions, "mesas"),
   },
   {
-    to: "/extra",
+    to: "/ordenes-extra",
     label: "Órdenes extra",
     icon: <PackagePlus className="h-5 w-5" />,
     group: "VENTA",
@@ -111,7 +111,7 @@ const NAV_ITEMS: AppNavItem[] = [
     visible: (permissions) => canView(permissions, "mesas"),
   },
   {
-    to: "/lector",
+    to: "/extra",
     label: "Extra",
     icon: <ScanBarcode className="h-5 w-5" />,
     group: "VENTA",
@@ -610,12 +610,12 @@ export function useVisibleNavItems() {
           || (item.to === "/personal" && item.visible(permissions))
           || (item.to === "/caja-chica" && item.visible(permissions))
           || (item.to === "/cierres-caja" && canAccessAdmin)
-          || (item.to === "/lector" && canAccessAdmin)
+          || (item.to === "/extra" && canAccessAdmin)
           || (item.to === "/monitoreo-global" && isGlobalAdmin)
         );
       }
 
-      if (item.to === "/lector") {
+      if (item.to === "/extra") {
         return canAccessAdmin;
       }
 
@@ -651,19 +651,19 @@ export function useVisibleNavItems() {
         return puedeRegistrarPromociones || isGlobalAdmin;
       }
 
-      if (item.to === "/mesas" || item.to === "/para-llevar" || item.to === "/express" || item.to === "/extra" || item.to === "/orden-especial" || item.to === "/ordenes") {
-        if (item.to === "/extra" && isDispatchFirstWorkflow) {
+      if (item.to === "/mesas" || item.to === "/para-llevar" || item.to === "/express" || item.to === "/ordenes-extra" || item.to === "/orden-especial" || item.to === "/ordenes") {
+        if (item.to === "/ordenes-extra" && isDispatchFirstWorkflow) {
           return false;
         }
 
         if (!hasSupervisorBypass && Boolean(sg?.canPackOrders) && !isDispatchFirstWorkflow) {
-          return item.to === "/extra";
+          return item.to === "/ordenes-extra";
         }
         
         if (item.to === "/mesas") {
           return hasSupervisorBypass || Boolean(sg?.canServeTables);
         }
-        if (item.to === "/extra") {
+        if (item.to === "/ordenes-extra") {
           return hasSupervisorBypass || Boolean(sg?.canServeTables) || Boolean(sg?.canPackOrders);
         }
         if (item.to === "/para-llevar" || item.to === "/express" || item.to === "/orden-especial") {
