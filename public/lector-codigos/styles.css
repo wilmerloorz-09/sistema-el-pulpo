@@ -83,7 +83,7 @@ html.lector-codigos-active{--forest:#164d41;--deep:#102f2a;--text:#213d36;--mute
 .tablet-shell .order-search{min-height:48px;padding:12px}
 .tablet-shell .order-search input{font-size:15px}
 
-/* Escaneo táctil */
+/* Escaneo t?ctil */
 .tablet-shell .scanner-panel,.tablet-shell .order-summary,.tablet-shell .draft-panel{padding:16px}
 .tablet-shell .code-input-row{
   display:flex;flex-wrap:wrap;gap:8px;align-items:stretch;max-width:100%
@@ -149,7 +149,7 @@ html.lector-codigos-active{--forest:#164d41;--deep:#102f2a;--text:#213d36;--mute
   .tablet-shell .order-summary .code-entry-form{flex-basis:100%}
 }
 
-/* Infinix X1102B / XPad 30E y tablets 11" landscape (~960–1280 CSS) */
+/* Infinix X1102B / XPad 30E y tablets 11" landscape (~960?1280 CSS) */
 @media(max-width:1280px) and (orientation:landscape){
   .tablet-main{padding:2px 8px 8px!important}
   .lector-backbar{margin-bottom:4px}
@@ -214,7 +214,7 @@ html.lector-codigos-active{--forest:#164d41;--deep:#102f2a;--text:#213d36;--mute
   .tablet-shell .quick-products{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 
-/* Grilla de mesas — compactas para el lector */
+/* Grilla de mesas ? compactas para el lector */
 .mesa-grid{
   display:grid;
   grid-template-columns:repeat(3,176px);
@@ -397,7 +397,7 @@ html.lector-codigos-active{--forest:#164d41;--deep:#102f2a;--text:#213d36;--mute
 }
 .mesa-llevar-title{
   display:block;
-  font-size:12px;
+  font-size:16px;
   font-weight:800;
   letter-spacing:.02em;
   line-height:1.15;
@@ -418,7 +418,7 @@ html.lector-codigos-active{--forest:#164d41;--deep:#102f2a;--text:#213d36;--mute
     inset 0 -2px 4px rgba(255,255,255,.55);
 }
 @media(max-width:1280px) and (orientation:landscape){
-  .mesa-llevar-title{font-size:11px}
+  .mesa-llevar-title{font-size:14px}
 }
 
 @media(max-width:720px){
@@ -463,7 +463,7 @@ html.lector-codigos-active{--forest:#164d41;--deep:#102f2a;--text:#213d36;--mute
   grid-template-columns:repeat(auto-fill,var(--atajo-size));
   justify-content:start
 }
-/* Chifle + jugos: siempre 1 fila; mismo tamaño fijo por tarjeta. */
+/* Chifle + jugos: siempre 1 fila; mismo tama?o fijo por tarjeta. */
 .atajos-row-fila1{grid-template-columns:repeat(var(--atajos-cols,5),var(--atajo-size))}
 .atajo-product,.atajo-brand{
   display:flex;flex-direction:column;align-items:center;justify-content:center;

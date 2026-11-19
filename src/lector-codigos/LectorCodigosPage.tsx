@@ -205,7 +205,7 @@ export default function LectorCodigosPage() {
       link = document.createElement("link");
       link.id = cssId;
       link.rel = "stylesheet";
-      link.href = "/lector-codigos/styles.css?v=20261118-llevar-violeta";
+      link.href = "/lector-codigos/styles.css?v=20261118-llevar-txt";
       document.head.appendChild(link);
     }
     document.documentElement.classList.add(bodyClass);
