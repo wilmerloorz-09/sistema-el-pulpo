@@ -205,7 +205,7 @@ export default function LectorCodigosPage() {
       link = document.createElement("link");
       link.id = cssId;
       link.rel = "stylesheet";
-      link.href = "/lector-codigos/styles.css?v=20261118-llevar-card";
+      link.href = "/lector-codigos/styles.css?v=20261118-llevar-violeta";
       document.head.appendChild(link);
     }
     document.documentElement.classList.add(bodyClass);
@@ -773,7 +773,7 @@ export default function LectorCodigosPage() {
                   <div className="mesa-grid">
                     <button
                       type="button"
-                      className={`mesa-tile para-llevar ${ordenesLlevar.length ? "estado-ocupada" : "estado-libre"} ${
+                      className={`mesa-tile para-llevar ${ordenesLlevar.length ? "con-ordenes" : "sin-ordenes"} ${
                         llevarSeleccionado ? "selected" : ""
                       } ${totalLlevar > 0 ? "con-total" : ""}`}
                       onClick={seleccionarParaLlevar}
@@ -784,14 +784,10 @@ export default function LectorCodigosPage() {
                           {ordenesLlevar.length === 1 ? "orden" : "ordenes"}
                         </span>
                       )}
-                      <span className="mesa-badge">PL</span>
                       <span className="mesa-art">
                         <Icono name="bag" />
                       </span>
-                      <span className="mesa-status">
-                        <Icono name="bag" />
-                        <span>Para llevar</span>
-                      </span>
+                      <strong className="mesa-llevar-title">Para Llevar</strong>
                       {ordenesLlevar.length === 0 ? (
                         <span className="mesa-ready">Sin órdenes</span>
                       ) : null}

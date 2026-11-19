@@ -378,22 +378,47 @@ html.lector-codigos-active{--forest:#164d41;--deep:#102f2a;--text:#213d36;--mute
   height:auto;
   min-height:0;
 }
-.mesa-tile.para-llevar,
-.mesa-tile.para-llevar.estado-ocupada{
-  border-color:rgba(249,115,22,.45);
-  color:#c2410c;
-  background:linear-gradient(to bottom right,#fff7ed,#fff,#ffedd5);
+.mesa-tile.para-llevar{
+  border-color:#a78bfa;
+  color:#5b21b6;
+  background:linear-gradient(to bottom right,#f5f3ff,#ffffff,#ede9fe);
 }
-.mesa-tile.para-llevar .mesa-badge{
-  border-color:#fdba74;background:#ffedd5;color:#c2410c;
+.mesa-tile.para-llevar.sin-ordenes{
+  opacity:.72;
+  filter:none;
 }
 .mesa-tile.para-llevar .mesa-art{
-  border-color:#fed7aa;
-  background:linear-gradient(to bottom right,#f97316,#fb923c,#fdba74);
+  border-color:#ddd6fe;
+  background:linear-gradient(to bottom right,#8b5cf6,#a78bfa,#c4b5fd);
+  box-shadow:0 14px 30px -22px rgba(124,58,237,.75);
+}
+.mesa-tile.para-llevar .mesa-orders-badge{
+  border:1px solid #c4b5fd;background:#f5f3ff;color:#5b21b6;
+}
+.mesa-llevar-title{
+  display:block;
+  font-size:12px;
+  font-weight:800;
+  letter-spacing:.02em;
+  line-height:1.15;
+  color:#5b21b6;
+}
+.mesa-tile.para-llevar .mesa-ready{
+  border-color:#ddd6fe;background:rgba(255,255,255,.9);color:#6d28d9;
+}
+.mesa-tile.para-llevar .mesa-total{
+  border-color:#c4b5fd;color:#5b21b6;
 }
 .mesa-tile.para-llevar.selected{
-  border-color:#e8a070;
-  background:linear-gradient(160deg,#f5d5b8 0%,#fff0e0 45%,#fde7c8 100%);
+  border-color:#7c3aed;
+  background:linear-gradient(160deg,#ddd6fe 0%,#f5f3ff 45%,#ede9fe 100%);
+  box-shadow:
+    inset 0 6px 14px rgba(76,29,149,.2),
+    inset 0 2px 4px rgba(76,29,149,.14),
+    inset 0 -2px 4px rgba(255,255,255,.55);
+}
+@media(max-width:1280px) and (orientation:landscape){
+  .mesa-llevar-title{font-size:11px}
 }
 
 @media(max-width:720px){
