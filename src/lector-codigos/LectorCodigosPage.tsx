@@ -197,16 +197,27 @@ export default function LectorCodigosPage() {
     [publicarItems],
   );
 
-  // Estilos del lector (sin tocar el shell del POS).
+  // Estilos del lector: se cargan al entrar y SE QUITAN al salir
+  // (si quedan en <head>, rompen Mesas y el resto del POS).
   useEffect(() => {
     const cssId = "lector-codigos-css";
-    if (!document.getElementById(cssId)) {
-      const link = document.createElement("link");
+    const bodyClass = "lector-codigos-active";
+    let link = document.getElementById(cssId) as HTMLLinkElement | null;
+    if (!link) {
+      link = document.createElement("link");
       link.id = cssId;
       link.rel = "stylesheet";
-      link.href = "/lector-codigos/styles.css?v=20261117-orden-chip";
+      link.href = "/lector-codigos/styles.css?v=20261118-cleanup";
       document.head.appendChild(link);
     }
+    document.documentElement.classList.add(bodyClass);
+    document.body.classList.add(bodyClass);
+
+    return () => {
+      document.getElementById(cssId)?.remove();
+      document.documentElement.classList.remove(bodyClass);
+      document.body.classList.remove(bodyClass);
+    };
   }, []);
 
   useEffect(() => {
