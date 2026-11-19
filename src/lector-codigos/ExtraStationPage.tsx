@@ -58,21 +58,9 @@ type DraftLine = {
   qty: number;
 };
 
-/** Logos locales (no foto de producto): van con contain. */
-const LOGO_FILES = new Set([
-  "/lector-codigos/marcas/coca-cola.webp",
-  "/lector-codigos/marcas/fanta.png",
-  "/lector-codigos/marcas/sprite.png",
-  "/lector-codigos/marcas/inca.png",
-  "/lector-codigos/marcas/pepsi.png",
-  "/lector-codigos/marcas/tropical.png",
+/** Archivos con damero u otros defectos: no usar. */
+const BAD_LOGOS = new Set([
   "/lector-codigos/marcas/naranja.png",
-  "/lector-codigos/marcas/manzana.jpg",
-  "/lector-codigos/marcas/7up.jpg",
-  "/lector-codigos/marcas/gallito.jpg",
-  "/lector-codigos/marcas/fiora.jpg",
-  "/lector-codigos/marcas/fuze-tea.jpg",
-  "/lector-codigos/marcas/del-valle.jpg",
 ]);
 
 function pad2(n: number) {
@@ -91,27 +79,28 @@ function normCat(name: string) {
     .trim();
 }
 
-/** Foto del menú (cover) o marca/chifle local. */
+/**
+ * Imagen del producto.
+ * Siempre contain: en tablet queda cuadrado y alineado (sin zooms raros).
+ */
 function resolveProductImage(
   nombre: string,
   imageUrl: string | null | undefined,
 ): { url: string | null; fit: ImageFit } {
   const raw = String(imageUrl ?? "").trim();
-  if (raw) return { url: raw, fit: "cover" };
+  if (raw) return { url: raw, fit: "contain" };
 
   if (esChifle(nombre)) {
-    return { url: "/lector-codigos/marcas/chifle.jpg", fit: "cover" };
+    return { url: "/lector-codigos/marcas/chifle.jpg", fit: "contain" };
   }
 
   const n = normalizarNombreProducto(nombre);
   for (const marca of MARCAS_IMAGEN) {
     if (!marca.match(n)) continue;
-    return {
-      url: marca.logo,
-      fit: LOGO_FILES.has(marca.logo) ? "contain" : "cover",
-    };
+    if (BAD_LOGOS.has(marca.logo)) continue;
+    return { url: marca.logo, fit: "contain" };
   }
-  return { url: null, fit: "cover" };
+  return { url: null, fit: "contain" };
 }
 
 function classifyCategory(
@@ -279,7 +268,7 @@ export default function ExtraStationPage() {
       link = document.createElement("link");
       link.id = cssId;
       link.rel = "stylesheet";
-      link.href = "/lector-codigos/extra-station.css?v=20261119-extra-ref4";
+      link.href = "/lector-codigos/extra-station.css?v=20261119-extra-grid5";
       document.head.appendChild(link);
     }
     document.documentElement.classList.add(bodyClass);
