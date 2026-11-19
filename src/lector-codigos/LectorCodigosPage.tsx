@@ -728,7 +728,7 @@ export default function LectorCodigosPage() {
                 <small>PICANTERÍA</small>
               </span>
             </a>
-            <h1 style={{ fontSize: 24, marginBottom: 12 }}>Lector</h1>
+            <h1 style={{ fontSize: 24, marginBottom: 12 }}>Extra</h1>
             {errorSucursal ? (
               <div className="inline-error">{errorSucursal}</div>
             ) : (
@@ -998,7 +998,7 @@ export default function LectorCodigosPage() {
                       })}
                       {!lineasConsolidadas.length ? (
                         <div className="empty-draft">
-                          <strong>Sin productos del lector</strong>
+                          <strong>Sin productos</strong>
                           <small>Usa los atajos para agregar.</small>
                         </div>
                       ) : null}

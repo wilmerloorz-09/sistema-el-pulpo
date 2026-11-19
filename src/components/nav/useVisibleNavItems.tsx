@@ -88,7 +88,7 @@ const NAV_ITEMS: AppNavItem[] = [
   },
   {
     to: "/extra",
-    label: "Extra",
+    label: "Órdenes extra",
     icon: <PackagePlus className="h-5 w-5" />,
     group: "VENTA",
     tone: {
@@ -112,7 +112,7 @@ const NAV_ITEMS: AppNavItem[] = [
   },
   {
     to: "/lector",
-    label: "Lector",
+    label: "Extra",
     icon: <ScanBarcode className="h-5 w-5" />,
     group: "VENTA",
     tone: {
