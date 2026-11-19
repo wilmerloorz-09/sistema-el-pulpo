@@ -38,11 +38,14 @@ const PARA_LLEVAR_ID = "__para-llevar__";
 const MARCAS_IMAGEN = [...FILA_MARCAS_COCA, ...FILA_MARCAS_PEPSI, ...FILA_OTRAS];
 type CategoriaTab = "frecuentes" | "bebidas" | "jugos" | "otros";
 
+type ImageFit = "cover" | "contain";
+
 type CatalogProduct = {
   productId: string;
   nombre: string;
   precio: number;
   imageUrl: string | null;
+  imageFit: ImageFit;
   categoryKey: Exclude<CategoriaTab, "frecuentes">;
 };
 
@@ -51,8 +54,26 @@ type DraftLine = {
   nombre: string;
   precio: number;
   imageUrl: string | null;
+  imageFit: ImageFit;
   qty: number;
 };
+
+/** Logos locales (no foto de producto): van con contain. */
+const LOGO_FILES = new Set([
+  "/lector-codigos/marcas/coca-cola.webp",
+  "/lector-codigos/marcas/fanta.png",
+  "/lector-codigos/marcas/sprite.png",
+  "/lector-codigos/marcas/inca.png",
+  "/lector-codigos/marcas/pepsi.png",
+  "/lector-codigos/marcas/tropical.png",
+  "/lector-codigos/marcas/naranja.png",
+  "/lector-codigos/marcas/manzana.jpg",
+  "/lector-codigos/marcas/7up.jpg",
+  "/lector-codigos/marcas/gallito.jpg",
+  "/lector-codigos/marcas/fiora.jpg",
+  "/lector-codigos/marcas/fuze-tea.jpg",
+  "/lector-codigos/marcas/del-valle.jpg",
+]);
 
 function pad2(n: number) {
   return String(n).padStart(2, "0");
@@ -70,18 +91,27 @@ function normCat(name: string) {
     .trim();
 }
 
-/** Foto del menú si existe; si no, marca/chifle local. */
-function resolveProductImage(nombre: string, imageUrl: string | null | undefined): string | null {
+/** Foto del menú (cover) o marca/chifle local. */
+function resolveProductImage(
+  nombre: string,
+  imageUrl: string | null | undefined,
+): { url: string | null; fit: ImageFit } {
   const raw = String(imageUrl ?? "").trim();
-  if (raw) return raw;
+  if (raw) return { url: raw, fit: "cover" };
 
-  if (esChifle(nombre)) return "/lector-codigos/marcas/chifle.jpg";
+  if (esChifle(nombre)) {
+    return { url: "/lector-codigos/marcas/chifle.jpg", fit: "cover" };
+  }
 
   const n = normalizarNombreProducto(nombre);
   for (const marca of MARCAS_IMAGEN) {
-    if (marca.match(n)) return marca.logo;
+    if (!marca.match(n)) continue;
+    return {
+      url: marca.logo,
+      fit: LOGO_FILES.has(marca.logo) ? "contain" : "cover",
+    };
   }
-  return null;
+  return { url: null, fit: "cover" };
 }
 
 function classifyCategory(
@@ -156,11 +186,13 @@ function buildCatalog(nodes: MenuNode[]): CatalogProduct[] {
     if (!productId || seen.has(productId)) continue;
     seen.add(productId);
     const path = pathNames(node);
+    const img = resolveProductImage(node.name, node.image_url);
     out.push({
       productId,
       nombre: node.name,
       precio: Number(node.price ?? 0),
-      imageUrl: resolveProductImage(node.name, node.image_url),
+      imageUrl: img.url,
+      imageFit: img.fit,
       categoryKey: classifyCategory(node.name, path),
     });
   }
@@ -247,7 +279,7 @@ export default function ExtraStationPage() {
       link = document.createElement("link");
       link.id = cssId;
       link.rel = "stylesheet";
-      link.href = "/lector-codigos/extra-station.css?v=20261119-extra-img3";
+      link.href = "/lector-codigos/extra-station.css?v=20261119-extra-ref4";
       document.head.appendChild(link);
     }
     document.documentElement.classList.add(bodyClass);
@@ -386,15 +418,19 @@ export default function ExtraStationPage() {
       if (!productId || seen.has(productId)) continue;
       seen.add(productId);
       const fromCatalog = catalogById.get(productId);
-      out.push(
-        fromCatalog ?? {
+      if (fromCatalog) {
+        out.push(fromCatalog);
+      } else {
+        const img = resolveProductImage(node.name, node.image_url);
+        out.push({
           productId,
           nombre: node.name,
           precio: Number(node.price ?? 0),
-          imageUrl: resolveProductImage(node.name, node.image_url),
+          imageUrl: img.url,
+          imageFit: img.fit,
           categoryKey: classifyCategory(node.name, [node.name]),
-        },
-      );
+        });
+      }
     }
     // Si hay pocos frecuentes, completar con catálogo para llenar la grilla como en la referencia.
     if (out.length < 9) {
@@ -461,6 +497,7 @@ export default function ExtraStationPage() {
             nombre: producto.nombre,
             precio: producto.precio,
             imageUrl: producto.imageUrl,
+            imageFit: producto.imageFit,
             qty: 1,
           },
         ];
@@ -819,7 +856,9 @@ export default function ExtraStationPage() {
           <div className="extra-products">
             {productosTab.map((p) => (
               <article key={p.productId} className="extra-product">
-                <div className={`extra-product-img${p.imageUrl ? "" : " is-empty"}`}>
+                <div
+                  className={`extra-product-img fit-${p.imageFit}${p.imageUrl ? "" : " is-empty"}`}
+                >
                   {p.imageUrl ? (
                     <img
                       src={p.imageUrl}
@@ -828,9 +867,11 @@ export default function ExtraStationPage() {
                       onError={(e) => {
                         const fallback = resolveProductImage(p.nombre, null);
                         const el = e.currentTarget;
-                        if (fallback && el.src !== fallback && !el.dataset.fallback) {
+                        if (fallback.url && !el.dataset.fallback) {
                           el.dataset.fallback = "1";
-                          el.src = fallback;
+                          el.src = fallback.url;
+                          el.parentElement?.classList.remove("fit-cover", "fit-contain");
+                          el.parentElement?.classList.add(`fit-${fallback.fit}`);
                           return;
                         }
                         el.style.display = "none";
@@ -874,7 +915,11 @@ export default function ExtraStationPage() {
             {draft.map((line) => (
               <div key={line.productId} className="extra-order-row">
                 {line.imageUrl ? (
-                  <img src={line.imageUrl} alt="" />
+                  <img
+                    src={line.imageUrl}
+                    alt=""
+                    className={`thumb fit-${line.imageFit}`}
+                  />
                 ) : (
                   <span className="thumb-empty">—</span>
                 )}
