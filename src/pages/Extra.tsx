@@ -280,7 +280,7 @@ const Extra = () => {
         <div className="surface-glow px-3 py-2.5 sm:px-4 sm:py-3">
           <div className="relative flex items-center justify-between gap-2">
             <div className="min-w-0 flex items-center gap-2">
-              <h1 className="font-display text-lg font-bold text-foreground sm:text-xl">Extra</h1>
+              <h1 className="font-display text-lg font-bold text-foreground sm:text-xl">Órdenes extra</h1>
             </div>
             <div className="scrollbar-none -mx-1 flex shrink-0 gap-1.5 overflow-x-auto px-1 text-[11px] font-medium whitespace-nowrap">
               <span className="flex items-center gap-1 rounded-full border border-teal-200 bg-teal-50 px-2.5 py-0.5 text-teal-800 shadow-sm">
