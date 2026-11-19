@@ -40,7 +40,7 @@ import type {
 } from "./dominio/tipos";
 
 type Vista = "work" | "history" | "catalog";
-type FiltroOrden = "mesa" | "llevar";
+const PARA_LLEVAR_ID = "__para-llevar__";
 
 /** Temporalmente off: al avisar, poner en true para reactivar el auto-deseleccionado. */
 const IDLE_DESELECCION_ACTIVA = false;
@@ -59,7 +59,6 @@ export default function LectorCodigosPage() {
   const [mesaId, setMesaId] = useState<string | null>(null);
   const [ordenes, setOrdenes] = useState<OrdenAbierta[]>([]);
   const [ordenId, setOrdenId] = useState<string | null>(null);
-  const [filtroOrden, setFiltroOrden] = useState<FiltroOrden>("mesa");
   const [cargandoOrdenes, setCargandoOrdenes] = useState(false);
   const [pickerMesa, setPickerMesa] = useState<{
     mesa: MesaSucursal;
@@ -207,7 +206,7 @@ export default function LectorCodigosPage() {
       link = document.createElement("link");
       link.id = cssId;
       link.rel = "stylesheet";
-      link.href = "/lector-codigos/styles.css?v=20261118-cleanup";
+      link.href = "/lector-codigos/styles.css?v=20261118-llevar-card";
       document.head.appendChild(link);
     }
     document.documentElement.classList.add(bodyClass);
@@ -371,18 +370,76 @@ export default function LectorCodigosPage() {
     [ordenes],
   );
 
+  const totalLlevar = useMemo(
+    () => ordenesLlevar.reduce((sum, o) => sum + (o.saldo > 0 ? o.saldo : o.total), 0),
+    [ordenesLlevar],
+  );
+
+  const llevarSeleccionado =
+    !mesaId && Boolean(ordenId) && ordenesLlevar.some((o) => o.id === ordenId);
+
   const aplicarOrdenMesa = (m: MesaSucursal, ordenIdElegida: string | null) => {
     marcarActividad();
     setPickerMesa(null);
-    setMesaId(m.id);
     setErrorScan(null);
     setUltimoProductoId(null);
+
+    if (m.id === PARA_LLEVAR_ID) {
+      setMesaId(null);
+      setOrdenId(ordenIdElegida);
+      if (!ordenIdElegida) {
+        setErrorScan("No hay órdenes para llevar abiertas.");
+      }
+      return;
+    }
+
+    setMesaId(m.id);
     if (ordenIdElegida) {
       setOrdenId(ordenIdElegida);
     } else {
       setOrdenId(null);
       setErrorScan("Esta mesa está libre. Ábrela en el POS antes de escanear.");
     }
+  };
+
+  const seleccionarParaLlevar = () => {
+    marcarActividad();
+    const candidatas: OrdenEnMesa[] = ordenesLlevar.map((o) => ({
+      id: o.id,
+      codigo: o.codigo,
+      total: o.saldo > 0 ? o.saldo : o.total,
+    }));
+
+    if (!candidatas.length) {
+      setMesaId(null);
+      setOrdenId(null);
+      setErrorScan("No hay órdenes para llevar abiertas.");
+      return;
+    }
+
+    if (candidatas.length === 1) {
+      setMesaId(null);
+      setOrdenId(candidatas[0].id);
+      setErrorScan(null);
+      setUltimoProductoId(null);
+      return;
+    }
+
+    setPickerMesa({
+      mesa: {
+        id: PARA_LLEVAR_ID,
+        nombre: "Para llevar",
+        orden_visual: 0,
+        estado: "ocupada",
+        id_orden_activa: candidatas[0].id,
+        total_pendiente: totalLlevar,
+        ordenes: candidatas,
+        cantidad_ordenes: candidatas.length,
+        especial: false,
+        creado_por: null,
+      },
+      ordenes: candidatas,
+    });
   };
 
   const seleccionarMesa = (m: MesaSucursal) => {
@@ -713,155 +770,116 @@ export default function LectorCodigosPage() {
           {vista === "work" && (
             <section>
               <div className="work-grid">
-                <section
-                  className="panel order-panel"
-                  aria-label={filtroOrden === "mesa" ? "Mesas" : "Para llevar"}
-                >
-                  <div className="filter-tabs" aria-label="Filtrar">
-                    {(
-                      [
-                        ["mesa", "Mesas"],
-                        ["llevar", "Para llevar"],
-                      ] as const
-                    ).map(([id, label]) => (
-                      <button
-                        key={id}
-                        type="button"
-                        className={filtroOrden === id ? "active" : ""}
-                        onClick={() => {
-                          setFiltroOrden(id);
-                          setMesaId(null);
-                          setOrdenId(null);
-                          setErrorScan(null);
-                        }}
-                      >
-                        {label}
-                      </button>
-                    ))}
+                <section className="panel order-panel" aria-label="Mesas y para llevar">
+                  <div className="mesa-grid">
+                    <button
+                      type="button"
+                      className={`mesa-tile para-llevar ${ordenesLlevar.length ? "estado-ocupada" : "estado-libre"} ${
+                        llevarSeleccionado ? "selected" : ""
+                      } ${totalLlevar > 0 ? "con-total" : ""}`}
+                      onClick={seleccionarParaLlevar}
+                    >
+                      {ordenesLlevar.length > 0 && (
+                        <span className="mesa-orders-badge">
+                          {ordenesLlevar.length}{" "}
+                          {ordenesLlevar.length === 1 ? "orden" : "ordenes"}
+                        </span>
+                      )}
+                      <span className="mesa-badge">PL</span>
+                      <span className="mesa-art">
+                        <Icono name="bag" />
+                      </span>
+                      <span className="mesa-status">
+                        <Icono name="bag" />
+                        <span>Para llevar</span>
+                      </span>
+                      {ordenesLlevar.length === 0 ? (
+                        <span className="mesa-ready">Sin órdenes</span>
+                      ) : null}
+                      {totalLlevar > 0 && (
+                        <span className="mesa-total">{dineroMesa(totalLlevar)}</span>
+                      )}
+                    </button>
+
+                    {mesasFiltradas.map((m) => {
+                      const selected = m.id === mesaId;
+                      const badge = m.nombre.replace(/^Mesa\s*/i, "").trim() || m.nombre;
+                      const libre = m.estado === "libre";
+                      const label = libre ? "Libre" : m.estado === "por_cobrar" ? "Por pagar" : "Ocupada";
+                      const artIcon = libre ? "grid" : m.estado === "por_cobrar" ? "dollar" : "users";
+                      const statusIcon = libre ? null : m.estado === "por_cobrar" ? "dollar" : "users";
+                      // Misma lógica de totales visibles que MesasV2.
+                      const moneySplits = m.ordenes.filter((o) => o.total > 0);
+                      const visibleSplits =
+                        moneySplits.length > 0 && moneySplits.length <= 2 ? moneySplits.slice(0, 2) : [];
+                      const showSingleTotal = m.total_pendiente > 0 && visibleSplits.length === 0;
+                      return (
+                        <button
+                          key={m.id}
+                          type="button"
+                          className={`mesa-tile estado-${m.estado} ${selected ? "selected" : ""} ${
+                            showSingleTotal || visibleSplits.length > 0 ? "con-total" : ""
+                          }`}
+                          disabled={libre}
+                          aria-disabled={libre}
+                          title={libre ? "Mesa desocupada: ábrela en el POS" : undefined}
+                          onClick={() => {
+                            if (libre) return;
+                            seleccionarMesa(m);
+                          }}
+                        >
+                          {!libre && m.especial && (
+                            <span className="mesa-orders-badge especial">
+                              {m.cantidad_ordenes > 1
+                                ? `${m.cantidad_ordenes} ordenes · Esp.`
+                                : "Especial"}
+                            </span>
+                          )}
+                          {!libre && !m.especial && m.cantidad_ordenes > 0 && (
+                            <span className="mesa-orders-badge">
+                              {m.cantidad_ordenes}{" "}
+                              {m.cantidad_ordenes === 1 ? "orden" : "ordenes"}
+                            </span>
+                          )}
+                          <span className="mesa-badge">{badge}</span>
+                          <span className="mesa-art">
+                            <Icono name={artIcon} />
+                          </span>
+                          <span className="mesa-status">
+                            {statusIcon && <Icono name={statusIcon} />}
+                            <span>{label}</span>
+                          </span>
+                          {!libre && m.creado_por && (
+                            <span className="mesa-creator">
+                              <Icono name="user" />
+                              <span>{m.creado_por}</span>
+                            </span>
+                          )}
+                          {libre && (
+                            <span className="mesa-ready">
+                              Desocupada
+                            </span>
+                          )}
+                          {showSingleTotal && (
+                            <span className="mesa-total">{dineroMesa(m.total_pendiente)}</span>
+                          )}
+                          {visibleSplits[0] && (
+                            <span className="mesa-total mesa-total-split-a">
+                              {dineroMesa(visibleSplits[0].total)}
+                            </span>
+                          )}
+                          {visibleSplits[1] && (
+                            <span className="mesa-total mesa-total-split-b">
+                              {dineroMesa(visibleSplits[1].total)}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                    {!mesasFiltradas.length && !cargandoOrdenes && (
+                      <div className="no-orders">No hay mesas habilitadas en esta sucursal.</div>
+                    )}
                   </div>
-                  {filtroOrden === "mesa" ? (
-                    <div className="mesa-grid">
-                      {mesasFiltradas.map((m) => {
-                        const selected = m.id === mesaId;
-                        const badge = m.nombre.replace(/^Mesa\s*/i, "").trim() || m.nombre;
-                        const libre = m.estado === "libre";
-                        const label = libre ? "Libre" : m.estado === "por_cobrar" ? "Por pagar" : "Ocupada";
-                        const artIcon = libre ? "grid" : m.estado === "por_cobrar" ? "dollar" : "users";
-                        const statusIcon = libre ? null : m.estado === "por_cobrar" ? "dollar" : "users";
-                        // Misma lógica de totales visibles que MesasV2.
-                        const moneySplits = m.ordenes.filter((o) => o.total > 0);
-                        const visibleSplits =
-                          moneySplits.length > 0 && moneySplits.length <= 2 ? moneySplits.slice(0, 2) : [];
-                        const showSingleTotal = m.total_pendiente > 0 && visibleSplits.length === 0;
-                        return (
-                          <button
-                            key={m.id}
-                            type="button"
-                            className={`mesa-tile estado-${m.estado} ${selected ? "selected" : ""} ${
-                              showSingleTotal || visibleSplits.length > 0 ? "con-total" : ""
-                            }`}
-                            disabled={libre}
-                            aria-disabled={libre}
-                            title={libre ? "Mesa desocupada: ábrela en el POS" : undefined}
-                            onClick={() => {
-                              if (libre) return;
-                              seleccionarMesa(m);
-                            }}
-                          >
-                            {!libre && m.especial && (
-                              <span className="mesa-orders-badge especial">
-                                {m.cantidad_ordenes > 1
-                                  ? `${m.cantidad_ordenes} ordenes · Esp.`
-                                  : "Especial"}
-                              </span>
-                            )}
-                            {!libre && !m.especial && m.cantidad_ordenes > 0 && (
-                              <span className="mesa-orders-badge">
-                                {m.cantidad_ordenes}{" "}
-                                {m.cantidad_ordenes === 1 ? "orden" : "ordenes"}
-                              </span>
-                            )}
-                            <span className="mesa-badge">{badge}</span>
-                            <span className="mesa-art">
-                              <Icono name={artIcon} />
-                            </span>
-                            <span className="mesa-status">
-                              {statusIcon && <Icono name={statusIcon} />}
-                              <span>{label}</span>
-                            </span>
-                            {!libre && m.creado_por && (
-                              <span className="mesa-creator">
-                                <Icono name="user" />
-                                <span>{m.creado_por}</span>
-                              </span>
-                            )}
-                            {libre && (
-                              <span className="mesa-ready">
-                                Desocupada
-                              </span>
-                            )}
-                            {showSingleTotal && (
-                              <span className="mesa-total">{dineroMesa(m.total_pendiente)}</span>
-                            )}
-                            {visibleSplits[0] && (
-                              <span className="mesa-total mesa-total-split-a">
-                                {dineroMesa(visibleSplits[0].total)}
-                              </span>
-                            )}
-                            {visibleSplits[1] && (
-                              <span className="mesa-total mesa-total-split-b">
-                                {dineroMesa(visibleSplits[1].total)}
-                              </span>
-                            )}
-                          </button>
-                        );
-                      })}
-                      {!mesasFiltradas.length && !cargandoOrdenes && (
-                        <div className="no-orders">No hay mesas habilitadas en esta sucursal.</div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="order-list">
-                      {ordenesLlevar.map((o) => {
-                        const selected = o.id === ordenId;
-                        return (
-                          <button
-                            key={o.id}
-                            type="button"
-                            className={`order-card ${selected ? "selected" : ""}`}
-                            onClick={() => {
-                              marcarActividad();
-                              setMesaId(null);
-                              setOrdenId(o.id);
-                              setErrorScan(null);
-                              setUltimoProductoId(null);
-                            }}
-                          >
-                            <div className="order-card-head">
-                              <span className="order-type-icon takeaway">
-                                <Icono name="bag" />
-                              </span>
-                              <div>
-                                <strong>{etiquetaOrden(o)}</strong>
-                                <span className="order-number">{o.cliente || "Para llevar"}</span>
-                              </div>
-                              <span className="order-time">{formatearHora(o.creada_en)}</span>
-                            </div>
-                            <div className="order-card-bottom">
-                              <span className={`order-status ${o.saldo <= 0.009 ? "paid" : ""}`}>
-                                <i />
-                                {etiquetaPago(o.saldo, o.estado)}
-                              </span>
-                              <strong>{dinero(o.total)}</strong>
-                            </div>
-                          </button>
-                        );
-                      })}
-                      {!ordenesLlevar.length && !cargandoOrdenes && (
-                        <div className="no-orders">No hay órdenes para llevar abiertas.</div>
-                      )}
-                    </div>
-                  )}
                 </section>
 
                 <div className="working-column">

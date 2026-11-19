@@ -378,6 +378,23 @@ html.lector-codigos-active{--forest:#164d41;--deep:#102f2a;--text:#213d36;--mute
   height:auto;
   min-height:0;
 }
+.mesa-tile.para-llevar,
+.mesa-tile.para-llevar.estado-ocupada{
+  border-color:rgba(249,115,22,.45);
+  color:#c2410c;
+  background:linear-gradient(to bottom right,#fff7ed,#fff,#ffedd5);
+}
+.mesa-tile.para-llevar .mesa-badge{
+  border-color:#fdba74;background:#ffedd5;color:#c2410c;
+}
+.mesa-tile.para-llevar .mesa-art{
+  border-color:#fed7aa;
+  background:linear-gradient(to bottom right,#f97316,#fb923c,#fdba74);
+}
+.mesa-tile.para-llevar.selected{
+  border-color:#e8a070;
+  background:linear-gradient(160deg,#f5d5b8 0%,#fff0e0 45%,#fde7c8 100%);
+}
 
 @media(max-width:720px){
   .mesa-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;width:100%}
