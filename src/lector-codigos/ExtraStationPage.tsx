@@ -18,6 +18,14 @@ import {
   listarOrdenesAbiertas,
   obtenerSucursalActiva,
 } from "./dominio/api";
+import {
+  esChifle,
+  esJugo,
+  FILA_MARCAS_COCA,
+  FILA_MARCAS_PEPSI,
+  FILA_OTRAS,
+  normalizarNombreProducto,
+} from "./dominio/atajosLayout";
 import { dinero, etiquetaTipoOrden, nuevoIdOperacion } from "./dominio/formato";
 import type {
   MesaSucursal,
@@ -27,6 +35,7 @@ import type {
 } from "./dominio/tipos";
 
 const PARA_LLEVAR_ID = "__para-llevar__";
+const MARCAS_IMAGEN = [...FILA_MARCAS_COCA, ...FILA_MARCAS_PEPSI, ...FILA_OTRAS];
 type CategoriaTab = "frecuentes" | "bebidas" | "jugos" | "otros";
 
 type CatalogProduct = {
@@ -61,12 +70,26 @@ function normCat(name: string) {
     .trim();
 }
 
-function classifyCategory(pathNames: string[]): Exclude<CategoriaTab, "frecuentes"> {
-  const joined = pathNames.map(normCat).join(" / ");
-  if (joined.includes("plato")) return "otros";
-  if (joined.includes("jugo") || joined.includes("batido") || joined.includes("natural")) {
-    return "jugos";
+/** Foto grande: marca local > chifle > image_url del menú. */
+function resolveProductImage(nombre: string, imageUrl: string | null | undefined): string | null {
+  const n = normalizarNombreProducto(nombre);
+  if (esChifle(nombre)) return "/lector-codigos/marcas/chifle.jpg";
+  for (const marca of MARCAS_IMAGEN) {
+    if (marca.match(n)) return marca.logo;
   }
+  const raw = String(imageUrl ?? "").trim();
+  return raw || null;
+}
+
+function classifyCategory(
+  nombre: string,
+  pathNames: string[],
+): Exclude<CategoriaTab, "frecuentes"> {
+  if (esJugo(nombre)) return "jugos";
+  if (esChifle(nombre)) return "otros";
+
+  const n = normalizarNombreProducto(nombre);
+  const joined = `${pathNames.map(normCat).join(" / ")} ${n}`;
   if (
     joined.includes("bebida")
     || joined.includes("gaseosa")
@@ -74,8 +97,16 @@ function classifyCategory(pathNames: string[]): Exclude<CategoriaTab, "frecuente
     || joined.includes("cerveza")
     || joined.includes("agua")
     || joined.includes("cola")
+    || joined.includes("coca")
+    || joined.includes("pepsi")
+    || joined.includes("fanta")
+    || joined.includes("sprite")
+    || joined.includes("inca")
   ) {
     return "bebidas";
+  }
+  if (joined.includes("jugo") || joined.includes("batido") || joined.includes("natural")) {
+    return "jugos";
   }
   return "otros";
 }
@@ -121,12 +152,13 @@ function buildCatalog(nodes: MenuNode[]): CatalogProduct[] {
     const productId = resolveMenuNodeProductId(node);
     if (!productId || seen.has(productId)) continue;
     seen.add(productId);
+    const path = pathNames(node);
     out.push({
       productId,
       nombre: node.name,
       precio: Number(node.price ?? 0),
-      imageUrl: node.image_url ?? null,
-      categoryKey: classifyCategory(pathNames(node)),
+      imageUrl: resolveProductImage(node.name, node.image_url),
+      categoryKey: classifyCategory(node.name, path),
     });
   }
 
@@ -212,7 +244,7 @@ export default function ExtraStationPage() {
       link = document.createElement("link");
       link.id = cssId;
       link.rel = "stylesheet";
-      link.href = "/lector-codigos/extra-station.css?v=20261119-extra-ui";
+      link.href = "/lector-codigos/extra-station.css?v=20261119-extra-ui2";
       document.head.appendChild(link);
     }
     document.documentElement.classList.add(bodyClass);
@@ -356,13 +388,22 @@ export default function ExtraStationPage() {
           productId,
           nombre: node.name,
           precio: Number(node.price ?? 0),
-          imageUrl: node.image_url ?? null,
-          categoryKey: "otros",
+          imageUrl: resolveProductImage(node.name, node.image_url),
+          categoryKey: classifyCategory(node.name, [node.name]),
         },
       );
     }
+    // Si hay pocos frecuentes, completar con catálogo para llenar la grilla como en la referencia.
+    if (out.length < 9) {
+      for (const p of catalog) {
+        if (seen.has(p.productId)) continue;
+        seen.add(p.productId);
+        out.push(p);
+        if (out.length >= 18) break;
+      }
+    }
     return out;
-  }, [frequentQuery.data, catalogById]);
+  }, [frequentQuery.data, catalogById, catalog]);
 
   const productosTab = useMemo(() => {
     const q = busqueda.trim().toLowerCase();
@@ -775,8 +816,12 @@ export default function ExtraStationPage() {
           <div className="extra-products">
             {productosTab.map((p) => (
               <article key={p.productId} className="extra-product">
-                <div className="extra-product-img">
-                  {p.imageUrl ? <img src={p.imageUrl} alt="" /> : <span>Sin foto</span>}
+                <div className={`extra-product-img${p.imageUrl ? "" : " is-empty"}`}>
+                  {p.imageUrl ? (
+                    <img src={p.imageUrl} alt="" loading="lazy" />
+                  ) : (
+                    <span>{p.nombre.slice(0, 1)}</span>
+                  )}
                 </div>
                 <div className="extra-product-name">{p.nombre}</div>
                 <button
