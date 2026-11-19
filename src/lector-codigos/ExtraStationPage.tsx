@@ -70,15 +70,18 @@ function normCat(name: string) {
     .trim();
 }
 
-/** Foto grande: marca local > chifle > image_url del menú. */
+/** Foto del menú si existe; si no, marca/chifle local. */
 function resolveProductImage(nombre: string, imageUrl: string | null | undefined): string | null {
-  const n = normalizarNombreProducto(nombre);
+  const raw = String(imageUrl ?? "").trim();
+  if (raw) return raw;
+
   if (esChifle(nombre)) return "/lector-codigos/marcas/chifle.jpg";
+
+  const n = normalizarNombreProducto(nombre);
   for (const marca of MARCAS_IMAGEN) {
     if (marca.match(n)) return marca.logo;
   }
-  const raw = String(imageUrl ?? "").trim();
-  return raw || null;
+  return null;
 }
 
 function classifyCategory(
@@ -244,7 +247,7 @@ export default function ExtraStationPage() {
       link = document.createElement("link");
       link.id = cssId;
       link.rel = "stylesheet";
-      link.href = "/lector-codigos/extra-station.css?v=20261119-extra-ui2";
+      link.href = "/lector-codigos/extra-station.css?v=20261119-extra-img3";
       document.head.appendChild(link);
     }
     document.documentElement.classList.add(bodyClass);
@@ -818,7 +821,22 @@ export default function ExtraStationPage() {
               <article key={p.productId} className="extra-product">
                 <div className={`extra-product-img${p.imageUrl ? "" : " is-empty"}`}>
                   {p.imageUrl ? (
-                    <img src={p.imageUrl} alt="" loading="lazy" />
+                    <img
+                      src={p.imageUrl}
+                      alt=""
+                      loading="lazy"
+                      onError={(e) => {
+                        const fallback = resolveProductImage(p.nombre, null);
+                        const el = e.currentTarget;
+                        if (fallback && el.src !== fallback && !el.dataset.fallback) {
+                          el.dataset.fallback = "1";
+                          el.src = fallback;
+                          return;
+                        }
+                        el.style.display = "none";
+                        el.parentElement?.classList.add("is-empty");
+                      }}
+                    />
                   ) : (
                     <span>{p.nombre.slice(0, 1)}</span>
                   )}
