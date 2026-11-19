@@ -22,7 +22,6 @@ import {
   dineroMesa,
   esCodigoBarrasValido,
   etiquetaOrden,
-  etiquetaPago,
   etiquetaTipoOrden,
   formatearHora,
   normalizarCodigo,
