@@ -664,6 +664,12 @@ export default function ExtraStationPage() {
     [draft],
   );
 
+  /** Total mesa + extras en borrador (se actualiza al ir agregando). */
+  const totalEncabezado = useMemo(
+    () => Math.round((totalMesaSeleccionada + totalDraft) * 100) / 100,
+    [totalMesaSeleccionada, totalDraft],
+  );
+
   const mesaLibreSeleccionada = Boolean(mesaActiva && mesaActiva.estado === "libre");
 
   const limpiarDraft = () => {
@@ -1227,7 +1233,7 @@ export default function ExtraStationPage() {
           <div className="extra-orders-head">
             <span>{tituloPedidos}</span>
             {mesaActiva && ordenActiva ? (
-              <strong className="extra-orders-head-total">{dinero(totalMesaSeleccionada)}</strong>
+              <strong className="extra-orders-head-total">{dinero(totalEncabezado)}</strong>
             ) : (
               <span aria-hidden>+</span>
             )}
