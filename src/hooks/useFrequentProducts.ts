@@ -53,25 +53,32 @@ export async function fetchFrequentProducts(
 const DISPLAY_ORDER_STAGING_OFFSET = 100_000;
 
 async function applyDisplayOrders(branchId: string, context: FrequentProductContext, orderedIds: string[]) {
-  for (let index = 0; index < orderedIds.length; index++) {
-    const { error } = await supabase
-      .from("extra_frequent_products" as any)
-      .update({ display_order: DISPLAY_ORDER_STAGING_OFFSET + index + 1 })
-      .eq("id", orderedIds[index])
-      .eq("branch_id", branchId)
-      .eq("context", context);
-    if (error) throw error;
-  }
+  // Dos fases en paralelo: evita choques de unique(display_order) sin N×2 round-trips secuenciales.
+  const stageResults = await Promise.all(
+    orderedIds.map((id, index) =>
+      supabase
+        .from("extra_frequent_products" as any)
+        .update({ display_order: DISPLAY_ORDER_STAGING_OFFSET + index + 1 })
+        .eq("id", id)
+        .eq("branch_id", branchId)
+        .eq("context", context),
+    ),
+  );
+  const stageError = stageResults.find((r) => r.error)?.error;
+  if (stageError) throw stageError;
 
-  for (let index = 0; index < orderedIds.length; index++) {
-    const { error } = await supabase
-      .from("extra_frequent_products" as any)
-      .update({ display_order: index + 1 })
-      .eq("id", orderedIds[index])
-      .eq("branch_id", branchId)
-      .eq("context", context);
-    if (error) throw error;
-  }
+  const finalResults = await Promise.all(
+    orderedIds.map((id, index) =>
+      supabase
+        .from("extra_frequent_products" as any)
+        .update({ display_order: index + 1 })
+        .eq("id", id)
+        .eq("branch_id", branchId)
+        .eq("context", context),
+    ),
+  );
+  const finalError = finalResults.find((r) => r.error)?.error;
+  if (finalError) throw finalError;
 }
 
 export function useFrequentProducts(
@@ -145,7 +152,28 @@ export function useFrequentProducts(
       if (!branchId) throw new Error("No hay sucursal activa");
       await applyDisplayOrders(branchId, context, orderedIds);
     },
-    onSuccess: invalidate,
+    onMutate: async (orderedIds) => {
+      const key = getFrequentProductsQueryKey(branchId, context);
+      await queryClient.cancelQueries({ queryKey: key });
+      const previous = queryClient.getQueryData<FrequentProductRow[]>(key);
+      if (previous) {
+        const byId = new Map(previous.map((row) => [row.id, row]));
+        const next = orderedIds
+          .map((id, index) => {
+            const row = byId.get(id);
+            return row ? { ...row, display_order: index + 1 } : null;
+          })
+          .filter((row): row is FrequentProductRow => Boolean(row));
+        queryClient.setQueryData(key, next);
+      }
+      return { previous, key };
+    },
+    onError: (_error, _orderedIds, contextData) => {
+      if (contextData?.previous && contextData.key) {
+        queryClient.setQueryData(contextData.key, contextData.previous);
+      }
+    },
+    onSettled: invalidate,
   });
 
   return {
