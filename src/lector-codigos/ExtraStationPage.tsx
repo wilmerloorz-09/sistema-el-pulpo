@@ -310,7 +310,7 @@ export default function ExtraStationPage() {
       link = document.createElement("link");
       link.id = cssId;
       link.rel = "stylesheet";
-      link.href = "/lector-codigos/extra-station.css?v=20261120-extra-marca-all-bodega";
+      link.href = "/lector-codigos/extra-station.css?v=20261120-extra-brand-bigger";
       document.head.appendChild(link);
     }
     document.documentElement.classList.add(bodyClass);
