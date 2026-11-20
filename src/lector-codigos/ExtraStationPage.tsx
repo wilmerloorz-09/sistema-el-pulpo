@@ -1206,7 +1206,7 @@ export default function ExtraStationPage() {
                   {menuQuery.isLoading || frequentQuery.isLoading || stockVendibleQuery.isLoading
                     ? "Cargando productos…"
                     : tab === "frecuentes"
-                      ? "No hay frecuentes de Extra con stock disponible."
+                      ? "No hay frecuentes de Extra con stock en bodega sucursal."
                       : tab === "jugos"
                         ? "No hay jugos en el menú."
                         : tab === "varios"
