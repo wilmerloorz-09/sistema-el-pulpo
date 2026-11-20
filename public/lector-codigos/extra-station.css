@@ -885,26 +885,26 @@ html.extra-station-active body {
 }
 
 .extra-freq-item.is-listed {
-  grid-template-columns: 40px minmax(0, 1fr) 28px 28px;
+  grid-template-columns: 40px minmax(0, 1fr) auto 28px;
   cursor: default;
 }
 
 .extra-freq-move {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  flex-direction: row;
+  gap: 4px;
   align-items: center;
 }
 
 .extra-freq-move .move-btn {
   width: 26px;
-  height: 18px;
+  height: 26px;
   padding: 0;
   border: 1px solid #b7c6ba;
-  border-radius: 5px;
+  border-radius: 6px;
   background: #f3f7f3;
   color: #1f4d33;
-  font-size: 9px;
+  font-size: 11px;
   line-height: 1;
   display: grid;
   place-items: center;
