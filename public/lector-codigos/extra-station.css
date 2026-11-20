@@ -21,8 +21,8 @@ html.extra-station-active body {
   --red: #e74c3c;
   --red-soft: #fdecea;
   --mesa-h: 92px;
-  --prod-img: 90px;
-  --prod-name: 44px;
+  --prod-img: 88px;
+  --prod-name: 48px;
   --prod-btn: 34px;
   box-sizing: border-box;
   display: flex;
@@ -432,7 +432,7 @@ html.extra-station-active body {
 .extra-product-name {
   height: var(--prod-name);
   padding: 5px 8px 0;
-  font-size: 14px;
+  font-size: 15.5px;
   font-weight: 800;
   line-height: 1.2;
   color: #1a2e24;
@@ -650,8 +650,8 @@ html.extra-station-active body {
 
   .extra-station {
     --mesa-h: 84px;
-    --prod-img: 86px;
-    --prod-name: 42px;
+    --prod-img: 84px;
+    --prod-name: 46px;
     --prod-btn: 34px;
   }
 
@@ -670,7 +670,7 @@ html.extra-station-active body {
   }
 
   .extra-product-name {
-    font-size: 13px;
+    font-size: 14.5px;
   }
 
   .extra-product-add {
