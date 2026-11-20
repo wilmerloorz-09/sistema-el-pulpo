@@ -348,7 +348,7 @@ export default function ExtraStationPage() {
       link = document.createElement("link");
       link.id = cssId;
       link.rel = "stylesheet";
-      link.href = "/lector-codigos/extra-station.css?v=20261120-extra-order-controls";
+      link.href = "/lector-codigos/extra-station.css?v=20261120-extra-order-stepper";
       document.head.appendChild(link);
     }
     document.documentElement.classList.add(bodyClass);
@@ -1291,25 +1291,27 @@ export default function ExtraStationPage() {
                   >
                     <Icono name="trash" />
                   </button>
-                  <button
-                    type="button"
-                    className="extra-order-step"
-                    aria-label={`Sumar ${line.nombre}`}
-                    disabled={registrando}
-                    onClick={() => void ajustarCantidadDraft(line.productId, 1)}
-                  >
-                    +
-                  </button>
-                  <span className="extra-order-qty">{line.qty}</span>
-                  <button
-                    type="button"
-                    className="extra-order-step"
-                    aria-label={`Restar ${line.nombre}`}
-                    disabled={registrando || line.qty <= 0}
-                    onClick={() => void ajustarCantidadDraft(line.productId, -1)}
-                  >
-                    −
-                  </button>
+                  <div className="extra-order-stepper">
+                    <button
+                      type="button"
+                      className="extra-order-step"
+                      aria-label={`Restar ${line.nombre}`}
+                      disabled={registrando || line.qty <= 0}
+                      onClick={() => void ajustarCantidadDraft(line.productId, -1)}
+                    >
+                      −
+                    </button>
+                    <span className="extra-order-qty">{line.qty}</span>
+                    <button
+                      type="button"
+                      className="extra-order-step"
+                      aria-label={`Sumar ${line.nombre}`}
+                      disabled={registrando}
+                      onClick={() => void ajustarCantidadDraft(line.productId, 1)}
+                    >
+                      +
+                    </button>
+                  </div>
                 </div>
                 {line.imageUrl ? (
                   <img
