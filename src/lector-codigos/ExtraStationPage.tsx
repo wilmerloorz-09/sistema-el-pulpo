@@ -664,11 +664,8 @@ export default function ExtraStationPage() {
     [draft],
   );
 
-  /** Total mesa + extras en borrador (se actualiza al ir agregando). */
-  const totalEncabezado = useMemo(
-    () => Math.round((totalMesaSeleccionada + totalDraft) * 100) / 100,
-    [totalMesaSeleccionada, totalDraft],
-  );
+  /** Total de la mesa (incluye extras ya registrados/despachados). */
+  const totalEncabezado = totalMesaSeleccionada;
 
   const mesaLibreSeleccionada = Boolean(mesaActiva && mesaActiva.estado === "libre");
 
@@ -677,7 +674,11 @@ export default function ExtraStationPage() {
     setErrorMsg(null);
   };
 
-  const agregarAlDraft = (producto: CatalogProduct) => {
+  const quitarLineaDraft = (productId: string) => {
+    setDraft((prev) => prev.filter((l) => l.productId !== productId));
+  };
+
+  const registrarProductoInmediato = async (producto: CatalogProduct) => {
     if (!tieneStockBodega(producto.productId)) {
       setErrorMsg(`Sin stock en bodega: ${producto.nombre}`);
       return;
@@ -690,30 +691,52 @@ export default function ExtraStationPage() {
       );
       return;
     }
+    if (registrando) return;
+
+    setRegistrando(true);
     setErrorMsg(null);
-    setDraft((prev) => {
-      const idx = prev.findIndex((l) => l.productId === producto.productId);
-      if (idx < 0) {
-        return [
-          ...prev,
-          {
-            productId: producto.productId,
-            nombre: producto.nombre,
-            precio: producto.precio,
-            imageUrl: producto.imageUrl,
-            imageFit: producto.imageFit,
-            qty: 1,
-          },
-        ];
-      }
-      const next = [...prev];
-      next[idx] = { ...next[idx], qty: next[idx].qty + 1 };
-      return next;
-    });
+    try {
+      await agregarPorCodigo({
+        idOperacion: nuevoIdOperacion(),
+        idOrden: ordenActiva.id,
+        codigo: null,
+        idProducto: producto.productId,
+        cantidad: 1,
+        fuente: "extra",
+      });
+
+      setDraft((prev) => {
+        const idx = prev.findIndex((l) => l.productId === producto.productId);
+        if (idx < 0) {
+          return [
+            ...prev,
+            {
+              productId: producto.productId,
+              nombre: producto.nombre,
+              precio: producto.precio,
+              imageUrl: producto.imageUrl,
+              imageFit: producto.imageFit,
+              qty: 1,
+            },
+          ];
+        }
+        const next = [...prev];
+        next[idx] = { ...next[idx], qty: next[idx].qty + 1 };
+        return next;
+      });
+
+      await refrescarOrdenes();
+      void stockBodegaQuery.refetch();
+      void stockVendibleQuery.refetch();
+    } catch (e: any) {
+      setErrorMsg(e?.message || "No se pudo agregar el producto a la orden.");
+    } finally {
+      setRegistrando(false);
+    }
   };
 
-  const quitarLineaDraft = (productId: string) => {
-    setDraft((prev) => prev.filter((l) => l.productId !== productId));
+  const agregarAlDraft = (producto: CatalogProduct) => {
+    void registrarProductoInmediato(producto);
   };
 
   const abrirMarcaBebida = (marca: MarcaAtajo, productos: CatalogProduct[]) => {
@@ -873,42 +896,6 @@ export default function ExtraStationPage() {
     }
 
     aplicarOrdenMesa(m, candidatas[0]?.id ?? null);
-  };
-
-  const registrarExtras = async () => {
-    if (!sucursal || !ordenActiva) {
-      setErrorMsg(
-        mesaLibreSeleccionada
-          ? "Esta mesa está libre. Ábrela en el POS antes de registrar."
-          : "Selecciona una mesa u orden abierta.",
-      );
-      return;
-    }
-    if (!draft.length) {
-      setErrorMsg("Agrega productos antes de registrar.");
-      return;
-    }
-
-    setRegistrando(true);
-    setErrorMsg(null);
-    try {
-      for (const line of draft) {
-        await agregarPorCodigo({
-          idOperacion: nuevoIdOperacion(),
-          idOrden: ordenActiva.id,
-          codigo: null,
-          idProducto: line.productId,
-          cantidad: line.qty,
-          fuente: "extra",
-        });
-      }
-      setDraft([]);
-      await refrescarOrdenes();
-    } catch (e: any) {
-      setErrorMsg(e?.message || "No se pudieron registrar los extras.");
-    } finally {
-      setRegistrando(false);
-    }
   };
 
   if (authLoading || cargandoSucursales) {
@@ -1270,14 +1257,16 @@ export default function ExtraStationPage() {
             {!draft.length ? (
               <div className="extra-empty-orders">
                 {ordenActiva
-                  ? "Toca un producto para armar el pedido extra."
+                  ? registrando
+                    ? "Registrando y despachando…"
+                    : "Toca un producto para agregarlo despachado a la orden."
                   : "Selecciona una mesa u orden abierta."}
               </div>
             ) : null}
           </div>
 
           <div className="extra-total-bar">
-            <span>Total Extras:</span>
+            <span>Extras de esta sesión:</span>
             <strong>{dinero(totalDraft)}</strong>
           </div>
 
@@ -1291,24 +1280,10 @@ export default function ExtraStationPage() {
               <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
                 <path d="M9 3h6l1 2h5v2H3V5h5l1-2Zm1 6h2v10h-2V9Zm4 0h2v10h-2V9ZM7 9h2v10H7V9Z" />
               </svg>
-              Limpiar
+              Limpiar lista
             </button>
-            <button
-              type="button"
-              className="extra-btn-register"
-              disabled={!draft.length || !ordenActiva || registrando}
-              onClick={() => void registrarExtras()}
-            >
-              {registrando ? (
-                "Registrando…"
-              ) : (
-                <>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-                    <path d="M9.2 16.6 4.8 12.2l1.4-1.4 3 3 8-8 1.4 1.4-9.4 9.4Z" />
-                  </svg>
-                  Registrar Extras
-                </>
-              )}
+            <button type="button" className="extra-btn-register" disabled>
+              {registrando ? "Despachando…" : "Auto-despachado"}
             </button>
           </div>
         </section>
@@ -1415,8 +1390,8 @@ export default function ExtraStationPage() {
                     disabled={sinBodega}
                     onClick={() => {
                       if (sinBodega) return;
-                      agregarAlDraft(p);
                       setMarcaPicker(null);
+                      void registrarProductoInmediato(p);
                     }}
                     aria-label={
                       sinBodega ? `${p.nombre} sin stock en bodega` : `Agregar ${p.nombre}`
