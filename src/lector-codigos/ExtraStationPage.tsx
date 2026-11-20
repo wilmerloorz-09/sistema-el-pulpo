@@ -45,7 +45,7 @@ import type {
 const PARA_LLEVAR_ID = "__para-llevar__";
 const MARCAS_IMAGEN = [...FILA_MARCAS_COCA, ...FILA_MARCAS_PEPSI, ...FILA_OTRAS];
 const MARCAS_COCA_PEPSI = [...FILA_MARCAS_COCA, ...FILA_MARCAS_PEPSI];
-type CategoriaTab = "frecuentes" | "bebidas" | "jugos" | "otros";
+type CategoriaTab = "frecuentes" | "bebidas" | "jugos" | "varios";
 
 type ImageFit = "cover" | "contain";
 
@@ -131,9 +131,24 @@ function classifyCategory(
   // Cervezas (incl. Club Verde) antes que jugos.
   if (underCervezas || esCerveza(nombre)) return "bebidas";
   if (esJugo(nombre)) return "jugos";
-  if (esChifle(nombre)) return "otros";
 
   const n = normalizarNombreProducto(nombre);
+  const underVarios = pathNorm.some(
+    (p) => p.includes("varios") || p.includes("porcion") || p.includes("suministro"),
+  );
+  // Porción + Suministros (antes “Otros”).
+  if (
+    underVarios
+    || esChifle(nombre)
+    || n.includes("porcion")
+    || n.includes("suministro")
+    || n === "pan"
+    || n.startsWith("pan ")
+    || n.includes("tarrina")
+  ) {
+    return "varios";
+  }
+
   const joined = `${pathNorm.join(" / ")} ${n}`;
   if (
     joined.includes("bebida")
@@ -166,7 +181,7 @@ function classifyCategory(
   if (joined.includes("jugo") || joined.includes("batido") || joined.includes("natural")) {
     return "jugos";
   }
-  return "otros";
+  return "varios";
 }
 
 function buildCatalog(nodes: MenuNode[]): CatalogProduct[] {
@@ -490,7 +505,7 @@ export default function ExtraStationPage() {
     [menuQuery.data],
   );
 
-  /** Catálogo con stock vendible (frecuentes / jugos / otros / búsqueda). */
+  /** Catálogo con stock vendible (frecuentes / búsqueda). */
   const catalog = useMemo(() => {
     if (!stockVendibleMap) return [];
     return catalogAll.filter((p) => tieneStockVendible(p.productId));
@@ -537,9 +552,9 @@ export default function ExtraStationPage() {
     const base =
       tab === "frecuentes"
         ? frecuentes
-        : tab === "jugos"
-          // Todos los jugos del menú; sin stock bodega se muestran desactivados.
-          ? catalogAll.filter((p) => p.categoryKey === "jugos")
+        : tab === "jugos" || tab === "varios"
+          // Todos del menú; sin stock bodega se muestran desactivados.
+          ? catalogAll.filter((p) => p.categoryKey === tab)
           : catalog.filter((p) => p.categoryKey === tab);
     if (!q) return base;
     return base.filter((p) => p.nombre.toLowerCase().includes(q));
@@ -1065,7 +1080,7 @@ export default function ExtraStationPage() {
                 ["frecuentes", "Más Frecuentes"],
                 ["bebidas", "Bebidas"],
                 ["jugos", "Jugos"],
-                ["otros", "Otros"],
+                ["varios", "Varios"],
               ] as const
             ).map(([key, label]) => (
               <button
@@ -1162,7 +1177,9 @@ export default function ExtraStationPage() {
           ) : (
             <div className="extra-products">
               {productosTab.map((p) =>
-                renderProductCard(p, { requireBodega: tab === "jugos" }),
+                renderProductCard(p, {
+                  requireBodega: tab === "jugos" || tab === "varios",
+                }),
               )}
               {!productosTab.length ? (
                 <div className="extra-products-empty">
@@ -1172,7 +1189,9 @@ export default function ExtraStationPage() {
                       ? "No hay frecuentes de Extra con stock disponible."
                       : tab === "jugos"
                         ? "No hay jugos en el menú."
-                        : "No hay productos con stock disponible en esta categoría."}
+                        : tab === "varios"
+                          ? "No hay productos de porción o suministros en el menú."
+                          : "No hay productos con stock disponible en esta categoría."}
                 </div>
               ) : null}
             </div>
