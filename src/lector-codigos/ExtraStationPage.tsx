@@ -29,6 +29,7 @@ import {
   FILA_MARCAS_PEPSI,
   FILA_OTRAS,
   normalizarNombreProducto,
+  type MarcaAtajo,
 } from "./dominio/atajosLayout";
 import { dinero, etiquetaTipoOrden, nuevoIdOperacion } from "./dominio/formato";
 import type {
@@ -40,6 +41,11 @@ import type {
 
 const PARA_LLEVAR_ID = "__para-llevar__";
 const MARCAS_IMAGEN = [...FILA_MARCAS_COCA, ...FILA_MARCAS_PEPSI, ...FILA_OTRAS];
+const FILAS_MARCAS_BEBIDAS: Array<{ id: string; marcas: MarcaAtajo[] }> = [
+  { id: "coca", marcas: FILA_MARCAS_COCA },
+  { id: "pepsi", marcas: FILA_MARCAS_PEPSI },
+  { id: "otras", marcas: FILA_OTRAS },
+];
 type CategoriaTab = "frecuentes" | "bebidas" | "jugos" | "otros";
 
 type ImageFit = "cover" | "contain";
@@ -53,6 +59,15 @@ type CatalogProduct = {
   imageFit: ImageFit;
   categoryKey: Exclude<CategoriaTab, "frecuentes">;
 };
+
+function productosDeMarcaCatalog(productos: CatalogProduct[], marca: MarcaAtajo): CatalogProduct[] {
+  return productos.filter((p) => marca.match(normalizarNombreProducto(p.nombre)));
+}
+
+function productoCubiertoPorMarcas(producto: CatalogProduct, marcas: MarcaAtajo[]): boolean {
+  const n = normalizarNombreProducto(producto.nombre);
+  return marcas.some((marca) => marca.match(n));
+}
 
 type DraftLine = {
   productId: string;
@@ -247,6 +262,10 @@ export default function ExtraStationPage() {
   const [now, setNow] = useState(() => new Date());
   const [menuOpen, setMenuOpen] = useState(false);
   const [gestionarFrecuentes, setGestionarFrecuentes] = useState(false);
+  const [marcaPicker, setMarcaPicker] = useState<{
+    title: string;
+    productos: CatalogProduct[];
+  } | null>(null);
 
   const ordenActiva = useMemo(
     () => ordenes.find((o) => o.id === ordenId) ?? null,
@@ -275,7 +294,7 @@ export default function ExtraStationPage() {
       link = document.createElement("link");
       link.id = cssId;
       link.rel = "stylesheet";
-      link.href = "/lector-codigos/extra-station.css?v=20261119-extra-freq-arrows-h";
+      link.href = "/lector-codigos/extra-station.css?v=20261120-extra-bebidas-marcas";
       document.head.appendChild(link);
     }
     document.documentElement.classList.add(bodyClass);
@@ -483,6 +502,30 @@ export default function ExtraStationPage() {
     return base.filter((p) => p.nombre.toLowerCase().includes(q));
   }, [tab, busqueda, frecuentes, catalog]);
 
+  const bebidasCatalog = useMemo(
+    () => catalog.filter((p) => p.categoryKey === "bebidas"),
+    [catalog],
+  );
+
+  const filasBebidasMarcas = useMemo(() => {
+    return FILAS_MARCAS_BEBIDAS.map((fila) => ({
+      id: fila.id,
+      marcas: fila.marcas
+        .map((marca) => ({
+          marca,
+          productos: productosDeMarcaCatalog(bebidasCatalog, marca),
+        }))
+        .filter((item) => item.productos.length > 0),
+    })).filter((fila) => fila.marcas.length > 0);
+  }, [bebidasCatalog]);
+
+  const bebidasSinMarca = useMemo(() => {
+    const todasMarcas = FILAS_MARCAS_BEBIDAS.flatMap((f) => f.marcas);
+    return bebidasCatalog.filter((p) => !productoCubiertoPorMarcas(p, todasMarcas));
+  }, [bebidasCatalog]);
+
+  const mostrarBebidasPorMarca = tab === "bebidas" && !busqueda.trim();
+
   const ordenesLlevar = useMemo(
     () => ordenes.filter((o) => etiquetaTipoOrden(o.tipo) === "llevar"),
     [ordenes],
@@ -539,6 +582,52 @@ export default function ExtraStationPage() {
   const quitarLineaDraft = (productId: string) => {
     setDraft((prev) => prev.filter((l) => l.productId !== productId));
   };
+
+  const abrirMarcaBebida = (marca: MarcaAtajo, productos: CatalogProduct[]) => {
+    if (!productos.length) return;
+    if (productos.length === 1) {
+      agregarAlDraft(productos[0]);
+      return;
+    }
+    setMarcaPicker({ title: marca.label, productos });
+  };
+
+  const renderProductCard = (p: CatalogProduct) => (
+    <button
+      key={p.productId}
+      type="button"
+      className="extra-product"
+      onClick={() => agregarAlDraft(p)}
+      aria-label={`Agregar ${p.nombre}`}
+    >
+      <div className={`extra-product-img fit-${p.imageFit}${p.imageUrl ? "" : " is-empty"}`}>
+        <span className="extra-product-price">{dinero(p.precio)}</span>
+        {p.imageUrl ? (
+          <img
+            src={p.imageUrl}
+            alt=""
+            loading="lazy"
+            onError={(e) => {
+              const fallback = resolveProductImage(p.nombre, null);
+              const el = e.currentTarget;
+              if (fallback.url && !el.dataset.fallback) {
+                el.dataset.fallback = "1";
+                el.src = fallback.url;
+                el.parentElement?.classList.remove("fit-cover", "fit-contain");
+                el.parentElement?.classList.add(`fit-${fallback.fit}`);
+                return;
+              }
+              el.style.display = "none";
+              el.parentElement?.classList.add("is-empty");
+            }}
+          />
+        ) : (
+          <span>{p.nombre.slice(0, 1)}</span>
+        )}
+      </div>
+      <div className="extra-product-name">{p.nombre}</div>
+    </button>
+  );
 
   const aplicarOrdenMesa = (m: MesaSucursal, ordenIdElegida: string | null) => {
     setPickerMesa(null);
@@ -902,55 +991,53 @@ export default function ExtraStationPage() {
             />
           </div>
 
-          <div className="extra-products">
-            {productosTab.map((p) => (
-              <button
-                key={p.productId}
-                type="button"
-                className="extra-product"
-                onClick={() => agregarAlDraft(p)}
-                aria-label={`Agregar ${p.nombre}`}
-              >
-                <div
-                  className={`extra-product-img fit-${p.imageFit}${p.imageUrl ? "" : " is-empty"}`}
-                >
-                  <span className="extra-product-price">{dinero(p.precio)}</span>
-                  {p.imageUrl ? (
-                    <img
-                      src={p.imageUrl}
-                      alt=""
-                      loading="lazy"
-                      onError={(e) => {
-                        const fallback = resolveProductImage(p.nombre, null);
-                        const el = e.currentTarget;
-                        if (fallback.url && !el.dataset.fallback) {
-                          el.dataset.fallback = "1";
-                          el.src = fallback.url;
-                          el.parentElement?.classList.remove("fit-cover", "fit-contain");
-                          el.parentElement?.classList.add(`fit-${fallback.fit}`);
-                          return;
-                        }
-                        el.style.display = "none";
-                        el.parentElement?.classList.add("is-empty");
-                      }}
-                    />
-                  ) : (
-                    <span>{p.nombre.slice(0, 1)}</span>
-                  )}
+          {mostrarBebidasPorMarca ? (
+            <div className="extra-bebidas-by-brand">
+              {filasBebidasMarcas.map((fila) => (
+                <div key={fila.id} className="extra-brand-row">
+                  {fila.marcas.map(({ marca, productos }) => (
+                    <button
+                      key={marca.id}
+                      type="button"
+                      className="extra-brand-card"
+                      onClick={() => abrirMarcaBebida(marca, productos)}
+                      aria-label={`Ver ${marca.label}`}
+                    >
+                      <span className="extra-brand-logo">
+                        <img src={marca.logo} alt="" />
+                      </span>
+                      <strong>{marca.label}</strong>
+                    </button>
+                  ))}
                 </div>
-                <div className="extra-product-name">{p.nombre}</div>
-              </button>
-            ))}
-            {!productosTab.length ? (
-              <div style={{ gridColumn: "1 / -1", padding: 20, color: "#809284", textAlign: "center" }}>
-                {menuQuery.isLoading || frequentQuery.isLoading || stockBodegaQuery.isLoading
-                  ? "Cargando productos…"
-                  : tab === "frecuentes"
-                    ? "No hay frecuentes de Extra con stock en bodega sucursal."
-                    : "No hay productos con stock en bodega sucursal en esta categoría."}
-              </div>
-            ) : null}
-          </div>
+              ))}
+              {bebidasSinMarca.length ? (
+                <div className="extra-products extra-products-inline">
+                  {bebidasSinMarca.map((p) => renderProductCard(p))}
+                </div>
+              ) : null}
+              {!filasBebidasMarcas.length && !bebidasSinMarca.length ? (
+                <div className="extra-products-empty">
+                  {menuQuery.isLoading || stockBodegaQuery.isLoading
+                    ? "Cargando productos…"
+                    : "No hay bebidas con stock en bodega sucursal."}
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <div className="extra-products">
+              {productosTab.map((p) => renderProductCard(p))}
+              {!productosTab.length ? (
+                <div className="extra-products-empty">
+                  {menuQuery.isLoading || frequentQuery.isLoading || stockBodegaQuery.isLoading
+                    ? "Cargando productos…"
+                    : tab === "frecuentes"
+                      ? "No hay frecuentes de Extra con stock en bodega sucursal."
+                      : "No hay productos con stock en bodega sucursal en esta categoría."}
+                </div>
+              ) : null}
+            </div>
+          )}
         </section>
 
         <section className="extra-panel" aria-label="Pedidos">
@@ -1104,6 +1191,55 @@ export default function ExtraStationPage() {
           </div>
         ) : null}
       </dialog>
+
+      {marcaPicker ? (
+        <div
+          className="extra-brand-picker-backdrop"
+          role="presentation"
+          onClick={() => setMarcaPicker(null)}
+        >
+          <div
+            className="extra-brand-picker"
+            role="dialog"
+            aria-modal="true"
+            aria-label={marcaPicker.title}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="extra-brand-picker-head">
+              <h3>{marcaPicker.title}</h3>
+              <button type="button" onClick={() => setMarcaPicker(null)}>
+                Cerrar
+              </button>
+            </div>
+            <div className="extra-products extra-products-inline">
+              {marcaPicker.productos.map((p) => (
+                <button
+                  key={p.productId}
+                  type="button"
+                  className="extra-product"
+                  onClick={() => {
+                    agregarAlDraft(p);
+                    setMarcaPicker(null);
+                  }}
+                  aria-label={`Agregar ${p.nombre}`}
+                >
+                  <div
+                    className={`extra-product-img fit-${p.imageFit}${p.imageUrl ? "" : " is-empty"}`}
+                  >
+                    <span className="extra-product-price">{dinero(p.precio)}</span>
+                    {p.imageUrl ? (
+                      <img src={p.imageUrl} alt="" loading="lazy" />
+                    ) : (
+                      <span>{p.nombre.slice(0, 1)}</span>
+                    )}
+                  </div>
+                  <div className="extra-product-name">{p.nombre}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {sucursal ? (
         <ExtraFrecuentesManager
