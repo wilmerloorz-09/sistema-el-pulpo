@@ -306,7 +306,7 @@ export default function ExtraStationPage() {
       link = document.createElement("link");
       link.id = cssId;
       link.rel = "stylesheet";
-      link.href = "/lector-codigos/extra-station.css?v=20261120-extra-bebidas-vendible";
+      link.href = "/lector-codigos/extra-station.css?v=20261120-extra-bebidas-prod-cards";
       document.head.appendChild(link);
     }
     document.documentElement.classList.add(bodyClass);
@@ -556,6 +556,25 @@ export default function ExtraStationPage() {
     const cubiertas = [...MARCAS_COCA_PEPSI, ...FILA_OTRAS, MARCA_CERVEZAS];
     return bebidasCatalog.filter((p) => !productoCubiertoPorMarcas(p, cubiertas));
   }, [bebidasCatalog]);
+
+  /** Agua, café, fuze, del valle y restantes: tarjetas de producto (como Frecuentes). */
+  const productosFilaOtras = useMemo(() => {
+    const seen = new Set<string>();
+    const out: CatalogProduct[] = [];
+    for (const item of marcasFilaOtras) {
+      for (const p of item.productos) {
+        if (seen.has(p.productId)) continue;
+        seen.add(p.productId);
+        out.push(p);
+      }
+    }
+    for (const p of bebidasSinGrupo) {
+      if (seen.has(p.productId)) continue;
+      seen.add(p.productId);
+      out.push(p);
+    }
+    return out;
+  }, [marcasFilaOtras, bebidasSinGrupo]);
 
   const mostrarBebidasPorMarca = tab === "bebidas" && !busqueda.trim();
   const hayBebidasConStock = bebidasCatalog.length > 0;
@@ -1075,7 +1094,7 @@ export default function ExtraStationPage() {
                 })}
               </div>
 
-              <div className="extra-brand-row extra-brand-row-mixed">
+              <div className="extra-brand-row">
                 <button
                   type="button"
                   className={`extra-brand-card${productosCervezas.length ? "" : " is-empty"}`}
@@ -1089,48 +1108,13 @@ export default function ExtraStationPage() {
                   <strong>Cervezas</strong>
                   {!productosCervezas.length ? <small>Sin stock</small> : null}
                 </button>
-                {marcasFilaOtras.map(({ marca, productos }) => {
-                  const sinStock = productos.length === 0;
-                  return (
-                    <button
-                      key={marca.id}
-                      type="button"
-                      className={`extra-brand-card${sinStock ? " is-empty" : ""}`}
-                      disabled={sinStock}
-                      onClick={() => abrirMarcaBebida(marca, productos)}
-                      aria-label={sinStock ? `${marca.label} sin stock` : `Ver ${marca.label}`}
-                    >
-                      <span className={`extra-brand-logo${marca.logo ? "" : " is-text"}`}>
-                        {marca.logo ? (
-                          <img src={marca.logo} alt="" />
-                        ) : (
-                          <span>{marca.label.slice(0, 1)}</span>
-                        )}
-                      </span>
-                      <strong>{marca.label}</strong>
-                      {sinStock ? <small>Sin stock</small> : null}
-                    </button>
-                  );
-                })}
-                {bebidasSinGrupo.map((p) => (
-                  <button
-                    key={p.productId}
-                    type="button"
-                    className="extra-brand-card"
-                    onClick={() => agregarAlDraft(p)}
-                    aria-label={`Agregar ${p.nombre}`}
-                  >
-                    <span className={`extra-brand-logo${p.imageUrl ? "" : " is-text"}`}>
-                      {p.imageUrl ? (
-                        <img src={p.imageUrl} alt="" />
-                      ) : (
-                        <span>{p.nombre.slice(0, 1)}</span>
-                      )}
-                    </span>
-                    <strong>{p.nombre}</strong>
-                  </button>
-                ))}
               </div>
+
+              {productosFilaOtras.length ? (
+                <div className="extra-products extra-products-inline">
+                  {productosFilaOtras.map((p) => renderProductCard(p))}
+                </div>
+              ) : null}
 
               {!hayBebidasConStock && !stockVendibleQuery.isLoading ? (
                 <div className="extra-products-empty">
