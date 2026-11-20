@@ -266,6 +266,7 @@ const MovimientoSucursalANeveraAdmin = () => {
         queryKey: ["admin-inventario-movimientos", activeBranchId],
       });
       void qc.invalidateQueries({ queryKey: ["extra-stock-bodega-sucursal"] });
+      void qc.invalidateQueries({ queryKey: ["extra-stock-vendible"] });
       void qc.invalidateQueries({ queryKey: ["lector-stock-vendible"] });
     },
     onError: (err: Error) => {

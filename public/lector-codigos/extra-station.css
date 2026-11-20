@@ -434,10 +434,25 @@ html.extra-station-active body {
   font: inherit;
 }
 
-.extra-brand-card:active {
+.extra-brand-card:active:not(:disabled) {
   transform: scale(0.97);
   background: linear-gradient(180deg, #ffe0bd, #ffc98a);
   border-color: #e8924a;
+}
+
+.extra-brand-card.is-empty,
+.extra-brand-card:disabled {
+  opacity: 0.45;
+  filter: grayscale(0.55);
+  background: linear-gradient(180deg, #f4f4f2, #ebe8e3);
+  border-color: #d7d2cb;
+  cursor: default;
+}
+
+.extra-brand-card small {
+  font-size: 11px;
+  color: #8a7460;
+  font-weight: 700;
 }
 
 .extra-brand-logo {

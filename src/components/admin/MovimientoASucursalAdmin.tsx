@@ -293,6 +293,7 @@ const MovimientoASucursalAdmin = () => {
       void qc.invalidateQueries({ queryKey: ["inventario-producto-map"] });
       void qc.invalidateQueries({ queryKey: ["admin-movimientos-bodega-general"] });
       void qc.invalidateQueries({ queryKey: ["extra-stock-bodega-sucursal"] });
+      void qc.invalidateQueries({ queryKey: ["extra-stock-vendible"] });
       void qc.invalidateQueries({ queryKey: ["lector-stock-vendible"] });
     },
     onError: (err: Error) => {

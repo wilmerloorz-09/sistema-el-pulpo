@@ -12,7 +12,7 @@ import {
   type MenuNode,
 } from "@/hooks/useMenuTree";
 import {
-  fetchInventarioBodegaSucursalMap,
+  fetchInventarioStockVendibleMap,
   resolveMenuNodeProductId,
 } from "@/lib/inventarioMenuData";
 import ExtraFrecuentesManager from "./componentes/ExtraFrecuentesManager";
@@ -306,7 +306,7 @@ export default function ExtraStationPage() {
       link = document.createElement("link");
       link.id = cssId;
       link.rel = "stylesheet";
-      link.href = "/lector-codigos/extra-station.css?v=20261120-extra-bebidas-3filas";
+      link.href = "/lector-codigos/extra-station.css?v=20261120-extra-bebidas-vendible";
       document.head.appendChild(link);
     }
     document.documentElement.classList.add(bodyClass);
@@ -423,9 +423,9 @@ export default function ExtraStationPage() {
     staleTime: 30_000,
   });
 
-  const stockBodegaQuery = useQuery({
-    queryKey: ["extra-stock-bodega-sucursal", sucursal?.id],
-    queryFn: () => fetchInventarioBodegaSucursalMap(sucursal!.id),
+  const stockVendibleQuery = useQuery({
+    queryKey: ["extra-stock-vendible", sucursal?.id],
+    queryFn: () => fetchInventarioStockVendibleMap(sucursal!.id),
     enabled: Boolean(sucursal?.id),
     staleTime: 0,
     gcTime: 30_000,
@@ -440,7 +440,7 @@ export default function ExtraStationPage() {
     if (!sucursal?.id) return;
     const refrescar = () => {
       if (document.visibilityState === "hidden") return;
-      void stockBodegaQuery.refetch();
+      void stockVendibleQuery.refetch();
     };
     refrescar();
     window.addEventListener("focus", refrescar);
@@ -454,19 +454,19 @@ export default function ExtraStationPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- solo al cambiar sucursal / montar Extra
   }, [sucursal?.id]);
 
-  const stockBodegaMap = stockBodegaQuery.data;
+  const stockVendibleMap = stockVendibleQuery.data;
 
-  const tieneStockBodega = useCallback(
-    (productId: string) => (stockBodegaMap?.get(productId)?.cantidadDisponible ?? 0) > 0,
-    [stockBodegaMap],
+  const tieneStockVendible = useCallback(
+    (productId: string) => (stockVendibleMap?.get(productId)?.cantidadDisponible ?? 0) > 0,
+    [stockVendibleMap],
   );
 
   const catalog = useMemo(() => {
     const all = buildCatalog(menuQuery.data ?? []);
     // Sin mapa aún: no mostrar nada (evita flash de productos sin stock).
-    if (!stockBodegaMap) return [];
-    return all.filter((p) => tieneStockBodega(p.productId));
-  }, [menuQuery.data, stockBodegaMap, tieneStockBodega]);
+    if (!stockVendibleMap) return [];
+    return all.filter((p) => tieneStockVendible(p.productId));
+  }, [menuQuery.data, stockVendibleMap, tieneStockVendible]);
 
   const catalogById = useMemo(() => {
     const map = new Map<string, CatalogProduct>();
@@ -483,7 +483,7 @@ export default function ExtraStationPage() {
       if (!node || !node.is_active) continue;
       const productId = resolveMenuNodeProductId(node);
       if (!productId || seen.has(productId)) continue;
-      if (!tieneStockBodega(productId)) continue;
+      if (!tieneStockVendible(productId)) continue;
       seen.add(productId);
       const fromCatalog = catalogById.get(productId);
       if (fromCatalog) {
@@ -502,7 +502,7 @@ export default function ExtraStationPage() {
       }
     }
     return out;
-  }, [frequentQuery.data, catalogById, tieneStockBodega]);
+  }, [frequentQuery.data, catalogById, tieneStockVendible]);
 
   const productosTab = useMemo(() => {
     const q = busqueda.trim().toLowerCase();
@@ -519,12 +519,13 @@ export default function ExtraStationPage() {
     [catalog],
   );
 
+  // Filas fijas de categorías (siempre visibles); sin stock quedan deshabilitadas.
   const marcasFilaCoca = useMemo(
     () =>
       FILA_MARCAS_COCA.map((marca) => ({
         marca,
         productos: productosDeMarcaCatalog(bebidasCatalog, marca),
-      })).filter((item) => item.productos.length > 0),
+      })),
     [bebidasCatalog],
   );
 
@@ -533,7 +534,7 @@ export default function ExtraStationPage() {
       FILA_MARCAS_PEPSI.map((marca) => ({
         marca,
         productos: productosDeMarcaCatalog(bebidasCatalog, marca),
-      })).filter((item) => item.productos.length > 0),
+      })),
     [bebidasCatalog],
   );
 
@@ -547,7 +548,7 @@ export default function ExtraStationPage() {
       FILA_OTRAS.map((marca) => ({
         marca,
         productos: productosDeMarcaCatalog(bebidasCatalog, marca),
-      })).filter((item) => item.productos.length > 0),
+      })),
     [bebidasCatalog],
   );
 
@@ -557,12 +558,7 @@ export default function ExtraStationPage() {
   }, [bebidasCatalog]);
 
   const mostrarBebidasPorMarca = tab === "bebidas" && !busqueda.trim();
-  const hayBebidasVisibles =
-    marcasFilaCoca.length > 0
-    || marcasFilaPepsi.length > 0
-    || productosCervezas.length > 0
-    || marcasFilaOtras.length > 0
-    || bebidasSinGrupo.length > 0;
+  const hayBebidasConStock = bebidasCatalog.length > 0;
 
   const ordenesLlevar = useMemo(
     () => ordenes.filter((o) => etiquetaTipoOrden(o.tipo) === "llevar"),
@@ -1031,66 +1027,78 @@ export default function ExtraStationPage() {
 
           {mostrarBebidasPorMarca ? (
             <div className="extra-bebidas-by-brand">
-              {marcasFilaCoca.length ? (
-                <div className="extra-brand-row">
-                  {marcasFilaCoca.map(({ marca, productos }) => (
+              <div className="extra-brand-row">
+                {marcasFilaCoca.map(({ marca, productos }) => {
+                  const sinStock = productos.length === 0;
+                  return (
                     <button
                       key={marca.id}
                       type="button"
-                      className="extra-brand-card"
+                      className={`extra-brand-card${sinStock ? " is-empty" : ""}`}
+                      disabled={sinStock}
                       onClick={() => abrirMarcaBebida(marca, productos)}
-                      aria-label={`Ver ${marca.label}`}
+                      aria-label={sinStock ? `${marca.label} sin stock` : `Ver ${marca.label}`}
                     >
                       <span className="extra-brand-logo">
                         {marca.logo ? <img src={marca.logo} alt="" /> : <span>{marca.label.slice(0, 1)}</span>}
                       </span>
                       <strong>{marca.label}</strong>
+                      {sinStock ? <small>Sin stock</small> : null}
                     </button>
-                  ))}
-                </div>
-              ) : null}
+                  );
+                })}
+              </div>
 
-              {marcasFilaPepsi.length ? (
-                <div className="extra-brand-row">
-                  {marcasFilaPepsi.map(({ marca, productos }) => (
+              <div className="extra-brand-row">
+                {marcasFilaPepsi.map(({ marca, productos }) => {
+                  const sinStock = productos.length === 0;
+                  return (
                     <button
                       key={marca.id}
                       type="button"
-                      className="extra-brand-card"
+                      className={`extra-brand-card${sinStock ? " is-empty" : ""}`}
+                      disabled={sinStock}
                       onClick={() => abrirMarcaBebida(marca, productos)}
-                      aria-label={`Ver ${marca.label}`}
+                      aria-label={sinStock ? `${marca.label} sin stock` : `Ver ${marca.label}`}
                     >
                       <span className="extra-brand-logo">
-                        {marca.logo ? <img src={marca.logo} alt="" /> : <span>{marca.label.slice(0, 1)}</span>}
+                        {marca.logo ? (
+                          <img src={marca.logo} alt="" />
+                        ) : (
+                          <span>{marca.label.slice(0, 1)}</span>
+                        )}
                       </span>
                       <strong>{marca.label}</strong>
+                      {sinStock ? <small>Sin stock</small> : null}
                     </button>
-                  ))}
-                </div>
-              ) : null}
+                  );
+                })}
+              </div>
 
-              {productosCervezas.length || marcasFilaOtras.length || bebidasSinGrupo.length ? (
-                <div className="extra-brand-row extra-brand-row-mixed">
-                  {productosCervezas.length ? (
-                    <button
-                      type="button"
-                      className="extra-brand-card"
-                      onClick={() => abrirMarcaBebida(MARCA_CERVEZAS, productosCervezas)}
-                      aria-label="Ver Cervezas"
-                    >
-                      <span className="extra-brand-logo is-text">
-                        <span>Cz</span>
-                      </span>
-                      <strong>Cervezas</strong>
-                    </button>
-                  ) : null}
-                  {marcasFilaOtras.map(({ marca, productos }) => (
+              <div className="extra-brand-row extra-brand-row-mixed">
+                <button
+                  type="button"
+                  className={`extra-brand-card${productosCervezas.length ? "" : " is-empty"}`}
+                  disabled={!productosCervezas.length}
+                  onClick={() => abrirMarcaBebida(MARCA_CERVEZAS, productosCervezas)}
+                  aria-label={productosCervezas.length ? "Ver Cervezas" : "Cervezas sin stock"}
+                >
+                  <span className="extra-brand-logo is-text">
+                    <span>Cz</span>
+                  </span>
+                  <strong>Cervezas</strong>
+                  {!productosCervezas.length ? <small>Sin stock</small> : null}
+                </button>
+                {marcasFilaOtras.map(({ marca, productos }) => {
+                  const sinStock = productos.length === 0;
+                  return (
                     <button
                       key={marca.id}
                       type="button"
-                      className="extra-brand-card"
+                      className={`extra-brand-card${sinStock ? " is-empty" : ""}`}
+                      disabled={sinStock}
                       onClick={() => abrirMarcaBebida(marca, productos)}
-                      aria-label={`Ver ${marca.label}`}
+                      aria-label={sinStock ? `${marca.label} sin stock` : `Ver ${marca.label}`}
                     >
                       <span className={`extra-brand-logo${marca.logo ? "" : " is-text"}`}>
                         {marca.logo ? (
@@ -1100,35 +1108,37 @@ export default function ExtraStationPage() {
                         )}
                       </span>
                       <strong>{marca.label}</strong>
+                      {sinStock ? <small>Sin stock</small> : null}
                     </button>
-                  ))}
-                  {bebidasSinGrupo.map((p) => (
-                    <button
-                      key={p.productId}
-                      type="button"
-                      className="extra-brand-card"
-                      onClick={() => agregarAlDraft(p)}
-                      aria-label={`Agregar ${p.nombre}`}
-                    >
-                      <span className={`extra-brand-logo${p.imageUrl ? "" : " is-text"}`}>
-                        {p.imageUrl ? (
-                          <img src={p.imageUrl} alt="" />
-                        ) : (
-                          <span>{p.nombre.slice(0, 1)}</span>
-                        )}
-                      </span>
-                      <strong>{p.nombre}</strong>
-                    </button>
-                  ))}
+                  );
+                })}
+                {bebidasSinGrupo.map((p) => (
+                  <button
+                    key={p.productId}
+                    type="button"
+                    className="extra-brand-card"
+                    onClick={() => agregarAlDraft(p)}
+                    aria-label={`Agregar ${p.nombre}`}
+                  >
+                    <span className={`extra-brand-logo${p.imageUrl ? "" : " is-text"}`}>
+                      {p.imageUrl ? (
+                        <img src={p.imageUrl} alt="" />
+                      ) : (
+                        <span>{p.nombre.slice(0, 1)}</span>
+                      )}
+                    </span>
+                    <strong>{p.nombre}</strong>
+                  </button>
+                ))}
+              </div>
+
+              {!hayBebidasConStock && !stockVendibleQuery.isLoading ? (
+                <div className="extra-products-empty">
+                  No hay bebidas con stock disponible.
                 </div>
               ) : null}
-
-              {!hayBebidasVisibles ? (
-                <div className="extra-products-empty">
-                  {menuQuery.isLoading || stockBodegaQuery.isLoading
-                    ? "Cargando productos…"
-                    : "No hay bebidas con stock en bodega sucursal."}
-                </div>
+              {stockVendibleQuery.isLoading && !hayBebidasConStock ? (
+                <div className="extra-products-empty">Cargando productos…</div>
               ) : null}
             </div>
           ) : (
@@ -1136,11 +1146,11 @@ export default function ExtraStationPage() {
               {productosTab.map((p) => renderProductCard(p))}
               {!productosTab.length ? (
                 <div className="extra-products-empty">
-                  {menuQuery.isLoading || frequentQuery.isLoading || stockBodegaQuery.isLoading
+                  {menuQuery.isLoading || frequentQuery.isLoading || stockVendibleQuery.isLoading
                     ? "Cargando productos…"
                     : tab === "frecuentes"
-                      ? "No hay frecuentes de Extra con stock en bodega sucursal."
-                      : "No hay productos con stock en bodega sucursal en esta categoría."}
+                      ? "No hay frecuentes de Extra con stock disponible."
+                      : "No hay productos con stock disponible en esta categoría."}
                 </div>
               ) : null}
             </div>
