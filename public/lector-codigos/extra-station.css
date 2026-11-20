@@ -277,42 +277,41 @@ html.extra-station-active body {
 }
 
 .extra-mesa-card.ocupada {
-  background: linear-gradient(165deg, #e7f6ee, #d8f0e3);
-  border-color: #9fceb3;
-  color: #1f4d33;
+  background: #e4eee7;
+  border-color: #c5d6cb;
+  color: #3a5546;
 }
 
 .extra-mesa-card.por_cobrar {
-  background: linear-gradient(165deg, #fff4e8, #ffe8d2);
-  border-color: #f0c49a;
-  color: #7a4a1f;
+  background: #f3ebe3;
+  border-color: #e0d0c2;
+  color: #6a5340;
 }
 
 .extra-mesa-card.ocupada .mesa-pill {
-  background: #cfe8d8;
-  color: #1f6b45;
+  background: #d5e3da;
+  color: #3f6b52;
 }
 
 .extra-mesa-card.por_cobrar .mesa-pill {
-  background: #ffe0c4;
-  color: #9a5520;
+  background: #eadfd4;
+  color: #7a5a40;
 }
 
 .extra-mesa-card.selected {
-  background: linear-gradient(165deg, #c8ead6, #b4e0c8);
-  border: 2.5px solid #5aaa78;
-  color: #0f3d26;
-  box-shadow: 0 0 0 2px rgba(90, 170, 120, 0.18);
+  background: var(--green);
+  border: 3px solid var(--yellow);
+  color: #fff;
 }
 
 .extra-mesa-card.selected .mesa-ico {
-  background: rgba(255, 255, 255, 0.55);
-  color: #17633b;
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
 }
 
 .extra-mesa-card.selected .mesa-pill {
-  background: #fff8d6;
-  color: #3d5a20;
+  background: var(--yellow);
+  color: #1a1a1a;
 }
 
 .extra-mesa-card.para-llevar {
