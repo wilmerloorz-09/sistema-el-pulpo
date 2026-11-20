@@ -61,7 +61,6 @@ import ForzarCierreTurno from "./pages/ForzarCierreTurno";
 import Inventario from "./pages/Inventario";
 import InventarioBodegaGeneral from "./pages/InventarioBodegaGeneral";
 import InventarioBodegaSucursal from "./pages/InventarioBodegaSucursal";
-import InventarioNevera from "./pages/InventarioNevera";
 import InventarioGestionPescado from "./pages/InventarioGestionPescado";
 import GestionPescadoFresco from "./pages/GestionPescadoFresco";
 import GestionPescadoPreparacion from "./pages/GestionPescadoPreparacion";
@@ -797,14 +796,7 @@ const App = () => (
                     </ProtectedRoute>
                   }
                 />
-                <Route
-                  path="/inventario/nevera"
-                  element={
-                    <ProtectedRoute allowedModules={["inventario_movimientos", "admin_global"]}>
-                      <InventarioNevera />
-                    </ProtectedRoute>
-                  }
-                />
+                <Route path="/inventario/nevera" element={<Navigate to="/inventario/bodega-sucursal" replace />} />
                 <Route
                   path="/gestion-pescado/fresco"
                   element={
@@ -835,14 +827,14 @@ const App = () => (
                 <Route path="/inventario/bodega-general/movimientos" element={<Navigate to="/inventario/bodega-general?tab=compra" replace />} />
                 <Route path="/inventario/bodega-general/historial" element={<Navigate to="/inventario/bodega-general?tab=historial" replace />} />
                 <Route path="/inventario/bodega-sucursal/productos" element={<Navigate to="/inventario/bodega-sucursal?tab=productos" replace />} />
-                <Route path="/inventario/bodega-sucursal/movimientos" element={<Navigate to="/inventario/bodega-sucursal?tab=movimientos" replace />} />
+                <Route path="/inventario/bodega-sucursal/movimientos" element={<Navigate to="/inventario/bodega-sucursal?tab=productos" replace />} />
                 <Route path="/inventario/bodega-sucursal/historial" element={<Navigate to="/inventario/bodega-sucursal?tab=historial" replace />} />
-                <Route path="/inventario/nevera/productos" element={<Navigate to="/inventario/nevera?tab=productos" replace />} />
-                <Route path="/inventario/nevera/movimientos" element={<Navigate to="/inventario/nevera?tab=productos" replace />} />
-                <Route path="/inventario/nevera/historial" element={<Navigate to="/inventario/nevera?tab=historial" replace />} />
+                <Route path="/inventario/nevera/productos" element={<Navigate to="/inventario/bodega-sucursal?tab=productos" replace />} />
+                <Route path="/inventario/nevera/movimientos" element={<Navigate to="/inventario/bodega-sucursal?tab=productos" replace />} />
+                <Route path="/inventario/nevera/historial" element={<Navigate to="/inventario/bodega-sucursal?tab=historial" replace />} />
                 <Route path="/inventario/productos" element={<Navigate to="/inventario/bodega-sucursal?tab=productos" replace />} />
-                <Route path="/inventario/movimientos" element={<Navigate to="/inventario/nevera?tab=productos" replace />} />
-                <Route path="/inventario/historial" element={<Navigate to="/inventario/nevera?tab=historial" replace />} />
+                <Route path="/inventario/movimientos" element={<Navigate to="/inventario/bodega-sucursal?tab=productos" replace />} />
+                <Route path="/inventario/historial" element={<Navigate to="/inventario/bodega-sucursal?tab=historial" replace />} />
                 <Route
                   path="/campanas"
                   element={

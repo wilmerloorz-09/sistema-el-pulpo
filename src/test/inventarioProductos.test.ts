@@ -41,9 +41,9 @@ describe("inventarioProductos", () => {
     expect(productoBloqueadoPorStockInventario({ integraConVentas: true, cantidadDisponible: 2 })).toBe(false);
   });
 
-  it("El Pulpo 1 es venta solo nevera; el resto usa waterfall", () => {
-    expect(esSucursalVentaSoloNevera("El Pulpo 1 - Mañana")).toBe(true);
-    expect(esSucursalVentaSoloNevera("El Pulpo 1 - Tarde")).toBe(true);
+  it("venta solo nevera está desactivada (todo es bodega sucursal)", () => {
+    expect(esSucursalVentaSoloNevera("El Pulpo 1 - Mañana")).toBe(false);
+    expect(esSucursalVentaSoloNevera("El Pulpo 1 - Tarde")).toBe(false);
     expect(esSucursalVentaSoloNevera("El Pulpo 2")).toBe(false);
     expect(esSucursalVentaSoloNevera("El Pulpo 3")).toBe(false);
     expect(esSucursalVentaSoloNevera("Local Principal (Chone)")).toBe(false);

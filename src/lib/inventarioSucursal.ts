@@ -28,20 +28,17 @@ export async function resolverSucursalInventario(sucursalId: string): Promise<st
   return mapa.get(sucursalId) ?? sucursalId;
 }
 
-/** El Pulpo 1 (Mañana/Tarde): ventas solo nunca/bodega nevera. Resto: nevera y luego bodega sucursal. */
-export function esSucursalVentaSoloNevera(nombreSucursal: string | null | undefined): boolean {
-  return /^el pulpo 1\b/i.test(String(nombreSucursal ?? "").trim());
+/**
+ * @deprecated Ventas ya no usan nevera; siempre false.
+ * Se mantiene por compatibilidad de tests/imports.
+ */
+export function esSucursalVentaSoloNevera(_nombreSucursal: string | null | undefined): boolean {
+  return false;
 }
 
-export async function esInventarioVentaSoloNevera(sucursalId: string): Promise<boolean> {
-  const inventarioSucursalId = await resolverSucursalInventario(sucursalId);
-  const { data, error } = await supabase
-    .from("branches")
-    .select("name")
-    .eq("id", inventarioSucursalId)
-    .maybeSingle();
-  if (error) throw error;
-  return esSucursalVentaSoloNevera((data as { name?: string } | null)?.name);
+/** @deprecated Ventas ya no usan nevera; siempre false. */
+export async function esInventarioVentaSoloNevera(_sucursalId: string): Promise<boolean> {
+  return false;
 }
 
 /** Todas las sucursales que usan el mismo inventario que `sucursalId` (incluida ella). */

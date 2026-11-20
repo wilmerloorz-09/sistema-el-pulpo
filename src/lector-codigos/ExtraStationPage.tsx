@@ -12,7 +12,6 @@ import {
   type MenuNode,
 } from "@/hooks/useMenuTree";
 import {
-  fetchInventarioBodegaSucursalMap,
   fetchInventarioStockVendibleMap,
   resolveMenuNodeProductId,
 } from "@/lib/inventarioMenuData";
@@ -464,21 +463,10 @@ export default function ExtraStationPage() {
     staleTime: 30_000,
   });
 
+  // Stock vendible = bodega sucursal (RPC). Única fuente para Extra.
   const stockVendibleQuery = useQuery({
     queryKey: ["extra-stock-vendible", sucursal?.id],
     queryFn: () => fetchInventarioStockVendibleMap(sucursal!.id),
-    enabled: Boolean(sucursal?.id),
-    staleTime: 0,
-    gcTime: 30_000,
-    refetchOnMount: "always",
-    refetchOnWindowFocus: true,
-    refetchOnReconnect: true,
-    refetchInterval: 10_000,
-  });
-
-  const stockBodegaQuery = useQuery({
-    queryKey: ["extra-stock-bodega-sucursal", sucursal?.id],
-    queryFn: () => fetchInventarioBodegaSucursalMap(sucursal!.id),
     enabled: Boolean(sucursal?.id),
     staleTime: 0,
     gcTime: 30_000,
@@ -494,7 +482,6 @@ export default function ExtraStationPage() {
     const refrescar = () => {
       if (document.visibilityState === "hidden") return;
       void stockVendibleQuery.refetch();
-      void stockBodegaQuery.refetch();
     };
     refrescar();
     window.addEventListener("focus", refrescar);
@@ -509,16 +496,10 @@ export default function ExtraStationPage() {
   }, [sucursal?.id]);
 
   const stockVendibleMap = stockVendibleQuery.data;
-  const stockBodegaMap = stockBodegaQuery.data;
-
-  const tieneStockVendible = useCallback(
-    (productId: string) => (stockVendibleMap?.get(productId)?.cantidadDisponible ?? 0) > 0,
-    [stockVendibleMap],
-  );
 
   const tieneStockBodega = useCallback(
-    (productId: string) => (stockBodegaMap?.get(productId)?.cantidadDisponible ?? 0) > 0,
-    [stockBodegaMap],
+    (productId: string) => (stockVendibleMap?.get(productId)?.cantidadDisponible ?? 0) > 0,
+    [stockVendibleMap],
   );
 
   /** Catálogo completo del menú (para menús de marca: mostrar también sin stock). */
@@ -527,11 +508,11 @@ export default function ExtraStationPage() {
     [menuQuery.data],
   );
 
-  /** Catálogo con stock vendible (frecuentes / búsqueda). */
+  /** Catálogo con stock bodega sucursal > 0. */
   const catalog = useMemo(() => {
     if (!stockVendibleMap) return [];
-    return catalogAll.filter((p) => tieneStockVendible(p.productId));
-  }, [catalogAll, stockVendibleMap, tieneStockVendible]);
+    return catalogAll.filter((p) => tieneStockBodega(p.productId));
+  }, [catalogAll, stockVendibleMap, tieneStockBodega]);
 
   const catalogById = useMemo(() => {
     const map = new Map<string, CatalogProduct>();
@@ -541,7 +522,7 @@ export default function ExtraStationPage() {
 
   const frecuentes = useMemo(() => {
     // Orden de Frecuentes Extra → solo bodega > 0 → máx. 4 filas (16).
-    if (!stockBodegaMap) return [];
+    if (!stockVendibleMap) return [];
     const rows = frequentQuery.data ?? [];
     const out: CatalogProduct[] = [];
     const seen = new Set<string>();
@@ -570,7 +551,7 @@ export default function ExtraStationPage() {
       }
     }
     return out;
-  }, [frequentQuery.data, catalogById, stockBodegaMap, tieneStockBodega]);
+  }, [frequentQuery.data, catalogById, stockVendibleMap, tieneStockBodega]);
 
   const productosTab = useMemo(() => {
     const q = busqueda.trim().toLowerCase();
@@ -732,7 +713,6 @@ export default function ExtraStationPage() {
       });
 
       await refrescarOrdenes();
-      void stockBodegaQuery.refetch();
       void stockVendibleQuery.refetch();
     } catch (e: any) {
       setErrorMsg(e?.message || "No se pudo agregar el producto a la orden.");

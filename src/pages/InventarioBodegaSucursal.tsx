@@ -6,7 +6,6 @@ import { Lock } from "lucide-react";
 import InventarioModuleShell from "@/components/inventario/InventarioModuleShell";
 import InventarioTabPlaceholder from "@/components/inventario/InventarioTabPlaceholder";
 import BodegaSucursalProductosAdmin from "@/components/admin/BodegaSucursalProductosAdmin";
-import MovimientoSucursalANeveraAdmin from "@/components/admin/MovimientoSucursalANeveraAdmin";
 
 const InventarioBodegaSucursal = () => {
   const { permissions, isGlobalAdmin, activeBranchId } = useBranch();
@@ -52,11 +51,6 @@ const InventarioBodegaSucursal = () => {
           value: "productos",
           label: "Productos Sucursal",
           content: <BodegaSucursalProductosAdmin />,
-        },
-        {
-          value: "movimientos",
-          label: "Movimiento",
-          content: <MovimientoSucursalANeveraAdmin />,
         },
         {
           value: "historial",

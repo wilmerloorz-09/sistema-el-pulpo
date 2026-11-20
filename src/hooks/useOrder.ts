@@ -1135,7 +1135,7 @@ export function useOrder(orderId: string | null) {
     retry: false,
   });
 
-  /** Agregar/quitar/cambiar cantidad mueve la nevera en el servidor: refrescar el stock mostrado. */
+  /** Agregar/quitar/cambiar cantidad mueve bodega sucursal en el servidor: refrescar el stock mostrado. */
   const invalidateInventarioStock = () => {
     const branchId = query.data?.branch_id;
     if (branchId) void qc.invalidateQueries({ queryKey: ["inventario-producto-map", branchId] });

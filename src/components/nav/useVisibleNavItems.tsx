@@ -326,20 +326,7 @@ const NAV_ITEMS: AppNavItem[] = [
       || canView(permissions, "bodega_sucursal")
       || canManage(permissions, "admin_global"),
   },
-  {
-    to: "/inventario/nevera",
-    label: "Nevera",
-    icon: <ArrowLeftRight className="h-5 w-5" />,
-    group: "INVENTARIO",
-    tone: {
-      active: "from-cyan-500 to-teal-400",
-      idle: "hover:border-cyan-200 hover:bg-cyan-50/90 hover:text-cyan-700",
-      iconIdle: "bg-cyan-50 text-cyan-600",
-    },
-    visible: (permissions) =>
-      canOperate(permissions, "inventario_movimientos")
-      || canView(permissions, "inventario_movimientos"),
-  },
+  // Nevera oculto: el control de inventario de ventas es solo bodega sucursal.
   {
     to: "/gestion-pescado/fresco",
     label: "Pescado fresco",
@@ -511,12 +498,8 @@ export function useVisibleNavItems() {
       isGlobalAdmin
       || canOperate(permissions, "bodega_sucursal")
       || canView(permissions, "bodega_sucursal");
-    // Productos Sucursal (config stock nevera): solo Administrador general.
+    // Productos Sucursal: solo Administrador general.
     const canAccessProductosSucursal = isGlobalAdmin;
-    const canAccessInventarioNevera =
-      isGlobalAdmin
-      || canOperate(permissions, "inventario_movimientos")
-      || canView(permissions, "inventario_movimientos");
     const canAccessGestionPescado =
       isGlobalAdmin
       || canOperate(permissions, "gestion_pescado")
@@ -532,11 +515,14 @@ export function useVisibleNavItems() {
         return canAccessBodegaSucursal || canAccessProductosSucursal;
       }
       if (path === "/inventario/nevera" || path.startsWith("/inventario/nevera/")) {
-        return canAccessInventarioNevera;
+        // Nevera deprecado → misma puerta que bodega sucursal (redirect en App).
+        return canAccessBodegaSucursal || canAccessProductosSucursal;
       }
       // Rutas legacy
       if (path === "/inventario/productos") return canAccessProductosSucursal;
-      if (path === "/inventario/movimientos" || path === "/inventario/historial") return canAccessInventarioNevera;
+      if (path === "/inventario/movimientos" || path === "/inventario/historial") {
+        return canAccessBodegaSucursal || canAccessProductosSucursal;
+      }
       return false;
     };
     const canAccessGestionPescadoPath = (path: string) => {
