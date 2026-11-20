@@ -272,7 +272,7 @@ export default function ExtraStationPage() {
       link = document.createElement("link");
       link.id = cssId;
       link.rel = "stylesheet";
-      link.href = "/lector-codigos/extra-station.css?v=20261119-extra-mesa-num";
+      link.href = "/lector-codigos/extra-station.css?v=20261119-extra-name-lg";
       document.head.appendChild(link);
     }
     document.documentElement.classList.add(bodyClass);
