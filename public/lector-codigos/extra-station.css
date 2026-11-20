@@ -718,19 +718,20 @@ html.extra-station-active body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  height: 40px;
-  min-height: 40px;
-  padding: 0 12px;
+  gap: 10px;
+  height: 52px;
+  min-height: 52px;
+  padding: 0 14px;
   background: var(--green);
   color: #fff;
-  font-size: 13px;
+  font-size: 17px;
   font-weight: 700;
-  flex: 0 0 40px;
+  line-height: 1.2;
+  flex: 0 0 52px;
 }
 
 .extra-orders-head-total {
-  font-size: 14px;
+  font-size: 19px;
   font-weight: 800;
   letter-spacing: 0.2px;
   white-space: nowrap;
