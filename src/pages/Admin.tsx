@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import {
   CalendarDays,
@@ -315,8 +316,10 @@ const subTabButtonClass = (isActive: boolean) =>
 
 const Admin = () => {
   const { permissions, branches, isGlobalAdmin, activeBranch } = useBranch();
+  const [searchParams] = useSearchParams();
   const usaCatalogoGlobal = Boolean(activeBranch?.usa_catalogo_global);
-  const [activeTab, setActiveTab] = useState("");
+  const tabFromUrl = String(searchParams.get("tab") ?? "").trim();
+  const [activeTab, setActiveTab] = useState(tabFromUrl);
   const [mobileTabsOpen, setMobileTabsOpen] = useState(false);
 
   const visibleTabs = useMemo(
@@ -356,6 +359,11 @@ const Admin = () => {
   const showSubTabs = activeCategoryTabs.length > 1;
 
   useEffect(() => {
+    if (tabFromUrl && visibleTabs.some((tab) => tab.value === tabFromUrl) && activeTab !== tabFromUrl) {
+      setActiveTab(tabFromUrl);
+      return;
+    }
+
     if (!visibleTabs.some((tab) => tab.value === activeTab)) {
       setActiveTab(defaultTab);
       return;
@@ -364,7 +372,7 @@ const Admin = () => {
     if (!activeTab) {
       setActiveTab(defaultTab);
     }
-  }, [activeTab, defaultTab, visibleTabs]);
+  }, [activeTab, defaultTab, tabFromUrl, visibleTabs]);
 
   const selectedTab = visibleTabs.find((tab) => tab.value === activeTab) ?? visibleTabs[0] ?? null;
   const SelectedComponent = selectedTab?.component ?? null;

@@ -268,7 +268,7 @@ export default function ExtraStationPage() {
       link = document.createElement("link");
       link.id = cssId;
       link.rel = "stylesheet";
-      link.href = "/lector-codigos/extra-station.css?v=20261119-extra-grid5";
+      link.href = "/lector-codigos/extra-station.css?v=20261119-extra-freq6";
       document.head.appendChild(link);
     }
     document.documentElement.classList.add(bodyClass);
@@ -720,10 +720,18 @@ export default function ExtraStationPage() {
                 <Link
                   to="/mesas"
                   className="extra-back-link"
-                  style={{ display: "block", padding: "12px 14px", color: "#1f3a2e" }}
+                  style={{ display: "block", padding: "12px 14px", color: "#1f3a2e", fontWeight: 600 }}
                   onClick={() => setMenuOpen(false)}
                 >
                   Volver al sistema
+                </Link>
+                <Link
+                  to="/admin?tab=menu-tree-extra&context=EXTRA"
+                  className="extra-back-link"
+                  style={{ display: "block", padding: "12px 14px", color: "#1f3a2e", fontWeight: 600 }}
+                  onClick={() => setMenuOpen(false)}
+                >
+                  Gestionar Frecuentes
                 </Link>
                 <button
                   type="button"

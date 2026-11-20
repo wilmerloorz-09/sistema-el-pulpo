@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { GripVertical, ImageIcon, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -24,9 +25,23 @@ const CONTEXT_HELP: Record<FrequentProductContext, string> = {
   EXTRA: "Menú Mesa sin Platos. Accesos rápidos en órdenes Extra.",
 };
 
+function parseFrequentContext(raw: string | null): FrequentProductContext {
+  const value = String(raw ?? "").trim().toUpperCase();
+  if (value === "MESA" || value === "TAKEOUT" || value === "EXPRESS" || value === "EXTRA") {
+    return value;
+  }
+  return "MESA";
+}
+
 export default function FrequentProductsAdmin() {
   const { activeBranchId } = useBranch();
-  const [context, setContext] = useState<FrequentProductContext>("MESA");
+  const [searchParams] = useSearchParams();
+  const [context, setContext] = useState<FrequentProductContext>(() =>
+    parseFrequentContext(searchParams.get("context")),
+  );
+  useEffect(() => {
+    setContext(parseFrequentContext(searchParams.get("context")));
+  }, [searchParams]);
   const { products, isLoading, addProduct, removeProduct, reorderProducts } = useFrequentProducts(
     activeBranchId,
     context,
