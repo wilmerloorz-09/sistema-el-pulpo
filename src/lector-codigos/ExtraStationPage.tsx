@@ -12,6 +12,7 @@ import {
   type MenuNode,
 } from "@/hooks/useMenuTree";
 import { resolveMenuNodeProductId } from "@/lib/inventarioMenuData";
+import ExtraFrecuentesManager from "./componentes/ExtraFrecuentesManager";
 import {
   agregarPorCodigo,
   listarMesasSucursal,
@@ -41,6 +42,7 @@ type CategoriaTab = "frecuentes" | "bebidas" | "jugos" | "otros";
 type ImageFit = "cover" | "contain";
 
 type CatalogProduct = {
+  menuNodeId: string;
   productId: string;
   nombre: string;
   precio: number;
@@ -177,6 +179,7 @@ function buildCatalog(nodes: MenuNode[]): CatalogProduct[] {
     const path = pathNames(node);
     const img = resolveProductImage(node.name, node.image_url);
     out.push({
+      menuNodeId: node.id,
       productId,
       nombre: node.name,
       precio: Number(node.price ?? 0),
@@ -240,6 +243,7 @@ export default function ExtraStationPage() {
   );
   const [now, setNow] = useState(() => new Date());
   const [menuOpen, setMenuOpen] = useState(false);
+  const [gestionarFrecuentes, setGestionarFrecuentes] = useState(false);
 
   const ordenActiva = useMemo(
     () => ordenes.find((o) => o.id === ordenId) ?? null,
@@ -268,7 +272,7 @@ export default function ExtraStationPage() {
       link = document.createElement("link");
       link.id = cssId;
       link.rel = "stylesheet";
-      link.href = "/lector-codigos/extra-station.css?v=20261119-extra-freq6";
+      link.href = "/lector-codigos/extra-station.css?v=20261119-extra-freq7";
       document.head.appendChild(link);
     }
     document.documentElement.classList.add(bodyClass);
@@ -412,6 +416,7 @@ export default function ExtraStationPage() {
       } else {
         const img = resolveProductImage(node.name, node.image_url);
         out.push({
+          menuNodeId: node.id,
           productId,
           nombre: node.name,
           precio: Number(node.price ?? 0),
@@ -421,23 +426,14 @@ export default function ExtraStationPage() {
         });
       }
     }
-    // Si hay pocos frecuentes, completar con catálogo para llenar la grilla como en la referencia.
-    if (out.length < 9) {
-      for (const p of catalog) {
-        if (seen.has(p.productId)) continue;
-        seen.add(p.productId);
-        out.push(p);
-        if (out.length >= 18) break;
-      }
-    }
     return out;
-  }, [frequentQuery.data, catalogById, catalog]);
+  }, [frequentQuery.data, catalogById]);
 
   const productosTab = useMemo(() => {
     const q = busqueda.trim().toLowerCase();
     const base =
       tab === "frecuentes"
-        ? (frecuentes.length ? frecuentes : catalog)
+        ? frecuentes
         : catalog.filter((p) => p.categoryKey === tab);
     if (!q) return base;
     return base.filter((p) => p.nombre.toLowerCase().includes(q));
@@ -725,14 +721,26 @@ export default function ExtraStationPage() {
                 >
                   Volver al sistema
                 </Link>
-                <Link
-                  to="/admin?tab=menu-tree-extra&context=EXTRA"
-                  className="extra-back-link"
-                  style={{ display: "block", padding: "12px 14px", color: "#1f3a2e", fontWeight: 600 }}
-                  onClick={() => setMenuOpen(false)}
+                <button
+                  type="button"
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    textAlign: "left",
+                    border: 0,
+                    background: "transparent",
+                    padding: "12px 14px",
+                    cursor: "pointer",
+                    fontWeight: 600,
+                    color: "#1f3a2e",
+                  }}
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setGestionarFrecuentes(true);
+                  }}
                 >
                   Gestionar Frecuentes
-                </Link>
+                </button>
                 <button
                   type="button"
                   style={{
@@ -894,7 +902,9 @@ export default function ExtraStationPage() {
               <div style={{ gridColumn: "1 / -1", padding: 20, color: "#809284", textAlign: "center" }}>
                 {menuQuery.isLoading || frequentQuery.isLoading
                   ? "Cargando productos…"
-                  : "No hay productos en esta categoría."}
+                  : tab === "frecuentes"
+                    ? "No hay frecuentes de Extra. Configúralos en el engranaje → Gestionar Frecuentes."
+                    : "No hay productos en esta categoría."}
               </div>
             ) : null}
           </div>
@@ -1051,6 +1061,15 @@ export default function ExtraStationPage() {
           </div>
         ) : null}
       </dialog>
+
+      {sucursal ? (
+        <ExtraFrecuentesManager
+          open={gestionarFrecuentes}
+          branchId={sucursal.id}
+          catalog={catalog}
+          onClose={() => setGestionarFrecuentes(false)}
+        />
+      ) : null}
     </div>
   );
 }
