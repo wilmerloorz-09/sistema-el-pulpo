@@ -272,7 +272,7 @@ export default function ExtraStationPage() {
       link = document.createElement("link");
       link.id = cssId;
       link.rel = "stylesheet";
-      link.href = "/lector-codigos/extra-station.css?v=20261119-extra-no-btn";
+      link.href = "/lector-codigos/extra-station.css?v=20261119-extra-card-border";
       document.head.appendChild(link);
     }
     document.documentElement.classList.add(bodyClass);
@@ -865,7 +865,6 @@ export default function ExtraStationPage() {
                 key={p.productId}
                 type="button"
                 className="extra-product"
-                disabled={!puedeAgregar}
                 onClick={() => agregarAlDraft(p)}
                 aria-label={`Agregar ${p.nombre}`}
               >
