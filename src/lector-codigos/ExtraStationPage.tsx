@@ -45,6 +45,8 @@ import type {
 const PARA_LLEVAR_ID = "__para-llevar__";
 const MARCAS_IMAGEN = [...FILA_MARCAS_COCA, ...FILA_MARCAS_PEPSI, ...FILA_OTRAS];
 const MARCAS_COCA_PEPSI = [...FILA_MARCAS_COCA, ...FILA_MARCAS_PEPSI];
+/** 4 columnas × 4 filas en Extra (tablet). */
+const MAX_FRECUENTES_VISIBLE = 16;
 type CategoriaTab = "frecuentes" | "bebidas" | "jugos" | "varios";
 
 type ImageFit = "cover" | "contain";
@@ -538,12 +540,13 @@ export default function ExtraStationPage() {
   }, [catalogAll]);
 
   const frecuentes = useMemo(() => {
-    // Solo productos con stock > 0 en bodega sucursal (mismo criterio del click).
+    // Orden de Frecuentes Extra → solo bodega > 0 → máx. 4 filas (16).
     if (!stockBodegaMap) return [];
     const rows = frequentQuery.data ?? [];
     const out: CatalogProduct[] = [];
     const seen = new Set<string>();
     for (const row of rows) {
+      if (out.length >= MAX_FRECUENTES_VISIBLE) break;
       const node = row.menu_node;
       if (!node || !node.is_active) continue;
       const productId = resolveMenuNodeProductId(node);
