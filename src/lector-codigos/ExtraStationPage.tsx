@@ -11,7 +11,10 @@ import {
   getMenuTreeQueryKey,
   type MenuNode,
 } from "@/hooks/useMenuTree";
-import { resolveMenuNodeProductId } from "@/lib/inventarioMenuData";
+import {
+  fetchInventarioBodegaSucursalMap,
+  resolveMenuNodeProductId,
+} from "@/lib/inventarioMenuData";
 import ExtraFrecuentesManager from "./componentes/ExtraFrecuentesManager";
 import {
   agregarPorCodigo,
@@ -389,10 +392,27 @@ export default function ExtraStationPage() {
     staleTime: 30_000,
   });
 
-  const catalog = useMemo(
-    () => buildCatalog(menuQuery.data ?? []),
-    [menuQuery.data],
+  const stockBodegaQuery = useQuery({
+    queryKey: ["extra-stock-bodega-sucursal", sucursal?.id],
+    queryFn: () => fetchInventarioBodegaSucursalMap(sucursal!.id),
+    enabled: Boolean(sucursal?.id),
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+  });
+
+  const stockBodegaMap = stockBodegaQuery.data;
+
+  const tieneStockBodega = useCallback(
+    (productId: string) => (stockBodegaMap?.get(productId)?.cantidadDisponible ?? 0) > 0,
+    [stockBodegaMap],
   );
+
+  const catalog = useMemo(() => {
+    const all = buildCatalog(menuQuery.data ?? []);
+    // Sin mapa aún: no mostrar nada (evita flash de productos sin stock).
+    if (!stockBodegaMap) return [];
+    return all.filter((p) => tieneStockBodega(p.productId));
+  }, [menuQuery.data, stockBodegaMap, tieneStockBodega]);
 
   const catalogById = useMemo(() => {
     const map = new Map<string, CatalogProduct>();
@@ -409,6 +429,7 @@ export default function ExtraStationPage() {
       if (!node || !node.is_active) continue;
       const productId = resolveMenuNodeProductId(node);
       if (!productId || seen.has(productId)) continue;
+      if (!tieneStockBodega(productId)) continue;
       seen.add(productId);
       const fromCatalog = catalogById.get(productId);
       if (fromCatalog) {
@@ -427,7 +448,7 @@ export default function ExtraStationPage() {
       }
     }
     return out;
-  }, [frequentQuery.data, catalogById]);
+  }, [frequentQuery.data, catalogById, tieneStockBodega]);
 
   const productosTab = useMemo(() => {
     const q = busqueda.trim().toLowerCase();
@@ -899,11 +920,11 @@ export default function ExtraStationPage() {
             ))}
             {!productosTab.length ? (
               <div style={{ gridColumn: "1 / -1", padding: 20, color: "#809284", textAlign: "center" }}>
-                {menuQuery.isLoading || frequentQuery.isLoading
+                {menuQuery.isLoading || frequentQuery.isLoading || stockBodegaQuery.isLoading
                   ? "Cargando productos…"
                   : tab === "frecuentes"
-                    ? "No hay frecuentes de Extra. Configúralos en el engranaje → Gestionar Frecuentes."
-                    : "No hay productos en esta categoría."}
+                    ? "No hay frecuentes de Extra con stock en bodega sucursal."
+                    : "No hay productos con stock en bodega sucursal en esta categoría."}
               </div>
             ) : null}
           </div>
