@@ -458,10 +458,26 @@ html.extra-station-active body {
   object-fit: contain;
 }
 
+.extra-brand-logo.is-text {
+  font-size: 18px;
+  font-weight: 800;
+  color: #9a4b16;
+  background: #fff7ee;
+}
+
 .extra-brand-card strong {
   font-size: 13px;
   font-weight: 800;
   line-height: 1.15;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  max-width: 100%;
+}
+
+.extra-brand-row-mixed .extra-brand-card strong {
+  font-size: 12px;
 }
 
 .extra-brand-picker-backdrop {

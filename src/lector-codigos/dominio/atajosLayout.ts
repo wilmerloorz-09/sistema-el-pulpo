@@ -121,6 +121,12 @@ export const FILA_OTRAS: MarcaAtajo[] = [
     match: (n) => n === "agua" || n.startsWith("agua "),
   },
   {
+    id: "cafe",
+    label: "Café",
+    logo: "",
+    match: (n) => n === "cafe" || n.startsWith("cafe "),
+  },
+  {
     id: "fuze-tea",
     label: "Fuze Tea",
     logo: "/lector-codigos/marcas/fuze-tea.jpg",
@@ -133,6 +139,30 @@ export const FILA_OTRAS: MarcaAtajo[] = [
     match: (n) => n.includes("del valle") || n.includes("delvalle"),
   },
 ];
+
+/** Cervezas y marcas típicas de barra. */
+export function esCerveza(nombre: string): boolean {
+  const n = normalizarNombreProducto(nombre);
+  if (n.includes("club verde")) return false;
+  return (
+    n.includes("cerveza")
+    || n.includes("pilsener")
+    || n.includes("pilsner")
+    || n.includes("corona")
+    || n.includes("heineken")
+    || n.includes("budweiser")
+    || n.includes("club beer")
+    || n === "club"
+    || n.startsWith("club ")
+  );
+}
+
+export const MARCA_CERVEZAS: MarcaAtajo = {
+  id: "cervezas",
+  label: "Cervezas",
+  logo: "",
+  match: (n) => esCerveza(n),
+};
 
 export function tieneStock(producto: ProductoAtajo): boolean {
   return (producto.stock ?? 0) > 0;

@@ -24,10 +24,12 @@ import {
 } from "./dominio/api";
 import {
   esChifle,
+  esCerveza,
   esJugo,
   FILA_MARCAS_COCA,
   FILA_MARCAS_PEPSI,
   FILA_OTRAS,
+  MARCA_CERVEZAS,
   normalizarNombreProducto,
   type MarcaAtajo,
 } from "./dominio/atajosLayout";
@@ -41,11 +43,7 @@ import type {
 
 const PARA_LLEVAR_ID = "__para-llevar__";
 const MARCAS_IMAGEN = [...FILA_MARCAS_COCA, ...FILA_MARCAS_PEPSI, ...FILA_OTRAS];
-const FILAS_MARCAS_BEBIDAS: Array<{ id: string; marcas: MarcaAtajo[] }> = [
-  { id: "coca", marcas: FILA_MARCAS_COCA },
-  { id: "pepsi", marcas: FILA_MARCAS_PEPSI },
-  { id: "otras", marcas: FILA_OTRAS },
-];
+const MARCAS_COCA_PEPSI = [...FILA_MARCAS_COCA, ...FILA_MARCAS_PEPSI];
 type CategoriaTab = "frecuentes" | "bebidas" | "jugos" | "otros";
 
 type ImageFit = "cover" | "contain";
@@ -129,6 +127,7 @@ function classifyCategory(
 ): Exclude<CategoriaTab, "frecuentes"> {
   if (esJugo(nombre)) return "jugos";
   if (esChifle(nombre)) return "otros";
+  if (esCerveza(nombre)) return "bebidas";
 
   const n = normalizarNombreProducto(nombre);
   const joined = `${pathNames.map(normCat).join(" / ")} ${n}`;
@@ -138,12 +137,25 @@ function classifyCategory(
     || joined.includes("refresco")
     || joined.includes("cerveza")
     || joined.includes("agua")
+    || joined.includes("cafe")
     || joined.includes("cola")
     || joined.includes("coca")
     || joined.includes("pepsi")
     || joined.includes("fanta")
     || joined.includes("sprite")
     || joined.includes("inca")
+    || joined.includes("fiora")
+    || joined.includes("fioravanti")
+    || joined.includes("tropical")
+    || joined.includes("mirinda")
+    || joined.includes("gallito")
+    || joined.includes("7up")
+    || joined.includes("7 up")
+    || joined.includes("fuze")
+    || joined.includes("del valle")
+    || joined.includes("delvalle")
+    || joined.includes("pilsener")
+    || ((joined.includes("manzana") || joined.includes("naranja")) && !joined.includes("jugo"))
   ) {
     return "bebidas";
   }
@@ -294,7 +306,7 @@ export default function ExtraStationPage() {
       link = document.createElement("link");
       link.id = cssId;
       link.rel = "stylesheet";
-      link.href = "/lector-codigos/extra-station.css?v=20261120-extra-bebidas-marcas";
+      link.href = "/lector-codigos/extra-station.css?v=20261120-extra-bebidas-3filas";
       document.head.appendChild(link);
     }
     document.documentElement.classList.add(bodyClass);
@@ -507,24 +519,50 @@ export default function ExtraStationPage() {
     [catalog],
   );
 
-  const filasBebidasMarcas = useMemo(() => {
-    return FILAS_MARCAS_BEBIDAS.map((fila) => ({
-      id: fila.id,
-      marcas: fila.marcas
-        .map((marca) => ({
-          marca,
-          productos: productosDeMarcaCatalog(bebidasCatalog, marca),
-        }))
-        .filter((item) => item.productos.length > 0),
-    })).filter((fila) => fila.marcas.length > 0);
-  }, [bebidasCatalog]);
+  const marcasFilaCoca = useMemo(
+    () =>
+      FILA_MARCAS_COCA.map((marca) => ({
+        marca,
+        productos: productosDeMarcaCatalog(bebidasCatalog, marca),
+      })).filter((item) => item.productos.length > 0),
+    [bebidasCatalog],
+  );
 
-  const bebidasSinMarca = useMemo(() => {
-    const todasMarcas = FILAS_MARCAS_BEBIDAS.flatMap((f) => f.marcas);
-    return bebidasCatalog.filter((p) => !productoCubiertoPorMarcas(p, todasMarcas));
+  const marcasFilaPepsi = useMemo(
+    () =>
+      FILA_MARCAS_PEPSI.map((marca) => ({
+        marca,
+        productos: productosDeMarcaCatalog(bebidasCatalog, marca),
+      })).filter((item) => item.productos.length > 0),
+    [bebidasCatalog],
+  );
+
+  const productosCervezas = useMemo(
+    () => productosDeMarcaCatalog(bebidasCatalog, MARCA_CERVEZAS),
+    [bebidasCatalog],
+  );
+
+  const marcasFilaOtras = useMemo(
+    () =>
+      FILA_OTRAS.map((marca) => ({
+        marca,
+        productos: productosDeMarcaCatalog(bebidasCatalog, marca),
+      })).filter((item) => item.productos.length > 0),
+    [bebidasCatalog],
+  );
+
+  const bebidasSinGrupo = useMemo(() => {
+    const cubiertas = [...MARCAS_COCA_PEPSI, ...FILA_OTRAS, MARCA_CERVEZAS];
+    return bebidasCatalog.filter((p) => !productoCubiertoPorMarcas(p, cubiertas));
   }, [bebidasCatalog]);
 
   const mostrarBebidasPorMarca = tab === "bebidas" && !busqueda.trim();
+  const hayBebidasVisibles =
+    marcasFilaCoca.length > 0
+    || marcasFilaPepsi.length > 0
+    || productosCervezas.length > 0
+    || marcasFilaOtras.length > 0
+    || bebidasSinGrupo.length > 0;
 
   const ordenesLlevar = useMemo(
     () => ordenes.filter((o) => etiquetaTipoOrden(o.tipo) === "llevar"),
@@ -993,9 +1031,9 @@ export default function ExtraStationPage() {
 
           {mostrarBebidasPorMarca ? (
             <div className="extra-bebidas-by-brand">
-              {filasBebidasMarcas.map((fila) => (
-                <div key={fila.id} className="extra-brand-row">
-                  {fila.marcas.map(({ marca, productos }) => (
+              {marcasFilaCoca.length ? (
+                <div className="extra-brand-row">
+                  {marcasFilaCoca.map(({ marca, productos }) => (
                     <button
                       key={marca.id}
                       type="button"
@@ -1004,19 +1042,88 @@ export default function ExtraStationPage() {
                       aria-label={`Ver ${marca.label}`}
                     >
                       <span className="extra-brand-logo">
-                        <img src={marca.logo} alt="" />
+                        {marca.logo ? <img src={marca.logo} alt="" /> : <span>{marca.label.slice(0, 1)}</span>}
                       </span>
                       <strong>{marca.label}</strong>
                     </button>
                   ))}
                 </div>
-              ))}
-              {bebidasSinMarca.length ? (
-                <div className="extra-products extra-products-inline">
-                  {bebidasSinMarca.map((p) => renderProductCard(p))}
+              ) : null}
+
+              {marcasFilaPepsi.length ? (
+                <div className="extra-brand-row">
+                  {marcasFilaPepsi.map(({ marca, productos }) => (
+                    <button
+                      key={marca.id}
+                      type="button"
+                      className="extra-brand-card"
+                      onClick={() => abrirMarcaBebida(marca, productos)}
+                      aria-label={`Ver ${marca.label}`}
+                    >
+                      <span className="extra-brand-logo">
+                        {marca.logo ? <img src={marca.logo} alt="" /> : <span>{marca.label.slice(0, 1)}</span>}
+                      </span>
+                      <strong>{marca.label}</strong>
+                    </button>
+                  ))}
                 </div>
               ) : null}
-              {!filasBebidasMarcas.length && !bebidasSinMarca.length ? (
+
+              {productosCervezas.length || marcasFilaOtras.length || bebidasSinGrupo.length ? (
+                <div className="extra-brand-row extra-brand-row-mixed">
+                  {productosCervezas.length ? (
+                    <button
+                      type="button"
+                      className="extra-brand-card"
+                      onClick={() => abrirMarcaBebida(MARCA_CERVEZAS, productosCervezas)}
+                      aria-label="Ver Cervezas"
+                    >
+                      <span className="extra-brand-logo is-text">
+                        <span>Cz</span>
+                      </span>
+                      <strong>Cervezas</strong>
+                    </button>
+                  ) : null}
+                  {marcasFilaOtras.map(({ marca, productos }) => (
+                    <button
+                      key={marca.id}
+                      type="button"
+                      className="extra-brand-card"
+                      onClick={() => abrirMarcaBebida(marca, productos)}
+                      aria-label={`Ver ${marca.label}`}
+                    >
+                      <span className={`extra-brand-logo${marca.logo ? "" : " is-text"}`}>
+                        {marca.logo ? (
+                          <img src={marca.logo} alt="" />
+                        ) : (
+                          <span>{marca.label.slice(0, 1)}</span>
+                        )}
+                      </span>
+                      <strong>{marca.label}</strong>
+                    </button>
+                  ))}
+                  {bebidasSinGrupo.map((p) => (
+                    <button
+                      key={p.productId}
+                      type="button"
+                      className="extra-brand-card"
+                      onClick={() => agregarAlDraft(p)}
+                      aria-label={`Agregar ${p.nombre}`}
+                    >
+                      <span className={`extra-brand-logo${p.imageUrl ? "" : " is-text"}`}>
+                        {p.imageUrl ? (
+                          <img src={p.imageUrl} alt="" />
+                        ) : (
+                          <span>{p.nombre.slice(0, 1)}</span>
+                        )}
+                      </span>
+                      <strong>{p.nombre}</strong>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+
+              {!hayBebidasVisibles ? (
                 <div className="extra-products-empty">
                   {menuQuery.isLoading || stockBodegaQuery.isLoading
                     ? "Cargando productos…"
