@@ -537,6 +537,8 @@ export default function ExtraStationPage() {
   }, [catalogAll]);
 
   const frecuentes = useMemo(() => {
+    // Solo productos con stock > 0 en bodega sucursal (mismo criterio del click).
+    if (!stockBodegaMap) return [];
     const rows = frequentQuery.data ?? [];
     const out: CatalogProduct[] = [];
     const seen = new Set<string>();
@@ -545,7 +547,7 @@ export default function ExtraStationPage() {
       if (!node || !node.is_active) continue;
       const productId = resolveMenuNodeProductId(node);
       if (!productId || seen.has(productId)) continue;
-      if (!tieneStockVendible(productId)) continue;
+      if (!tieneStockBodega(productId)) continue;
       seen.add(productId);
       const fromCatalog = catalogById.get(productId);
       if (fromCatalog) {
@@ -564,7 +566,7 @@ export default function ExtraStationPage() {
       }
     }
     return out;
-  }, [frequentQuery.data, catalogById, tieneStockVendible]);
+  }, [frequentQuery.data, catalogById, stockBodegaMap, tieneStockBodega]);
 
   const productosTab = useMemo(() => {
     const q = busqueda.trim().toLowerCase();
