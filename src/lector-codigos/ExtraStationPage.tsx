@@ -396,9 +396,32 @@ export default function ExtraStationPage() {
     queryKey: ["extra-stock-bodega-sucursal", sucursal?.id],
     queryFn: () => fetchInventarioBodegaSucursalMap(sucursal!.id),
     enabled: Boolean(sucursal?.id),
-    staleTime: 15_000,
-    refetchInterval: 30_000,
+    staleTime: 0,
+    gcTime: 30_000,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    refetchInterval: 10_000,
   });
+
+  // Al volver a Extra (otra pestaña/ruta o tablet en segundo plano), forzar stock fresco.
+  useEffect(() => {
+    if (!sucursal?.id) return;
+    const refrescar = () => {
+      if (document.visibilityState === "hidden") return;
+      void stockBodegaQuery.refetch();
+    };
+    refrescar();
+    window.addEventListener("focus", refrescar);
+    document.addEventListener("visibilitychange", refrescar);
+    window.addEventListener("pageshow", refrescar);
+    return () => {
+      window.removeEventListener("focus", refrescar);
+      document.removeEventListener("visibilitychange", refrescar);
+      window.removeEventListener("pageshow", refrescar);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- solo al cambiar sucursal / montar Extra
+  }, [sucursal?.id]);
 
   const stockBodegaMap = stockBodegaQuery.data;
 

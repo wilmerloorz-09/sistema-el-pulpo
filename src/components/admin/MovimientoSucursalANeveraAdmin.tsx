@@ -265,6 +265,8 @@ const MovimientoSucursalANeveraAdmin = () => {
       void qc.invalidateQueries({
         queryKey: ["admin-inventario-movimientos", activeBranchId],
       });
+      void qc.invalidateQueries({ queryKey: ["extra-stock-bodega-sucursal"] });
+      void qc.invalidateQueries({ queryKey: ["lector-stock-vendible"] });
     },
     onError: (err: Error) => {
       if (err.message === "Movimiento cancelado") {

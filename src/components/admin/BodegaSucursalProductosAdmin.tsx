@@ -68,6 +68,8 @@ const BodegaSucursalProductosAdmin = () => {
     void qc.invalidateQueries({
       queryKey: ["inventario-producto-map", activeBranchId, "bodega_sucursal"],
     });
+    void qc.invalidateQueries({ queryKey: ["extra-stock-bodega-sucursal"] });
+    void qc.invalidateQueries({ queryKey: ["lector-stock-vendible"] });
   };
 
   if (!activeBranchId) {
