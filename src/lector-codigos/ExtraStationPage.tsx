@@ -23,7 +23,6 @@ import {
   obtenerSucursalActiva,
   quitarCantidadesOrden,
 } from "./dominio/api";
-import { Icono } from "./componentes/iconos";
 import {
   esChifle,
   esCerveza,
@@ -348,7 +347,7 @@ export default function ExtraStationPage() {
       link = document.createElement("link");
       link.id = cssId;
       link.rel = "stylesheet";
-      link.href = "/lector-codigos/extra-station.css?v=20261120-extra-order-stepper";
+      link.href = "/lector-codigos/extra-station.css?v=20261120-extra-trash-red";
       document.head.appendChild(link);
     }
     document.documentElement.classList.add(bodyClass);
@@ -1289,7 +1288,12 @@ export default function ExtraStationPage() {
                     disabled={registrando}
                     onClick={() => quitarLineaDraft(line.productId)}
                   >
-                    <Icono name="trash" />
+                    <svg className="extra-trash-icon" viewBox="0 0 24 24" aria-hidden="true">
+                      <path
+                        fill="currentColor"
+                        d="M9.2 3.75h5.6c.35 0 .67.2.83.51L16.2 5.5H20a1 1 0 1 1 0 2h-.78l-.86 11.05A2.75 2.75 0 0 1 15.62 21H8.38a2.75 2.75 0 0 1-2.74-2.45L4.78 7.5H4a1 1 0 1 1 0-2h3.8l.57-1.24c.16-.31.48-.51.83-.51Zm1.12 2h3.36l-.23.5H10.55l-.23-.5ZM8.38 19h7.24c.4 0 .73-.3.76-.7l.83-10.8H6.79l.83 10.8c.03.4.36.7.76.7Zm2.12-8.25a1 1 0 0 1 1 1v4.5a1 1 0 1 1-2 0v-4.5a1 1 0 0 1 1-1Zm3 0a1 1 0 0 1 1 1v4.5a1 1 0 1 1-2 0v-4.5a1 1 0 0 1 1-1Z"
+                      />
+                    </svg>
                   </button>
                   <div className="extra-order-stepper">
                     <button
