@@ -557,10 +557,15 @@ export default function ExtraStationPage() {
     return bebidasCatalog.filter((p) => !productoCubiertoPorMarcas(p, cubiertas));
   }, [bebidasCatalog]);
 
-  /** Agua, café, fuze, del valle y restantes: tarjetas de producto (como Frecuentes). */
+  /** Cervezas + agua/café/fuze/del valle y restantes: tarjetas de producto (como Frecuentes). */
   const productosFilaOtras = useMemo(() => {
     const seen = new Set<string>();
     const out: CatalogProduct[] = [];
+    for (const p of productosCervezas) {
+      if (seen.has(p.productId)) continue;
+      seen.add(p.productId);
+      out.push(p);
+    }
     for (const item of marcasFilaOtras) {
       for (const p of item.productos) {
         if (seen.has(p.productId)) continue;
@@ -574,7 +579,7 @@ export default function ExtraStationPage() {
       out.push(p);
     }
     return out;
-  }, [marcasFilaOtras, bebidasSinGrupo]);
+  }, [productosCervezas, marcasFilaOtras, bebidasSinGrupo]);
 
   const mostrarBebidasPorMarca = tab === "bebidas" && !busqueda.trim();
   const hayBebidasConStock = bebidasCatalog.length > 0;
@@ -638,10 +643,7 @@ export default function ExtraStationPage() {
 
   const abrirMarcaBebida = (marca: MarcaAtajo, productos: CatalogProduct[]) => {
     if (!productos.length) return;
-    if (productos.length === 1) {
-      agregarAlDraft(productos[0]);
-      return;
-    }
+    // Siempre abrir el menú de presentaciones (también si solo hay una).
     setMarcaPicker({ title: marca.label, productos });
   };
 
@@ -1092,22 +1094,6 @@ export default function ExtraStationPage() {
                     </button>
                   );
                 })}
-              </div>
-
-              <div className="extra-brand-row">
-                <button
-                  type="button"
-                  className={`extra-brand-card${productosCervezas.length ? "" : " is-empty"}`}
-                  disabled={!productosCervezas.length}
-                  onClick={() => abrirMarcaBebida(MARCA_CERVEZAS, productosCervezas)}
-                  aria-label={productosCervezas.length ? "Ver Cervezas" : "Cervezas sin stock"}
-                >
-                  <span className="extra-brand-logo is-text">
-                    <span>Cz</span>
-                  </span>
-                  <strong>Cervezas</strong>
-                  {!productosCervezas.length ? <small>Sin stock</small> : null}
-                </button>
               </div>
 
               {productosFilaOtras.length ? (
