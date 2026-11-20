@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   esChifle,
+  esCerveza,
   esJugo,
   FILA_MARCAS_COCA,
   FILA_MARCAS_PEPSI,
@@ -13,7 +14,11 @@ import {
 
 assert.equal(esChifle("Chifle"), true);
 assert.equal(esJugo("Jugo de Mora"), true);
-assert.equal(esJugo("Club Verde 550 cm3"), true);
+assert.equal(esJugo("Club Verde 550 cm3"), false);
+assert.equal(esCerveza("Club Verde 550 cm3"), true);
+assert.equal(esCerveza("Club Verde Lata"), true);
+assert.equal(esCerveza("Corona"), true);
+assert.equal(esCerveza("Pilsener"), true);
 assert.equal(esJugo("Cola Naranja 1 Litro"), false);
 
 const naranja = FILA_MARCAS_PEPSI.find((m) => m.id === "naranja");

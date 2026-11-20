@@ -27,13 +27,30 @@ export function esChifle(nombre: string): boolean {
   return normalizarNombreProducto(nombre).includes("chifle");
 }
 
-/** Jugos naturales / Club Verde (no gaseosas “Cola Naranja”). */
+/** Cervezas y marcas típicas de barra (incluye Club Verde). */
+export function esCerveza(nombre: string): boolean {
+  const n = normalizarNombreProducto(nombre);
+  return (
+    n.includes("cerveza")
+    || n.includes("pilsener")
+    || n.includes("pilsner")
+    || n.includes("corona")
+    || n.includes("heineken")
+    || n.includes("budweiser")
+    || n.includes("club verde")
+    || n.includes("club beer")
+    || n === "club"
+    || n.startsWith("club ")
+  );
+}
+
+/** Jugos naturales / Quaker (no gaseosas “Cola Naranja”; Club Verde es cerveza). */
 export function esJugo(nombre: string): boolean {
   const n = normalizarNombreProducto(nombre);
   if (n.includes("cola naranja") || n.includes("cola manzana")) return false;
+  if (esCerveza(n)) return false;
   return (
     n.includes("jugo")
-    || n.includes("club verde")
     || n === "quaker"
     || n.startsWith("quaker ")
   );
@@ -139,23 +156,6 @@ export const FILA_OTRAS: MarcaAtajo[] = [
     match: (n) => n.includes("del valle") || n.includes("delvalle"),
   },
 ];
-
-/** Cervezas y marcas típicas de barra. */
-export function esCerveza(nombre: string): boolean {
-  const n = normalizarNombreProducto(nombre);
-  if (n.includes("club verde")) return false;
-  return (
-    n.includes("cerveza")
-    || n.includes("pilsener")
-    || n.includes("pilsner")
-    || n.includes("corona")
-    || n.includes("heineken")
-    || n.includes("budweiser")
-    || n.includes("club beer")
-    || n === "club"
-    || n.startsWith("club ")
-  );
-}
 
 export const MARCA_CERVEZAS: MarcaAtajo = {
   id: "cervezas",

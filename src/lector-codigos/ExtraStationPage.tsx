@@ -126,12 +126,15 @@ function classifyCategory(
   nombre: string,
   pathNames: string[],
 ): Exclude<CategoriaTab, "frecuentes"> {
+  const pathNorm = pathNames.map(normCat);
+  const underCervezas = pathNorm.some((p) => p.includes("cerveza"));
+  // Cervezas (incl. Club Verde) antes que jugos.
+  if (underCervezas || esCerveza(nombre)) return "bebidas";
   if (esJugo(nombre)) return "jugos";
   if (esChifle(nombre)) return "otros";
-  if (esCerveza(nombre)) return "bebidas";
 
   const n = normalizarNombreProducto(nombre);
-  const joined = `${pathNames.map(normCat).join(" / ")} ${n}`;
+  const joined = `${pathNorm.join(" / ")} ${n}`;
   if (
     joined.includes("bebida")
     || joined.includes("gaseosa")
