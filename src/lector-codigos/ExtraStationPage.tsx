@@ -700,7 +700,7 @@ export default function ExtraStationPage() {
           .filter((l) => l.qty > 0),
       );
       await refrescarOrdenes();
-      void stockVendibleQuery.refetch();
+      await stockVendibleQuery.refetch();
     } catch (e: any) {
       setErrorMsg(e?.message || "No se pudo ajustar la cantidad.");
     } finally {
