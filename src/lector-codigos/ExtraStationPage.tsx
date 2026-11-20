@@ -1282,7 +1282,6 @@ export default function ExtraStationPage() {
             {draft.map((line) => (
               <div key={line.productId} className="extra-order-row">
                 <div className="extra-order-controls" aria-label={`Cantidad ${line.nombre}`}>
-                  <span className="extra-order-qty">{line.qty}</span>
                   <button
                     type="button"
                     className="extra-order-trash"
@@ -1295,20 +1294,21 @@ export default function ExtraStationPage() {
                   <button
                     type="button"
                     className="extra-order-step"
-                    aria-label={`Restar ${line.nombre}`}
-                    disabled={registrando || line.qty <= 0}
-                    onClick={() => void ajustarCantidadDraft(line.productId, -1)}
-                  >
-                    −
-                  </button>
-                  <button
-                    type="button"
-                    className="extra-order-step"
                     aria-label={`Sumar ${line.nombre}`}
                     disabled={registrando}
                     onClick={() => void ajustarCantidadDraft(line.productId, 1)}
                   >
                     +
+                  </button>
+                  <span className="extra-order-qty">{line.qty}</span>
+                  <button
+                    type="button"
+                    className="extra-order-step"
+                    aria-label={`Restar ${line.nombre}`}
+                    disabled={registrando || line.qty <= 0}
+                    onClick={() => void ajustarCantidadDraft(line.productId, -1)}
+                  >
+                    −
                   </button>
                 </div>
                 {line.imageUrl ? (
