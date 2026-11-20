@@ -560,9 +560,27 @@ html.extra-station-active body {
   opacity: 1;
 }
 
-.extra-product:disabled {
-  opacity: 1;
-  cursor: pointer;
+.extra-product:disabled,
+.extra-product.is-disabled {
+  opacity: 0.48;
+  filter: grayscale(0.55);
+  cursor: default;
+  border-color: #b7c0b8;
+  background: #f3f4f2;
+}
+
+.extra-product:disabled .extra-product-price,
+.extra-product.is-disabled .extra-product-price {
+  background: #8a8a8a;
+}
+
+.extra-product-stock-hint {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #8a5a3a;
+  line-height: 1.1;
 }
 
 .extra-product:hover {
@@ -611,17 +629,17 @@ html.extra-station-active body {
   padding: 4px 6px;
   font-size: 18.5px;
   font-weight: 800;
-  line-height: 1.2;
+  line-height: 1.15;
   color: #0f3d26;
   background: #e2f0e6;
   border-top: 1px solid #c5d6c8;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
   overflow: hidden;
   text-align: center;
-  align-content: center;
-  justify-content: center;
 }
 
 .extra-product-price {
