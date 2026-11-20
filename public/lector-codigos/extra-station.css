@@ -751,7 +751,7 @@ html.extra-station-active body {
 
 .extra-order-row {
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr) auto 26px;
+  grid-template-columns: auto 40px minmax(0, 1fr) auto;
   gap: 7px;
   align-items: center;
   padding: 6px;
@@ -761,10 +761,74 @@ html.extra-station-active body {
   flex: 0 0 auto;
 }
 
+.extra-order-controls {
+  display: inline-grid;
+  grid-template-columns: 28px 28px 28px 28px;
+  gap: 4px;
+  align-items: center;
+}
+
+.extra-order-qty {
+  min-width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--green-soft);
+  color: var(--green-deep);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.extra-order-trash,
+.extra-order-step {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--green-deep);
+  font-size: 16px;
+  font-weight: 800;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  line-height: 1;
+  padding: 0;
+}
+
+.extra-order-trash {
+  color: #b4533a;
+  border-color: #efc4b8;
+  background: #fff6f3;
+}
+
+.extra-order-trash .icon {
+  width: 15px;
+  height: 15px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.extra-order-trash:disabled,
+.extra-order-step:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.extra-order-step:active:not(:disabled),
+.extra-order-trash:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
 .extra-order-row img.thumb,
 .extra-order-row .thumb-empty {
-  width: 44px;
-  height: 44px;
+  width: 40px;
+  height: 40px;
   border-radius: 8px;
   background: #fff;
   border: 1px solid var(--line);
@@ -794,21 +858,6 @@ html.extra-station-active body {
   font-weight: 800;
   color: var(--green-deep);
   white-space: nowrap;
-}
-
-.extra-order-remove {
-  width: 26px;
-  height: 26px;
-  border: 0;
-  border-radius: 50%;
-  background: var(--red);
-  color: #fff;
-  font-size: 14px;
-  font-weight: 800;
-  cursor: pointer;
-  display: grid;
-  place-items: center;
-  line-height: 1;
 }
 
 .extra-empty-orders {

@@ -21,7 +21,9 @@ import {
   listarMesasSucursal,
   listarOrdenesAbiertas,
   obtenerSucursalActiva,
+  quitarCantidadesOrden,
 } from "./dominio/api";
+import { Icono } from "./componentes/iconos";
 import {
   esChifle,
   esCerveza,
@@ -346,7 +348,7 @@ export default function ExtraStationPage() {
       link = document.createElement("link");
       link.id = cssId;
       link.rel = "stylesheet";
-      link.href = "/lector-codigos/extra-station.css?v=20261120-extra-orders-head-lg";
+      link.href = "/lector-codigos/extra-station.css?v=20261120-extra-order-controls";
       document.head.appendChild(link);
     }
     document.documentElement.classList.add(bodyClass);
@@ -661,8 +663,56 @@ export default function ExtraStationPage() {
     setErrorMsg(null);
   };
 
+  const ajustarCantidadDraft = async (productId: string, delta: number) => {
+    if (!ordenActiva || registrando) return;
+    const line = draft.find((l) => l.productId === productId);
+    if (!line) return;
+
+    if (delta > 0) {
+      const producto: CatalogProduct = {
+        menuNodeId: productId,
+        productId: line.productId,
+        nombre: line.nombre,
+        precio: line.precio,
+        imageUrl: line.imageUrl,
+        imageFit: line.imageFit,
+        categoryKey: "varios",
+      };
+      await registrarProductoInmediato(producto);
+      return;
+    }
+
+    const quitar = Math.min(line.qty, Math.abs(delta));
+    if (quitar <= 0) return;
+
+    setRegistrando(true);
+    setErrorMsg(null);
+    try {
+      await quitarCantidadesOrden({
+        idOrden: ordenActiva.id,
+        idProducto: productId,
+        cantidad: quitar,
+        idOperacion: nuevoIdOperacion(),
+        idUsuario: user?.id,
+      });
+      setDraft((prev) =>
+        prev
+          .map((l) => (l.productId === productId ? { ...l, qty: l.qty - quitar } : l))
+          .filter((l) => l.qty > 0),
+      );
+      await refrescarOrdenes();
+      void stockVendibleQuery.refetch();
+    } catch (e: any) {
+      setErrorMsg(e?.message || "No se pudo ajustar la cantidad.");
+    } finally {
+      setRegistrando(false);
+    }
+  };
+
   const quitarLineaDraft = (productId: string) => {
-    setDraft((prev) => prev.filter((l) => l.productId !== productId));
+    const line = draft.find((l) => l.productId === productId);
+    if (!line) return;
+    void ajustarCantidadDraft(productId, -line.qty);
   };
 
   const registrarProductoInmediato = async (producto: CatalogProduct) => {
@@ -1231,6 +1281,36 @@ export default function ExtraStationPage() {
           <div className="extra-orders-list">
             {draft.map((line) => (
               <div key={line.productId} className="extra-order-row">
+                <div className="extra-order-controls" aria-label={`Cantidad ${line.nombre}`}>
+                  <span className="extra-order-qty">{line.qty}</span>
+                  <button
+                    type="button"
+                    className="extra-order-trash"
+                    aria-label={`Quitar ${line.nombre}`}
+                    disabled={registrando}
+                    onClick={() => quitarLineaDraft(line.productId)}
+                  >
+                    <Icono name="trash" />
+                  </button>
+                  <button
+                    type="button"
+                    className="extra-order-step"
+                    aria-label={`Restar ${line.nombre}`}
+                    disabled={registrando || line.qty <= 0}
+                    onClick={() => void ajustarCantidadDraft(line.productId, -1)}
+                  >
+                    −
+                  </button>
+                  <button
+                    type="button"
+                    className="extra-order-step"
+                    aria-label={`Sumar ${line.nombre}`}
+                    disabled={registrando}
+                    onClick={() => void ajustarCantidadDraft(line.productId, 1)}
+                  >
+                    +
+                  </button>
+                </div>
                 {line.imageUrl ? (
                   <img
                     src={line.imageUrl}
@@ -1240,18 +1320,8 @@ export default function ExtraStationPage() {
                 ) : (
                   <span className="thumb-empty">—</span>
                 )}
-                <strong>
-                  {line.nombre} x {line.qty}
-                </strong>
+                <strong>{line.nombre}</strong>
                 <span className="price">{dinero(line.precio * line.qty)}</span>
-                <button
-                  type="button"
-                  className="extra-order-remove"
-                  aria-label={`Quitar ${line.nombre}`}
-                  onClick={() => quitarLineaDraft(line.productId)}
-                >
-                  ×
-                </button>
               </div>
             ))}
             {!draft.length ? (
