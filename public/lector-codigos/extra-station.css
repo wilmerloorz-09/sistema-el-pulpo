@@ -603,11 +603,44 @@ html.extra-station-active body {
   border-color: var(--green);
 }
 
-.extra-product:active,
+.extra-product:active:not(:disabled):not(.is-disabled),
 .extra-product.is-pressed {
-  transform: scale(0.98);
+  transform: scale(0.94);
   border-color: var(--green);
-  background: #f3faf5;
+  background: #dff0e4;
+  box-shadow: 0 0 0 4px rgba(23, 99, 59, 0.28);
+}
+
+.extra-product.is-flash {
+  animation: extra-product-tap 0.38s ease;
+  z-index: 2;
+}
+
+@keyframes extra-product-tap {
+  0% {
+    transform: scale(1);
+    border-color: #7f9484;
+    background: #fff;
+    box-shadow: 0 1px 0 rgba(20, 50, 30, 0.06);
+  }
+  22% {
+    transform: scale(0.88);
+    border-color: var(--green);
+    background: #cfead8;
+    box-shadow: 0 0 0 6px rgba(23, 99, 59, 0.4);
+  }
+  55% {
+    transform: scale(1.05);
+    border-color: var(--yellow);
+    background: #fff6c8;
+    box-shadow: 0 0 0 8px rgba(240, 206, 85, 0.5);
+  }
+  100% {
+    transform: scale(1);
+    border-color: var(--green);
+    background: #fff;
+    box-shadow: 0 1px 0 rgba(20, 50, 30, 0.06);
+  }
 }
 
 .extra-product-img {

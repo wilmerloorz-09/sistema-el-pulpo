@@ -297,6 +297,7 @@ export default function ExtraStationPage() {
     title: string;
     productos: CatalogProduct[];
   } | null>(null);
+  const [flashProductId, setFlashProductId] = useState<string | null>(null);
 
   const ordenActiva = useMemo(
     () => ordenes.find((o) => o.id === ordenId) ?? null,
@@ -344,7 +345,7 @@ export default function ExtraStationPage() {
       link = document.createElement("link");
       link.id = cssId;
       link.rel = "stylesheet";
-      link.href = "/lector-codigos/extra-station.css?v=20261120-extra-mesas-selected-restore";
+      link.href = "/lector-codigos/extra-station.css?v=20261120-extra-product-tap";
       document.head.appendChild(link);
     }
     document.documentElement.classList.add(bodyClass);
@@ -737,7 +738,20 @@ export default function ExtraStationPage() {
     }
   };
 
-  const agregarAlDraft = (producto: CatalogProduct) => {
+  const tocarYAgregar = (
+    producto: CatalogProduct,
+    opts?: { cerrarPicker?: boolean },
+  ) => {
+    const id = producto.productId;
+    // Quitar y volver a poner la clase para que la animación se repita en clics seguidos.
+    setFlashProductId(null);
+    window.requestAnimationFrame(() => {
+      setFlashProductId(id);
+      window.setTimeout(() => {
+        setFlashProductId((cur) => (cur === id ? null : cur));
+        if (opts?.cerrarPicker) setMarcaPicker(null);
+      }, 380);
+    });
     void registrarProductoInmediato(producto);
   };
 
@@ -750,15 +764,16 @@ export default function ExtraStationPage() {
   const renderProductCard = (p: CatalogProduct, opts?: { requireBodega?: boolean }) => {
     const requireBodega = opts?.requireBodega ?? false;
     const sinBodega = requireBodega && !tieneStockBodega(p.productId);
+    const flashing = flashProductId === p.productId;
     return (
       <button
         key={p.productId}
         type="button"
-        className={`extra-product${sinBodega ? " is-disabled" : ""}`}
+        className={`extra-product${sinBodega ? " is-disabled" : ""}${flashing ? " is-flash" : ""}`}
         disabled={sinBodega}
         onClick={() => {
           if (sinBodega) return;
-          agregarAlDraft(p);
+          tocarYAgregar(p);
         }}
         aria-label={sinBodega ? `${p.nombre} sin stock en bodega` : `Agregar ${p.nombre}`}
       >
@@ -1384,16 +1399,16 @@ export default function ExtraStationPage() {
             <div className="extra-products extra-products-inline">
               {marcaPicker.productos.map((p) => {
                 const sinBodega = !tieneStockBodega(p.productId);
+                const flashing = flashProductId === p.productId;
                 return (
                   <button
                     key={p.productId}
                     type="button"
-                    className={`extra-product${sinBodega ? " is-disabled" : ""}`}
+                    className={`extra-product${sinBodega ? " is-disabled" : ""}${flashing ? " is-flash" : ""}`}
                     disabled={sinBodega}
                     onClick={() => {
                       if (sinBodega) return;
-                      setMarcaPicker(null);
-                      void registrarProductoInmediato(p);
+                      tocarYAgregar(p, { cerrarPicker: true });
                     }}
                     aria-label={
                       sinBodega ? `${p.nombre} sin stock en bodega` : `Agregar ${p.nombre}`
