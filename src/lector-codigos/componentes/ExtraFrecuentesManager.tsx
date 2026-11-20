@@ -101,11 +101,11 @@ export default function ExtraFrecuentesManager({ open, branchId, catalog, onClos
                     onClick={() => void onAdd(p.menuNodeId)}
                   >
                     {p.imageUrl ? <img src={p.imageUrl} alt="" /> : <span className="thumb">—</span>}
-                    <span className="action" aria-hidden>+</span>
                     <span className="meta">
                       <strong>{p.nombre}</strong>
                       <small>{dinero(p.precio)}</small>
                     </span>
+                    <span className="action" aria-hidden>+</span>
                   </button>
                 ))}
                 {!disponibles.length ? (
@@ -135,6 +135,10 @@ export default function ExtraFrecuentesManager({ open, branchId, catalog, onClos
                     return (
                       <div key={row.id} className="extra-freq-item is-listed">
                         {imageUrl ? <img src={imageUrl} alt="" /> : <span className="thumb">—</span>}
+                        <span className="meta">
+                          <strong>{nombre}</strong>
+                          <small>{dinero(precio)}</small>
+                        </span>
                         <button
                           type="button"
                           className="action remove"
@@ -144,10 +148,6 @@ export default function ExtraFrecuentesManager({ open, branchId, catalog, onClos
                         >
                           ×
                         </button>
-                        <span className="meta">
-                          <strong>{nombre}</strong>
-                          <small>{dinero(precio)}</small>
-                        </span>
                       </div>
                     );
                   })}

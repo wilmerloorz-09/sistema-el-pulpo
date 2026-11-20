@@ -272,7 +272,7 @@ export default function ExtraStationPage() {
       link = document.createElement("link");
       link.id = cssId;
       link.rel = "stylesheet";
-      link.href = "/lector-codigos/extra-station.css?v=20261119-extra-freq9";
+      link.href = "/lector-codigos/extra-station.css?v=20261119-extra-freq10";
       document.head.appendChild(link);
     }
     document.documentElement.classList.add(bodyClass);
