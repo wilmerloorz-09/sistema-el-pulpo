@@ -90,67 +90,71 @@ export default function ExtraFrecuentesManager({ open, branchId, catalog, onClos
               placeholder="Buscar producto..."
               className="extra-freq-search"
             />
-            <div className="extra-freq-list">
-              {disponibles.map((p) => (
-                <button
-                  key={p.menuNodeId}
-                  type="button"
-                  className="extra-freq-item"
-                  disabled={busyId === p.menuNodeId || addProduct.isPending}
-                  onClick={() => void onAdd(p.menuNodeId)}
-                >
-                  {p.imageUrl ? <img src={p.imageUrl} alt="" /> : <span className="thumb">—</span>}
-                  <span className="meta">
-                    <strong>{p.nombre}</strong>
-                    <small>{dinero(p.precio)}</small>
-                  </span>
-                  <span className="action">+</span>
-                </button>
-              ))}
-              {!disponibles.length ? (
-                <p className="extra-freq-empty">
-                  {busqueda.trim() ? "Sin coincidencias." : "Todos los productos ya están en la lista."}
-                </p>
-              ) : null}
+            <div className="extra-freq-scroll">
+              <div className="extra-freq-list">
+                {disponibles.map((p) => (
+                  <button
+                    key={p.menuNodeId}
+                    type="button"
+                    className="extra-freq-item"
+                    disabled={busyId === p.menuNodeId || addProduct.isPending}
+                    onClick={() => void onAdd(p.menuNodeId)}
+                  >
+                    {p.imageUrl ? <img src={p.imageUrl} alt="" /> : <span className="thumb">—</span>}
+                    <span className="action" aria-hidden>+</span>
+                    <span className="meta">
+                      <strong>{p.nombre}</strong>
+                      <small>{dinero(p.precio)}</small>
+                    </span>
+                  </button>
+                ))}
+                {!disponibles.length ? (
+                  <p className="extra-freq-empty">
+                    {busqueda.trim() ? "Sin coincidencias." : "Todos los productos ya están en la lista."}
+                  </p>
+                ) : null}
+              </div>
             </div>
           </section>
 
           <section className="extra-freq-col">
             <h3>Lista actual ({products.length})</h3>
-            <div className="extra-freq-list">
-              {isLoading ? <p className="extra-freq-empty">Cargando…</p> : null}
-              {!isLoading
-                && products.map((row) => {
-                  const node = row.menu_node;
-                  const nombre = node?.name ?? "Producto";
-                  const productId = node ? resolveMenuNodeProductId(node) : null;
-                  const fromCatalog = productId
-                    ? catalog.find((c) => c.productId === productId)
-                    : null;
-                  const imageUrl = fromCatalog?.imageUrl ?? node?.image_url ?? null;
-                  const precio = fromCatalog?.precio ?? Number(node?.price ?? 0);
-                  return (
-                    <div key={row.id} className="extra-freq-item is-listed">
-                      {imageUrl ? <img src={imageUrl} alt="" /> : <span className="thumb">—</span>}
-                      <span className="meta">
-                        <strong>{nombre}</strong>
-                        <small>{dinero(precio)}</small>
-                      </span>
-                      <button
-                        type="button"
-                        className="action remove"
-                        disabled={busyId === row.id || removeProduct.isPending}
-                        onClick={() => void onRemove(row.id)}
-                        aria-label={`Quitar ${nombre}`}
-                      >
-                        ×
-                      </button>
-                    </div>
-                  );
-                })}
-              {!isLoading && !products.length ? (
-                <p className="extra-freq-empty">Aún no hay frecuentes de Extra. Agrégalos a la izquierda.</p>
-              ) : null}
+            <div className="extra-freq-scroll">
+              <div className="extra-freq-list">
+                {isLoading ? <p className="extra-freq-empty">Cargando…</p> : null}
+                {!isLoading
+                  && products.map((row) => {
+                    const node = row.menu_node;
+                    const nombre = node?.name ?? "Producto";
+                    const productId = node ? resolveMenuNodeProductId(node) : null;
+                    const fromCatalog = productId
+                      ? catalog.find((c) => c.productId === productId)
+                      : null;
+                    const imageUrl = fromCatalog?.imageUrl ?? node?.image_url ?? null;
+                    const precio = fromCatalog?.precio ?? Number(node?.price ?? 0);
+                    return (
+                      <div key={row.id} className="extra-freq-item is-listed">
+                        {imageUrl ? <img src={imageUrl} alt="" /> : <span className="thumb">—</span>}
+                        <button
+                          type="button"
+                          className="action remove"
+                          disabled={busyId === row.id || removeProduct.isPending}
+                          onClick={() => void onRemove(row.id)}
+                          aria-label={`Quitar ${nombre}`}
+                        >
+                          ×
+                        </button>
+                        <span className="meta">
+                          <strong>{nombre}</strong>
+                          <small>{dinero(precio)}</small>
+                        </span>
+                      </div>
+                    );
+                  })}
+                {!isLoading && !products.length ? (
+                  <p className="extra-freq-empty">Aún no hay frecuentes de Extra. Agrégalos a la izquierda.</p>
+                ) : null}
+              </div>
             </div>
           </section>
         </div>
