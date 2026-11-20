@@ -272,7 +272,7 @@ export default function ExtraStationPage() {
       link = document.createElement("link");
       link.id = cssId;
       link.rel = "stylesheet";
-      link.href = "/lector-codigos/extra-station.css?v=20261119-extra-name-lg5";
+      link.href = "/lector-codigos/extra-station.css?v=20261119-extra-no-price";
       document.head.appendChild(link);
     }
     document.documentElement.classList.add(bodyClass);
@@ -894,8 +894,9 @@ export default function ExtraStationPage() {
                   className="extra-product-add"
                   disabled={!puedeAgregar}
                   onClick={() => agregarAlDraft(p)}
+                  aria-label={`Agregar ${p.nombre}`}
                 >
-                  {dinero(p.precio)}
+                  Agregar
                 </button>
               </article>
             ))}
