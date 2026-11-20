@@ -456,7 +456,9 @@ html.extra-station-active body {
   font-size: 18.5px;
   font-weight: 800;
   line-height: 1.2;
-  color: #1a2e24;
+  color: #0f3d26;
+  background: #e2f0e6;
+  border-top: 1px solid #c5d6c8;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
