@@ -537,10 +537,13 @@ export default function ExtraStationPage() {
     const base =
       tab === "frecuentes"
         ? frecuentes
-        : catalog.filter((p) => p.categoryKey === tab);
+        : tab === "jugos"
+          // Todos los jugos del menú; sin stock bodega se muestran desactivados.
+          ? catalogAll.filter((p) => p.categoryKey === "jugos")
+          : catalog.filter((p) => p.categoryKey === tab);
     if (!q) return base;
     return base.filter((p) => p.nombre.toLowerCase().includes(q));
-  }, [tab, busqueda, frecuentes, catalog]);
+  }, [tab, busqueda, frecuentes, catalog, catalogAll]);
 
   const bebidasCatalogAll = useMemo(
     () => catalogAll.filter((p) => p.categoryKey === "bebidas"),
@@ -1158,14 +1161,18 @@ export default function ExtraStationPage() {
             </div>
           ) : (
             <div className="extra-products">
-              {productosTab.map((p) => renderProductCard(p))}
+              {productosTab.map((p) =>
+                renderProductCard(p, { requireBodega: tab === "jugos" }),
+              )}
               {!productosTab.length ? (
                 <div className="extra-products-empty">
                   {menuQuery.isLoading || frequentQuery.isLoading || stockVendibleQuery.isLoading
                     ? "Cargando productos…"
                     : tab === "frecuentes"
                       ? "No hay frecuentes de Extra con stock disponible."
-                      : "No hay productos con stock disponible en esta categoría."}
+                      : tab === "jugos"
+                        ? "No hay jugos en el menú."
+                        : "No hay productos con stock disponible en esta categoría."}
                 </div>
               ) : null}
             </div>
