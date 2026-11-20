@@ -272,7 +272,7 @@ export default function ExtraStationPage() {
       link = document.createElement("link");
       link.id = cssId;
       link.rel = "stylesheet";
-      link.href = "/lector-codigos/extra-station.css?v=20261119-extra-no-price";
+      link.href = "/lector-codigos/extra-station.css?v=20261119-extra-no-btn";
       document.head.appendChild(link);
     }
     document.documentElement.classList.add(bodyClass);
@@ -861,7 +861,14 @@ export default function ExtraStationPage() {
 
           <div className="extra-products">
             {productosTab.map((p) => (
-              <article key={p.productId} className="extra-product">
+              <button
+                key={p.productId}
+                type="button"
+                className="extra-product"
+                disabled={!puedeAgregar}
+                onClick={() => agregarAlDraft(p)}
+                aria-label={`Agregar ${p.nombre}`}
+              >
                 <div
                   className={`extra-product-img fit-${p.imageFit}${p.imageUrl ? "" : " is-empty"}`}
                 >
@@ -889,16 +896,7 @@ export default function ExtraStationPage() {
                   )}
                 </div>
                 <div className="extra-product-name">{p.nombre}</div>
-                <button
-                  type="button"
-                  className="extra-product-add"
-                  disabled={!puedeAgregar}
-                  onClick={() => agregarAlDraft(p)}
-                  aria-label={`Agregar ${p.nombre}`}
-                >
-                  Agregar
-                </button>
-              </article>
+              </button>
             ))}
             {!productosTab.length ? (
               <div style={{ gridColumn: "1 / -1", padding: 20, color: "#809284", textAlign: "center" }}>

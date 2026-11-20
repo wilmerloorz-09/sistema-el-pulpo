@@ -21,9 +21,8 @@ html.extra-station-active body {
   --red: #e74c3c;
   --red-soft: #fdecea;
   --mesa-h: 92px;
-  --prod-img: 82px;
+  --prod-img: 100px;
   --prod-name: 56px;
-  --prod-btn: 34px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -380,23 +379,36 @@ html.extra-station-active body {
   overflow-y: auto;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  grid-auto-rows: calc(var(--prod-img) + var(--prod-name) + var(--prod-btn) + 14px);
+  grid-auto-rows: calc(var(--prod-img) + var(--prod-name) + 8px);
   gap: 8px;
   align-content: start;
   -webkit-overflow-scrolling: touch;
 }
 
-/* Tarjeta producto con filas fijas = todas iguales */
+/* Tarjeta producto: toca toda la card para agregar */
 .extra-product {
   border: 1px solid var(--line);
   border-radius: 10px;
   background: #fff;
   overflow: hidden;
   display: grid;
-  grid-template-rows: var(--prod-img) var(--prod-name) var(--prod-btn);
-  height: calc(var(--prod-img) + var(--prod-name) + var(--prod-btn) + 14px);
+  grid-template-rows: var(--prod-img) var(--prod-name);
+  height: calc(var(--prod-img) + var(--prod-name) + 8px);
   min-height: 0;
-  padding-bottom: 6px;
+  padding: 0;
+  cursor: pointer;
+  color: inherit;
+  text-align: inherit;
+  font: inherit;
+}
+
+.extra-product:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.extra-product:not(:disabled):active {
+  transform: scale(0.98);
 }
 
 .extra-product-img {
@@ -432,7 +444,7 @@ html.extra-station-active body {
 .extra-product-name {
   height: var(--prod-name);
   padding: 4px 6px;
-  font-size: 17.5px;
+  font-size: 18.5px;
   font-weight: 800;
   line-height: 1.2;
   color: #1a2e24;
@@ -445,27 +457,6 @@ html.extra-station-active body {
   justify-content: center;
 }
 
-.extra-product-add {
-  height: var(--prod-btn);
-  margin: 0 8px;
-  border: 0;
-  border-radius: 8px;
-  background: var(--green);
-  color: #fff;
-  font-size: 13px;
-  font-weight: 800;
-  cursor: pointer;
-  align-self: center;
-}
-
-.extra-product-add:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.extra-product-add:not(:disabled):active {
-  transform: scale(0.98);
-}
 
 /* ===== PEDIDOS ===== */
 .extra-orders-head {
@@ -653,9 +644,8 @@ html.extra-station-active body {
 
   .extra-station {
     --mesa-h: 84px;
-    --prod-img: 80px;
-    --prod-name: 52px;
-    --prod-btn: 34px;
+    --prod-img: 92px;
+    --prod-name: 54px;
   }
 
   .extra-brand strong {
@@ -673,11 +663,7 @@ html.extra-station-active body {
   }
 
   .extra-product-name {
-    font-size: 16.5px;
-  }
-
-  .extra-product-add {
-    font-size: 12px;
+    font-size: 17.5px;
   }
 
   .extra-btn-clear,
