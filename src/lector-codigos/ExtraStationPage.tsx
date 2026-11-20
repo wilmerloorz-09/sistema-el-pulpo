@@ -272,7 +272,7 @@ export default function ExtraStationPage() {
       link = document.createElement("link");
       link.id = cssId;
       link.rel = "stylesheet";
-      link.href = "/lector-codigos/extra-station.css?v=20261119-extra-price-bubble";
+      link.href = "/lector-codigos/extra-station.css?v=20261119-extra-price-top";
       document.head.appendChild(link);
     }
     document.documentElement.classList.add(bodyClass);
@@ -870,6 +870,7 @@ export default function ExtraStationPage() {
                 <div
                   className={`extra-product-img fit-${p.imageFit}${p.imageUrl ? "" : " is-empty"}`}
                 >
+                  <span className="extra-product-price">{dinero(p.precio)}</span>
                   {p.imageUrl ? (
                     <img
                       src={p.imageUrl}
@@ -893,10 +894,7 @@ export default function ExtraStationPage() {
                     <span>{p.nombre.slice(0, 1)}</span>
                   )}
                 </div>
-                <div className="extra-product-name">
-                  <span className="extra-product-name-text">{p.nombre}</span>
-                  <span className="extra-product-price">{dinero(p.precio)}</span>
-                </div>
+                <div className="extra-product-name">{p.nombre}</div>
               </button>
             ))}
             {!productosTab.length ? (
