@@ -454,7 +454,6 @@ export default function ExtraStationPage() {
     [draft],
   );
 
-  const puedeAgregar = Boolean(ordenActiva) && !registrando;
   const mesaLibreSeleccionada = Boolean(mesaActiva && mesaActiva.estado === "libre");
 
   const limpiarDraft = () => {
