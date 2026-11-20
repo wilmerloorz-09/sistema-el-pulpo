@@ -21,9 +21,9 @@ html.extra-station-active body {
   --red: #e74c3c;
   --red-soft: #fdecea;
   --mesa-h: 92px;
-  --prod-img: 112px;
-  --prod-name: 36px;
-  --prod-btn: 36px;
+  --prod-img: 96px;
+  --prod-name: 34px;
+  --prod-btn: 34px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -360,7 +360,7 @@ html.extra-station-active body {
   overflow-x: hidden;
   overflow-y: auto;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   grid-auto-rows: calc(var(--prod-img) + var(--prod-name) + var(--prod-btn) + 14px);
   gap: 8px;
   align-content: start;
