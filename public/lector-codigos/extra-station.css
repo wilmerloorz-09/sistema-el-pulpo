@@ -387,7 +387,7 @@ html.extra-station-active body {
 
 /* Tarjeta producto: toca toda la card para agregar */
 .extra-product {
-  border: 2px solid #9eb0a2;
+  border: 3px solid #7f9484;
   border-radius: 12px;
   background: #fff;
   overflow: hidden;
@@ -452,20 +452,45 @@ html.extra-station-active body {
 
 .extra-product-name {
   height: var(--prod-name);
-  padding: 4px 6px;
-  font-size: 18.5px;
-  font-weight: 800;
-  line-height: 1.2;
+  padding: 4px 6px 4px 8px;
   color: #0f3d26;
   background: #e2f0e6;
   border-top: 1px solid #c5d6c8;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.extra-product-name-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 18.5px;
+  font-weight: 800;
+  line-height: 1.15;
+  text-align: left;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  text-align: center;
-  align-content: center;
+}
+
+.extra-product-price {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
   justify-content: center;
+  min-height: 28px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: #c2410c;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: 0 1px 0 rgba(80, 20, 0, 0.18);
 }
 
 
@@ -673,8 +698,14 @@ html.extra-station-active body {
     height: 34px;
   }
 
-  .extra-product-name {
+  .extra-product-name-text {
     font-size: 17.5px;
+  }
+
+  .extra-product-price {
+    font-size: 12px;
+    min-height: 26px;
+    padding: 2px 8px;
   }
 
   .extra-btn-clear,
