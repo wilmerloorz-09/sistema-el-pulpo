@@ -19,7 +19,10 @@ type Props = {
 };
 
 export default function ExtraFrecuentesManager({ open, branchId, catalog, onClose }: Props) {
-  const { products, isLoading, addProduct, removeProduct } = useFrequentProducts(branchId, "EXTRA");
+  const { products, isLoading, addProduct, removeProduct, reorderProducts } = useFrequentProducts(
+    branchId,
+    "EXTRA",
+  );
   const [busqueda, setBusqueda] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -61,6 +64,27 @@ export default function ExtraFrecuentesManager({ open, branchId, catalog, onClos
       await removeProduct.mutateAsync(rowId);
     } catch (e: any) {
       setError(e?.message || "No se pudo quitar.");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const onMove = async (rowId: string, direction: "up" | "down") => {
+    const index = products.findIndex((row) => row.id === rowId);
+    if (index < 0) return;
+    const target = direction === "up" ? index - 1 : index + 1;
+    if (target < 0 || target >= products.length) return;
+
+    const nextIds = products.map((row) => row.id);
+    const [moved] = nextIds.splice(index, 1);
+    nextIds.splice(target, 0, moved);
+
+    setError(null);
+    setBusyId(rowId);
+    try {
+      await reorderProducts.mutateAsync(nextIds);
+    } catch (e: any) {
+      setError(e?.message || "No se pudo reordenar.");
     } finally {
       setBusyId(null);
     }
@@ -123,7 +147,7 @@ export default function ExtraFrecuentesManager({ open, branchId, catalog, onClos
               <div className="extra-freq-list">
                 {isLoading ? <p className="extra-freq-empty">Cargando…</p> : null}
                 {!isLoading
-                  && products.map((row) => {
+                  && products.map((row, index) => {
                     const node = row.menu_node;
                     const nombre = node?.name ?? "Producto";
                     const productId = node ? resolveMenuNodeProductId(node) : null;
@@ -132,6 +156,7 @@ export default function ExtraFrecuentesManager({ open, branchId, catalog, onClos
                       : null;
                     const imageUrl = fromCatalog?.imageUrl ?? node?.image_url ?? null;
                     const precio = fromCatalog?.precio ?? Number(node?.price ?? 0);
+                    const reordering = busyId === row.id || reorderProducts.isPending;
                     return (
                       <div key={row.id} className="extra-freq-item is-listed">
                         {imageUrl ? <img src={imageUrl} alt="" /> : <span className="thumb">—</span>}
@@ -139,6 +164,28 @@ export default function ExtraFrecuentesManager({ open, branchId, catalog, onClos
                           <strong>{nombre}</strong>
                           <small>{dinero(precio)}</small>
                         </span>
+                        <div className="extra-freq-move">
+                          <button
+                            type="button"
+                            className="move-btn"
+                            disabled={index === 0 || reordering}
+                            onClick={() => void onMove(row.id, "up")}
+                            aria-label={`Subir ${nombre}`}
+                            title="Subir"
+                          >
+                            ▲
+                          </button>
+                          <button
+                            type="button"
+                            className="move-btn"
+                            disabled={index === products.length - 1 || reordering}
+                            onClick={() => void onMove(row.id, "down")}
+                            aria-label={`Bajar ${nombre}`}
+                            title="Bajar"
+                          >
+                            ▼
+                          </button>
+                        </div>
                         <button
                           type="button"
                           className="action remove"

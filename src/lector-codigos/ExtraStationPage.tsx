@@ -272,7 +272,7 @@ export default function ExtraStationPage() {
       link = document.createElement("link");
       link.id = cssId;
       link.rel = "stylesheet";
-      link.href = "/lector-codigos/extra-station.css?v=20261119-extra-price-top";
+      link.href = "/lector-codigos/extra-station.css?v=20261119-extra-freq-arrows";
       document.head.appendChild(link);
     }
     document.documentElement.classList.add(bodyClass);
