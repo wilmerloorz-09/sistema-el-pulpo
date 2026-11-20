@@ -272,7 +272,7 @@ export default function ExtraStationPage() {
       link = document.createElement("link");
       link.id = cssId;
       link.rel = "stylesheet";
-      link.href = "/lector-codigos/extra-station.css?v=20261119-extra-4col";
+      link.href = "/lector-codigos/extra-station.css?v=20261119-extra-mesa-num";
       document.head.appendChild(link);
     }
     document.documentElement.classList.add(bodyClass);
@@ -796,19 +796,20 @@ export default function ExtraStationPage() {
               const selected = m.id === mesaId;
               const libre = m.estado === "libre";
               const pedidos = Math.max(m.cantidad_ordenes, m.ordenes.length);
+              const numero =
+                m.nombre.replace(/^Mesa\s*/i, "").trim() || m.nombre;
               return (
                 <button
                   key={m.id}
                   type="button"
-                  className={`extra-mesa-card ${libre ? "libre" : m.estado === "por_cobrar" ? "por_cobrar" : "ocupada"} ${
+                  className={`extra-mesa-card solo-numero ${libre ? "libre" : m.estado === "por_cobrar" ? "por_cobrar" : "ocupada"} ${
                     selected ? "selected" : ""
                   }`}
+                  title={m.nombre}
+                  aria-label={m.nombre}
                   onClick={() => seleccionarMesa(m)}
                 >
-                  <strong>{m.nombre}</strong>
-                  <span className="mesa-ico">
-                    <MesaIcon />
-                  </span>
+                  <strong className="mesa-numero">{numero}</strong>
                   <span className="mesa-pill">
                     {libre ? "Libre" : `Pedidos: ${Math.max(1, pedidos)}`}
                   </span>
