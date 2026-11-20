@@ -310,11 +310,30 @@ export default function ExtraStationPage() {
 
   const llevarSeleccionado = mesaId === PARA_LLEVAR_ID || (!mesaId && Boolean(ordenId));
 
+  const etiquetaOrdenSeleccionada = useMemo(() => {
+    if (!ordenActiva) return null;
+    if (ordenActiva.codigo) return String(ordenActiva.codigo);
+    return "Orden";
+  }, [ordenActiva]);
+
   const tituloPedidos = useMemo(() => {
     if (llevarSeleccionado) return "Pedidos Para Llevar";
-    if (mesaActiva) return `Pedidos de la ${mesaActiva.nombre}`;
+    if (mesaActiva && etiquetaOrdenSeleccionada) {
+      return `${mesaActiva.nombre} - ${etiquetaOrdenSeleccionada}`;
+    }
+    if (mesaActiva) return mesaActiva.nombre;
     return "Pedidos";
-  }, [llevarSeleccionado, mesaActiva]);
+  }, [llevarSeleccionado, mesaActiva, etiquetaOrdenSeleccionada]);
+
+  const totalMesaSeleccionada = useMemo(() => {
+    if (mesaActiva) {
+      if (Number(mesaActiva.total_pendiente) > 0) return Number(mesaActiva.total_pendiente);
+      if (ordenActiva) return ordenActiva.saldo > 0 ? ordenActiva.saldo : ordenActiva.total;
+      return mesaActiva.ordenes.reduce((sum, o) => sum + Number(o.total ?? 0), 0);
+    }
+    if (ordenActiva) return ordenActiva.saldo > 0 ? ordenActiva.saldo : ordenActiva.total;
+    return 0;
+  }, [mesaActiva, ordenActiva]);
 
   // CSS aislado: entra con Extra y se quita al salir.
   useEffect(() => {
@@ -325,7 +344,7 @@ export default function ExtraStationPage() {
       link = document.createElement("link");
       link.id = cssId;
       link.rel = "stylesheet";
-      link.href = "/lector-codigos/extra-station.css?v=20261120-extra-brand-bigger";
+      link.href = "/lector-codigos/extra-station.css?v=20261120-extra-mesas-pastel";
       document.head.appendChild(link);
     }
     document.documentElement.classList.add(bodyClass);
@@ -810,6 +829,11 @@ export default function ExtraStationPage() {
   };
 
   const seleccionarMesa = (m: MesaSucursal) => {
+    if (m.estado === "libre") {
+      setErrorMsg(null);
+      return;
+    }
+
     const porOverview = m.ordenes.length
       ? m.ordenes
       : m.id_orden_activa
@@ -1024,20 +1048,16 @@ export default function ExtraStationPage() {
           <div className="extra-mesas-grid">
             <button
               type="button"
-              className={`extra-mesa-card para-llevar ${llevarSeleccionado ? "selected" : ""} ${
-                ordenesLlevar.length ? "ocupada" : "libre"
-              }`}
-              onClick={seleccionarParaLlevar}
+              className="extra-mesa-card para-llevar is-disabled"
+              disabled
+              aria-disabled="true"
+              title="Para Llevar temporalmente desactivado"
             >
               <strong>Para Llevar</strong>
               <span className="mesa-ico">
                 <BagIcon />
               </span>
-              <span className="mesa-pill">
-                {ordenesLlevar.length
-                  ? `Pedidos: ${ordenesLlevar.length}`
-                  : "Sin órdenes"}
-              </span>
+              <span className="mesa-pill">Desactivado</span>
             </button>
 
             {mesas.map((m) => {
@@ -1050,11 +1070,16 @@ export default function ExtraStationPage() {
                 <button
                   key={m.id}
                   type="button"
-                  className={`extra-mesa-card solo-numero ${libre ? "libre" : m.estado === "por_cobrar" ? "por_cobrar" : "ocupada"} ${
-                    selected ? "selected" : ""
-                  }`}
-                  title={m.nombre}
-                  aria-label={m.nombre}
+                  className={`extra-mesa-card solo-numero ${
+                    libre
+                      ? "libre is-disabled"
+                      : m.estado === "por_cobrar"
+                        ? "por_cobrar"
+                        : "ocupada"
+                  } ${selected ? "selected" : ""}`}
+                  title={libre ? `${m.nombre} (libre)` : m.nombre}
+                  aria-label={libre ? `${m.nombre} libre` : m.nombre}
+                  disabled={libre}
                   onClick={() => seleccionarMesa(m)}
                 >
                   <strong className="mesa-numero">{numero}</strong>
@@ -1201,7 +1226,11 @@ export default function ExtraStationPage() {
         <section className="extra-panel" aria-label="Pedidos">
           <div className="extra-orders-head">
             <span>{tituloPedidos}</span>
-            <span aria-hidden>+</span>
+            {mesaActiva && ordenActiva ? (
+              <strong className="extra-orders-head-total">{dinero(totalMesaSeleccionada)}</strong>
+            ) : (
+              <span aria-hidden>+</span>
+            )}
           </div>
 
           {errorMsg ? <div className="extra-alert" role="alert">{errorMsg}</div> : null}

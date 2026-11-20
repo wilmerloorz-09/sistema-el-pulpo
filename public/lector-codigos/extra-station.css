@@ -260,58 +260,75 @@ html.extra-station-active body {
   text-overflow: ellipsis;
 }
 
-.extra-mesa-card.libre .mesa-pill {
-  background: #e5f6ea;
-  color: #1f7a3f;
+.extra-mesa-card.libre,
+.extra-mesa-card.is-disabled {
+  opacity: 0.48;
+  filter: grayscale(0.35);
+  background: #eef1ee;
+  border-color: #d5dbd6;
+  color: #7a8a80;
+  cursor: default;
 }
 
-.extra-mesa-card.ocupada .mesa-pill,
+.extra-mesa-card.libre .mesa-pill,
+.extra-mesa-card.is-disabled .mesa-pill {
+  background: #e2e7e3;
+  color: #6d7c72;
+}
+
+.extra-mesa-card.ocupada {
+  background: linear-gradient(165deg, #e7f6ee, #d8f0e3);
+  border-color: #9fceb3;
+  color: #1f4d33;
+}
+
+.extra-mesa-card.por_cobrar {
+  background: linear-gradient(165deg, #fff4e8, #ffe8d2);
+  border-color: #f0c49a;
+  color: #7a4a1f;
+}
+
+.extra-mesa-card.ocupada .mesa-pill {
+  background: #cfe8d8;
+  color: #1f6b45;
+}
+
 .extra-mesa-card.por_cobrar .mesa-pill {
-  background: var(--red-soft);
-  color: #c0392b;
+  background: #ffe0c4;
+  color: #9a5520;
 }
 
 .extra-mesa-card.selected {
-  background: var(--green);
-  border: 3px solid var(--yellow);
-  color: #fff;
+  background: linear-gradient(165deg, #c8ead6, #b4e0c8);
+  border: 2.5px solid #5aaa78;
+  color: #0f3d26;
+  box-shadow: 0 0 0 2px rgba(90, 170, 120, 0.18);
 }
 
 .extra-mesa-card.selected .mesa-ico {
-  background: rgba(255, 255, 255, 0.18);
-  color: #fff;
+  background: rgba(255, 255, 255, 0.55);
+  color: #17633b;
 }
 
 .extra-mesa-card.selected .mesa-pill {
-  background: var(--yellow);
-  color: #1a1a1a;
+  background: #fff8d6;
+  color: #3d5a20;
 }
 
 .extra-mesa-card.para-llevar {
-  border-color: #c4b5fd;
-  background: linear-gradient(160deg, #f5f3ff, #fff);
-  color: #5b21b6;
+  border-color: #d5dbd6;
+  background: #eef1ee;
+  color: #7a8a80;
 }
 
 .extra-mesa-card.para-llevar .mesa-ico {
-  background: #ede9fe;
-  color: #6d28d9;
+  background: #e2e7e3;
+  color: #8a9690;
 }
 
 .extra-mesa-card.para-llevar .mesa-pill {
-  background: #ede9fe;
-  color: #5b21b6;
-}
-
-.extra-mesa-card.para-llevar.selected {
-  background: #6d28d9;
-  border-color: var(--yellow);
-  color: #fff;
-}
-
-.extra-mesa-card.para-llevar.selected .mesa-pill {
-  background: var(--yellow);
-  color: #1a1a1a;
+  background: #e2e7e3;
+  color: #6d7c72;
 }
 
 /* ===== CATÁLOGO ===== */
@@ -678,6 +695,13 @@ html.extra-station-active body {
   font-size: 13px;
   font-weight: 700;
   flex: 0 0 40px;
+}
+
+.extra-orders-head-total {
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
 }
 
 .extra-orders-list {
