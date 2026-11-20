@@ -787,10 +787,28 @@ html.extra-station-active body {
 .extra-freq-list {
   flex: 1 1 auto;
   min-height: 180px;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 6px;
+  padding-right: 6px;
+  scrollbar-gutter: stable;
+}
+
+.extra-freq-list::-webkit-scrollbar {
+  width: 10px;
+}
+
+.extra-freq-list::-webkit-scrollbar-track {
+  background: #eef3ea;
+  border-radius: 999px;
+}
+
+.extra-freq-list::-webkit-scrollbar-thumb {
+  background: #b7c8ba;
+  border-radius: 999px;
+  border: 2px solid #eef3ea;
 }
 
 .extra-freq-item {
@@ -798,13 +816,15 @@ html.extra-station-active body {
   grid-template-columns: 40px minmax(0, 1fr) 28px;
   gap: 8px;
   align-items: center;
-  padding: 6px;
+  padding: 6px 8px 6px 6px;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: #fff;
   text-align: left;
   cursor: pointer;
   color: #1f3a2e;
+  width: 100%;
+  min-width: 0;
 }
 
 .extra-freq-item.is-listed {
