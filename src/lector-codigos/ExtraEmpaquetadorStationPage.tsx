@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -19,6 +19,7 @@ import {
 import { productoBloqueadoPorStockInventario } from "@/lib/inventarioProductos";
 import ExtraAdminAuthDialog from "./componentes/ExtraAdminAuthDialog";
 import ExtraEmpaquetadorPackingPanel from "./componentes/ExtraEmpaquetadorPackingPanel";
+import ExtraEmpaquetadorPaymentDialog from "./componentes/ExtraEmpaquetadorPaymentDialog";
 import ExtraFrecuentesManager from "./componentes/ExtraFrecuentesManager";
 import type { DispatchOrder } from "@/hooks/useDispatchOrders";
 import {
@@ -272,7 +273,6 @@ function BagIcon() {
 }
 
 export default function ExtraEmpaquetadorStationPage() {
-  const navigate = useNavigate();
   const { user, signOut, loading: authLoading } = useAuth();
 
   const [sucursal, setSucursal] = useState<Sucursal | null>(null);
@@ -302,6 +302,8 @@ export default function ExtraEmpaquetadorStationPage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [gestionarFrecuentes, setGestionarFrecuentes] = useState(false);
   const [authFrecuentesOpen, setAuthFrecuentesOpen] = useState(false);
+  const [cobroOrderId, setCobroOrderId] = useState<string | null>(null);
+  const [cobroOpen, setCobroOpen] = useState(false);
   const [marcaPicker, setMarcaPicker] = useState<{
     title: string;
     productos: CatalogProduct[];
@@ -793,12 +795,18 @@ export default function ExtraEmpaquetadorStationPage() {
       setDraft([]);
       setOrdenId(null);
       setMesaId(null);
-      navigate(`/caja?order=${encodeURIComponent(orderId)}`);
+      setCobroOrderId(orderId);
+      setCobroOpen(true);
     } catch (e: any) {
       setErrorMsg(e?.message || "No se pudo crear la orden para cobrar.");
     } finally {
       setRegistrando(false);
     }
+  };
+
+  const cerrarCobro = () => {
+    setCobroOpen(false);
+    setCobroOrderId(null);
   };
 
   const ajustarCantidadDraft = (productId: string, delta: number) => {
@@ -1570,6 +1578,18 @@ export default function ExtraEmpaquetadorStationPage() {
             onClose={() => setGestionarFrecuentes(false)}
           />
         </>
+      ) : null}
+
+      {cobroOpen ? (
+        <ExtraEmpaquetadorPaymentDialog
+          orderId={cobroOrderId}
+          open={cobroOpen}
+          onClose={cerrarCobro}
+          onPaid={() => {
+            void refrescarOrdenes();
+            void stockBodegaQuery.refetch();
+          }}
+        />
       ) : null}
     </div>
   );

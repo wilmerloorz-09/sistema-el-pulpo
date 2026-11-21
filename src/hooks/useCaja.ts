@@ -1122,7 +1122,7 @@ function getPayableQuantityForOrderType(
 }
 
 /** Construye una PayableOrder por id sin filtrar por cash_shift (recobro tras anulación). */
-async function buildPayableOrderById(params: {
+export async function buildPayableOrderById(params: {
   orderId: string;
   branchId: string;
   workflowMode: string;
