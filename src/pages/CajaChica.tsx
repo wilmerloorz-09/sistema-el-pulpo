@@ -99,7 +99,7 @@ type FormState = {
   movimientoId: string | null;
   tipo: CajaChicaTipo;
   /**
-   * Reposición: monto único.
+   * Reposición: saldo que quedará (no el incremento).
    * Egreso: total del gasto (se calcula de las líneas, pero es editable y puede diferir).
    */
   monto: string;
@@ -116,6 +116,8 @@ type FormState = {
   /** Para editar: monto/tipo originales liberan saldo al recalcular. */
   originalTipo: CajaChicaTipo | null;
   originalMonto: number | null;
+  /** Para editar reposición: saldo previo al movimiento (base del objetivo). */
+  originalSaldoAntes: number | null;
 };
 
 const emptyForm = (tipo: CajaChicaTipo): FormState => ({
@@ -132,7 +134,10 @@ const emptyForm = (tipo: CajaChicaTipo): FormState => ({
   creadoEn: new Date().toISOString(),
   originalTipo: null,
   originalMonto: null,
+  originalSaldoAntes: null,
 });
+
+const roundMoney = (n: number) => Math.round(n * 100) / 100;
 
 const parseMonto = (raw: string) => Number(String(raw).replace(",", "."));
 
@@ -309,11 +314,6 @@ function ConceptosGastoPicker({
                     >
                       <Check className="mr-2 h-4 w-4 opacity-0" />
                       <span className="min-w-0 flex-1 truncate">{c.nombre}</span>
-                      {c.usos > 0 ? (
-                        <span className="ml-2 shrink-0 text-[10px] text-muted-foreground">
-                          {c.usos}x
-                        </span>
-                      ) : null}
                     </CommandItem>
                   ))}
                 </CommandGroup>
@@ -476,9 +476,19 @@ export default function CajaChica() {
       const observacion = form.tipo === "EGRESO" ? form.observacion.trim() || undefined : undefined;
 
       if (form.tipo === "REPOSICION") {
-        const monto = parseMonto(form.monto);
-        if (!Number.isFinite(monto) || monto <= 0) {
-          throw new Error("Ingresa un monto válido");
+        const saldoObjetivo = parseMonto(form.monto);
+        if (!Number.isFinite(saldoObjetivo) || saldoObjetivo <= 0) {
+          throw new Error("Ingresa el saldo que quedará");
+        }
+        // El valor digitado es el saldo final; al backend va solo el incremento.
+        const saldoBase = form.movimientoId
+          ? Number(form.originalSaldoAntes ?? 0)
+          : saldoActual;
+        const monto = roundMoney(saldoObjetivo - saldoBase);
+        if (monto <= 0) {
+          throw new Error(
+            `El saldo a dejar debe ser mayor al saldo actual (${money(saldoBase)})`,
+          );
         }
         if (!form.movimientoId) {
           return registrarMovimientoCajaChica({
@@ -662,7 +672,8 @@ export default function CajaChica() {
     setForm({
       movimientoId: m.id,
       tipo: m.tipo,
-      monto: String(m.monto),
+      // Reposición: se edita el saldo que quedó, no el incremento.
+      monto: m.tipo === "REPOSICION" ? String(m.saldo_despues) : String(m.monto),
       totalEditado: m.tipo === "EGRESO",
       lineasConcepto: m.tipo === "EGRESO"
         ? items.map((it, idx) => {
@@ -689,6 +700,7 @@ export default function CajaChica() {
       creadoEn: m.creado_en,
       originalTipo: m.tipo,
       originalMonto: Number(m.monto),
+      originalSaldoAntes: Number(m.saldo_antes),
     });
     setDialogOpen(true);
   };
@@ -1090,7 +1102,7 @@ export default function CajaChica() {
               </div>
               {form.tipo === "REPOSICION" ? (
                 <div className="space-y-1.5">
-                  <Label htmlFor="cc-monto">Monto</Label>
+                  <Label htmlFor="cc-monto">Saldo que quedará</Label>
                   <Input
                     id="cc-monto"
                     inputMode="decimal"
@@ -1146,6 +1158,10 @@ export default function CajaChica() {
               <div className="space-y-1.5">
                 <Label>Concepto</Label>
                 <Input value={CAJA_CHICA_CONCEPTO_REPOSICION} disabled className="rounded-xl bg-slate-50" />
+                <p className="text-xs text-muted-foreground">
+                  Saldo actual: {money(form.movimientoId ? Number(form.originalSaldoAntes ?? 0) : saldoActual)}.
+                  El valor ingresado es el saldo final (no se suma al existente).
+                </p>
               </div>
             )}
             {form.tipo === "EGRESO" ? (
