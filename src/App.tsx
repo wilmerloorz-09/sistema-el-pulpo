@@ -582,7 +582,9 @@ const App = () => (
                 path="/extra-empaquetador"
                 element={
                   <AuthGateLector>
-                    <ExtraEmpaquetadorPage />
+                    <BranchProvider>
+                      <ExtraEmpaquetadorPage />
+                    </BranchProvider>
                   </AuthGateLector>
                 }
               />

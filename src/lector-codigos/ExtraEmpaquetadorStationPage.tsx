@@ -17,7 +17,9 @@ import {
 } from "@/lib/inventarioMenuData";
 import { productoBloqueadoPorStockInventario } from "@/lib/inventarioProductos";
 import ExtraAdminAuthDialog from "./componentes/ExtraAdminAuthDialog";
+import ExtraEmpaquetadorPackingPanel from "./componentes/ExtraEmpaquetadorPackingPanel";
 import ExtraFrecuentesManager from "./componentes/ExtraFrecuentesManager";
+import type { DispatchOrder } from "@/hooks/useDispatchOrders";
 import {
   agregarPorCodigo,
   listarMesasSucursal,
@@ -354,7 +356,7 @@ export default function ExtraEmpaquetadorStationPage() {
       link = document.createElement("link");
       link.id = cssId;
       link.rel = "stylesheet";
-      link.href = "/lector-codigos/extra-station.css?v=20261120-extra-admin-auth";
+      link.href = "/lector-codigos/extra-station.css?v=20261121-extra-empaquetador-packing";
       document.head.appendChild(link);
     }
     document.documentElement.classList.add(bodyClass);
@@ -735,8 +737,32 @@ export default function ExtraEmpaquetadorStationPage() {
   const totalEncabezado = totalMesaSeleccionada;
 
   const mesaLibreSeleccionada = Boolean(mesaActiva && mesaActiva.estado === "libre");
-  /** Segunda columna (catálogo): solo activa con mesa/orden lista para agregar. */
-  const catalogoHabilitado = Boolean(mesaActiva && ordenActiva);
+  /** Segunda columna (catálogo): activa al elegir una orden de la cola Empaquetador. */
+  const catalogoHabilitado = Boolean(ordenActiva);
+
+  const seleccionarOrdenEmpaquetador = (order: DispatchOrder) => {
+    setMesaId(null);
+    setPickerMesa(null);
+    setOrdenId(order.id);
+    setErrorMsg(null);
+    setOrdenes((prev) => {
+      if (prev.some((o) => o.id === order.id)) return prev;
+      const stub: OrdenAbierta = {
+        id: order.id,
+        codigo: order.order_code,
+        tipo: order.order_type,
+        estado: order.status,
+        mesa: order.table_name,
+        id_mesa: null,
+        total: 0,
+        pagado: 0,
+        saldo: 0,
+        creada_en: order.updated_at,
+        cliente: null,
+      };
+      return [stub, ...prev];
+    });
+  };
 
   const limpiarDraft = () => {
     setDraft([]);
@@ -1166,64 +1192,20 @@ export default function ExtraEmpaquetadorStationPage() {
       </header>
 
       <div className="extra-body">
-        <section className="extra-panel" aria-label="Mesas">
-          <div className="extra-panel-head">
-            <MesaIcon />
-            Mesas
-            {cargandoOrdenes ? <small style={{ fontWeight: 500, opacity: 0.7 }}> · sync</small> : null}
-          </div>
-          <div className="extra-mesas-grid">
-            <button
-              type="button"
-              className="extra-mesa-card para-llevar is-disabled"
-              disabled
-              aria-disabled="true"
-              title="Para Llevar temporalmente desactivado"
-            >
-              <strong>Para Llevar</strong>
-              <span className="mesa-ico">
-                <BagIcon />
-              </span>
-              <span className="mesa-pill">Desactivado</span>
-            </button>
-
-            {mesas.map((m) => {
-              const selected = m.id === mesaId;
-              const libre = m.estado === "libre";
-              const pedidos = Math.max(m.cantidad_ordenes, m.ordenes.length);
-              const numero =
-                m.nombre.replace(/^Mesa\s*/i, "").trim() || m.nombre;
-              return (
-                <button
-                  key={m.id}
-                  type="button"
-                  className={`extra-mesa-card solo-numero ${
-                    libre
-                      ? "libre is-disabled"
-                      : m.estado === "por_cobrar"
-                        ? "por_cobrar"
-                        : "ocupada"
-                  } ${selected ? "selected" : ""}`}
-                  title={libre ? `${m.nombre} (libre)` : m.nombre}
-                  aria-label={libre ? `${m.nombre} libre` : m.nombre}
-                  disabled={libre}
-                  onClick={() => seleccionarMesa(m)}
-                >
-                  <strong className="mesa-numero">{numero}</strong>
-                  <span className="mesa-pill">
-                    {libre ? "Libre" : `Pedidos: ${Math.max(1, pedidos)}`}
-                  </span>
-                </button>
-              );
-            })}
-
-            {!mesas.length && !cargandoOrdenes ? (
-              <div style={{ gridColumn: "1 / -1", padding: 12, color: "#809284", fontSize: 13 }}>
-                No hay mesas habilitadas en esta sucursal.
-              </div>
-            ) : null}
-          </div>
-        </section>
+        {sucursal ? (
+          <ExtraEmpaquetadorPackingPanel
+            branchId={sucursal.id}
+            selectedOrderId={ordenId}
+            onSelectOrder={seleccionarOrdenEmpaquetador}
+          />
+        ) : (
+          <section className="extra-panel" aria-label="Empaquetador">
+            <div className="extra-panel-head">Empaquetador</div>
+            <div style={{ padding: 12, color: "#809284", fontSize: 13 }}>
+              Cargando sucursal…
+            </div>
+          </section>
+        )}
 
         <section
           className={`extra-panel extra-catalog${catalogoHabilitado ? "" : " is-locked"}`}
@@ -1232,7 +1214,7 @@ export default function ExtraEmpaquetadorStationPage() {
         >
           {!catalogoHabilitado ? (
             <div className="extra-catalog-lock" role="status">
-              Selecciona una mesa para agregar productos
+              Selecciona una orden para agregar productos
             </div>
           ) : null}
           <div className="extra-tabs">
