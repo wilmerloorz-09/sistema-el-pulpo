@@ -21,6 +21,7 @@ import ExtraAdminAuthDialog from "./componentes/ExtraAdminAuthDialog";
 import ExtraEmpaquetadorPackingPanel from "./componentes/ExtraEmpaquetadorPackingPanel";
 import ExtraEmpaquetadorPaymentDialog from "./componentes/ExtraEmpaquetadorPaymentDialog";
 import ExtraFrecuentesManager from "./componentes/ExtraFrecuentesManager";
+import type { ExtraFreqAdminAuth } from "./dominio/adminSessionClient";
 import type { DispatchOrder } from "@/hooks/useDispatchOrders";
 import type { PayableOrder } from "@/hooks/useCaja";
 import {
@@ -303,6 +304,7 @@ export default function ExtraEmpaquetadorStationPage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [gestionarFrecuentes, setGestionarFrecuentes] = useState(false);
   const [authFrecuentesOpen, setAuthFrecuentesOpen] = useState(false);
+  const [freqAdminAuth, setFreqAdminAuth] = useState<ExtraFreqAdminAuth | null>(null);
   const [cobroOpen, setCobroOpen] = useState(false);
   const [cobroPreparing, setCobroPreparing] = useState(false);
   const [cobroPayable, setCobroPayable] = useState<PayableOrder | null>(null);
@@ -1706,13 +1708,20 @@ export default function ExtraEmpaquetadorStationPage() {
             open={authFrecuentesOpen}
             branchId={sucursal.id}
             onClose={() => setAuthFrecuentesOpen(false)}
-            onAuthorized={() => setGestionarFrecuentes(true)}
+            onAuthorized={(auth) => {
+              setFreqAdminAuth(auth);
+              setGestionarFrecuentes(true);
+            }}
           />
           <ExtraFrecuentesManager
             open={gestionarFrecuentes}
             branchId={sucursal.id}
             catalog={catalogAll}
-            onClose={() => setGestionarFrecuentes(false)}
+            adminAuth={freqAdminAuth}
+            onClose={() => {
+              setGestionarFrecuentes(false);
+              setFreqAdminAuth(null);
+            }}
           />
         </>
       ) : null}

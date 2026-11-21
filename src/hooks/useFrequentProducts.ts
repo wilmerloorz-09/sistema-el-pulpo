@@ -1,6 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
+import type { Database } from "@/integrations/supabase/types";
 import type { MenuNode } from "@/hooks/useMenuTree";
+
+type DbClient = SupabaseClient<Database>;
 
 export type FrequentProductContext = "MESA" | "TAKEOUT" | "EXPRESS" | "EXTRA";
 
@@ -52,11 +56,16 @@ export async function fetchFrequentProducts(
 
 const DISPLAY_ORDER_STAGING_OFFSET = 100_000;
 
-async function applyDisplayOrders(branchId: string, context: FrequentProductContext, orderedIds: string[]) {
+async function applyDisplayOrders(
+  branchId: string,
+  context: FrequentProductContext,
+  orderedIds: string[],
+  writeClient: DbClient = supabase,
+) {
   // Dos fases en paralelo: evita choques de unique(display_order) sin N×2 round-trips secuenciales.
   const stageResults = await Promise.all(
     orderedIds.map((id, index) =>
-      supabase
+      writeClient
         .from("extra_frequent_products" as any)
         .update({ display_order: DISPLAY_ORDER_STAGING_OFFSET + index + 1 })
         .eq("id", id)
@@ -69,7 +78,7 @@ async function applyDisplayOrders(branchId: string, context: FrequentProductCont
 
   const finalResults = await Promise.all(
     orderedIds.map((id, index) =>
-      supabase
+      writeClient
         .from("extra_frequent_products" as any)
         .update({ display_order: index + 1 })
         .eq("id", id)
@@ -84,8 +93,11 @@ async function applyDisplayOrders(branchId: string, context: FrequentProductCont
 export function useFrequentProducts(
   branchId: string | null | undefined,
   context: FrequentProductContext,
+  /** Cliente con sesión del admin que autorizó gestionar frecuentes. */
+  writeClient?: DbClient | null,
 ) {
   const queryClient = useQueryClient();
+  const writer = writeClient ?? supabase;
 
   const query = useQuery({
     queryKey: getFrequentProductsQueryKey(branchId, context),
@@ -112,7 +124,7 @@ export function useFrequentProducts(
           ? 1
           : Math.max(...existing.map((row) => Number(row.display_order) || 0)) + 1;
 
-      const { error } = await supabase.from("extra_frequent_products" as any).insert({
+      const { error } = await writer.from("extra_frequent_products" as any).insert({
         branch_id: branchId,
         context,
         menu_node_id: menuNodeId,
@@ -128,7 +140,7 @@ export function useFrequentProducts(
     mutationFn: async (rowId: string) => {
       if (!branchId) throw new Error("No hay sucursal activa");
 
-      const { error: deleteError } = await supabase
+      const { error: deleteError } = await writer
         .from("extra_frequent_products" as any)
         .delete()
         .eq("id", rowId)
@@ -142,6 +154,7 @@ export function useFrequentProducts(
         branchId,
         context,
         remaining.map((row) => row.id),
+        writer,
       );
     },
     onSuccess: invalidate,
@@ -150,7 +163,7 @@ export function useFrequentProducts(
   const reorderProducts = useMutation({
     mutationFn: async (orderedIds: string[]) => {
       if (!branchId) throw new Error("No hay sucursal activa");
-      await applyDisplayOrders(branchId, context, orderedIds);
+      await applyDisplayOrders(branchId, context, orderedIds, writer);
     },
     onMutate: async (orderedIds) => {
       const key = getFrequentProductsQueryKey(branchId, context);

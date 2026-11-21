@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { useFrequentProducts, type FrequentProductRow } from "@/hooks/useFrequentProducts";
+import type { Database } from "@/integrations/supabase/types";
 import { resolveMenuNodeProductId } from "@/lib/inventarioMenuData";
+import { createAdminSessionClient, type ExtraFreqAdminAuth } from "../dominio/adminSessionClient";
 import { dinero } from "../dominio/formato";
 
 type CatalogItem = {
@@ -15,13 +18,23 @@ type Props = {
   open: boolean;
   branchId: string;
   catalog: CatalogItem[];
+  adminAuth: ExtraFreqAdminAuth | null;
   onClose: () => void;
 };
 
-export default function ExtraFrecuentesManager({ open, branchId, catalog, onClose }: Props) {
+export default function ExtraFrecuentesManager({
+  open,
+  branchId,
+  catalog,
+  adminAuth,
+  onClose,
+}: Props) {
+  const [adminClient, setAdminClient] = useState<SupabaseClient<Database> | null>(null);
+  const [adminClientError, setAdminClientError] = useState<string | null>(null);
   const { products, isLoading, addProduct, removeProduct, reorderProducts } = useFrequentProducts(
     branchId,
     "EXTRA",
+    adminClient,
   );
   const [busqueda, setBusqueda] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -29,6 +42,34 @@ export default function ExtraFrecuentesManager({ open, branchId, catalog, onClos
   const [localProducts, setLocalProducts] = useState<FrequentProductRow[]>([]);
   const pendingOrderRef = useRef<string[] | null>(null);
   const flushingRef = useRef(false);
+
+  useEffect(() => {
+    let cancel = false;
+    if (!open || !adminAuth) {
+      setAdminClient(null);
+      setAdminClientError(null);
+      return;
+    }
+    setAdminClient(null);
+    setAdminClientError(null);
+    (async () => {
+      try {
+        const client = await createAdminSessionClient({
+          accessToken: adminAuth.accessToken,
+          refreshToken: adminAuth.refreshToken,
+        });
+        if (!cancel) setAdminClient(client);
+      } catch (e: any) {
+        if (!cancel) {
+          setAdminClient(null);
+          setAdminClientError(e?.message || "No se pudo activar la sesión del administrador.");
+        }
+      }
+    })();
+    return () => {
+      cancel = true;
+    };
+  }, [open, adminAuth]);
 
   useEffect(() => {
     // No pisar el orden local mientras hay un reorden pendiente o en vuelo.
@@ -54,6 +95,10 @@ export default function ExtraFrecuentesManager({ open, branchId, catalog, onClos
   if (!open) return null;
 
   const onAdd = async (menuNodeId: string) => {
+    if (!adminClient) {
+      setError(adminClientError || "Espera la autorización del administrador.");
+      return;
+    }
     setError(null);
     setBusyId(menuNodeId);
     try {
@@ -70,6 +115,10 @@ export default function ExtraFrecuentesManager({ open, branchId, catalog, onClos
   };
 
   const onRemove = async (rowId: string) => {
+    if (!adminClient) {
+      setError(adminClientError || "Espera la autorización del administrador.");
+      return;
+    }
     setError(null);
     setBusyId(rowId);
     setLocalProducts((prev) => prev.filter((row) => row.id !== rowId));
@@ -108,6 +157,10 @@ export default function ExtraFrecuentesManager({ open, branchId, catalog, onClos
   };
 
   const onMove = (rowId: string, direction: "up" | "down") => {
+    if (!adminClient) {
+      setError(adminClientError || "Espera la autorización del administrador.");
+      return;
+    }
     const index = listedProducts.findIndex((row) => row.id === rowId);
     if (index < 0) return;
     const target = direction === "up" ? index - 1 : index + 1;
@@ -137,7 +190,13 @@ export default function ExtraFrecuentesManager({ open, branchId, catalog, onClos
           </button>
         </div>
 
+        {adminClientError ? <div className="extra-freq-error">{adminClientError}</div> : null}
         {error ? <div className="extra-freq-error">{error}</div> : null}
+        {open && adminAuth && !adminClient && !adminClientError ? (
+          <div className="extra-freq-error" style={{ background: "#f1f5f9", color: "#334155", borderColor: "#cbd5e1" }}>
+            Activando autorización del administrador…
+          </div>
+        ) : null}
 
         <div className="extra-freq-body">
           <section className="extra-freq-col">

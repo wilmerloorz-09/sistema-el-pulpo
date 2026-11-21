@@ -18,6 +18,7 @@ import {
 import { productoBloqueadoPorStockInventario } from "@/lib/inventarioProductos";
 import ExtraAdminAuthDialog from "./componentes/ExtraAdminAuthDialog";
 import ExtraFrecuentesManager from "./componentes/ExtraFrecuentesManager";
+import type { ExtraFreqAdminAuth } from "./dominio/adminSessionClient";
 import {
   agregarPorCodigo,
   listarMesasSucursal,
@@ -300,6 +301,7 @@ export default function ExtraStationPage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [gestionarFrecuentes, setGestionarFrecuentes] = useState(false);
   const [authFrecuentesOpen, setAuthFrecuentesOpen] = useState(false);
+  const [freqAdminAuth, setFreqAdminAuth] = useState<ExtraFreqAdminAuth | null>(null);
   const [marcaPicker, setMarcaPicker] = useState<{
     title: string;
     productos: CatalogProduct[];
@@ -1596,13 +1598,20 @@ export default function ExtraStationPage() {
             open={authFrecuentesOpen}
             branchId={sucursal.id}
             onClose={() => setAuthFrecuentesOpen(false)}
-            onAuthorized={() => setGestionarFrecuentes(true)}
+            onAuthorized={(auth) => {
+              setFreqAdminAuth(auth);
+              setGestionarFrecuentes(true);
+            }}
           />
           <ExtraFrecuentesManager
             open={gestionarFrecuentes}
             branchId={sucursal.id}
             catalog={catalogAll}
-            onClose={() => setGestionarFrecuentes(false)}
+            adminAuth={freqAdminAuth}
+            onClose={() => {
+              setGestionarFrecuentes(false);
+              setFreqAdminAuth(null);
+            }}
           />
         </>
       ) : null}

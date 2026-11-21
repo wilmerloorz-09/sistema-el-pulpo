@@ -1,11 +1,12 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import type { ExtraFreqAdminAuth } from "../dominio/adminSessionClient";
 
 type Props = {
   open: boolean;
   branchId: string;
   onClose: () => void;
-  onAuthorized: () => void;
+  onAuthorized: (auth: ExtraFreqAdminAuth) => void;
 };
 
 async function esAdministrador(userId: string, branchId: string): Promise<boolean> {
@@ -78,14 +79,19 @@ export default function ExtraAdminAuthDialog({ open, branchId, onClose, onAuthor
       }
 
       const userId = String(data?.user?.id ?? "");
+      const accessToken = String(data?.access_token ?? "");
+      const refreshToken = String(data?.refresh_token ?? "");
       if (!userId) throw new Error("No se pudo identificar al usuario.");
+      if (!accessToken || !refreshToken) {
+        throw new Error("No se pudo obtener la sesión del administrador.");
+      }
 
       const ok = await esAdministrador(userId, branchId);
       if (!ok) {
         throw new Error("Solo administradores pueden gestionar frecuentes.");
       }
 
-      onAuthorized();
+      onAuthorized({ userId, accessToken, refreshToken });
       onClose();
     } catch (err: any) {
       setError(err?.message || "No se pudo autorizar.");
