@@ -736,9 +736,8 @@ export default function ExtraEmpaquetadorStationPage() {
   /** Total de la mesa (incluye extras ya registrados/despachados). */
   const totalEncabezado = totalMesaSeleccionada;
 
-  const mesaLibreSeleccionada = Boolean(mesaActiva && mesaActiva.estado === "libre");
-  /** Segunda columna (catálogo): activa al elegir una orden de la cola Empaquetador. */
-  const catalogoHabilitado = Boolean(ordenActiva);
+  /** Segunda columna (catálogo): siempre activa; ya no depende de mesas. */
+  const catalogoHabilitado = true;
 
   const seleccionarOrdenEmpaquetador = (order: DispatchOrder) => {
     setMesaId(null);
@@ -828,11 +827,7 @@ export default function ExtraEmpaquetadorStationPage() {
       return;
     }
     if (!ordenActiva) {
-      setErrorMsg(
-        mesaLibreSeleccionada
-          ? "Esta mesa está libre. Ábrela en el POS antes de registrar extras."
-          : "Selecciona una mesa u orden con cuenta abierta.",
-      );
+      setErrorMsg("Selecciona una orden de Empaquetador para agregar productos.");
       return;
     }
     if (registrando) return;
@@ -1207,16 +1202,7 @@ export default function ExtraEmpaquetadorStationPage() {
           </section>
         )}
 
-        <section
-          className={`extra-panel extra-catalog${catalogoHabilitado ? "" : " is-locked"}`}
-          aria-label="Catálogo"
-          aria-disabled={!catalogoHabilitado}
-        >
-          {!catalogoHabilitado ? (
-            <div className="extra-catalog-lock" role="status">
-              Selecciona una orden para agregar productos
-            </div>
-          ) : null}
+        <section className="extra-panel extra-catalog" aria-label="Catálogo">
           <div className="extra-tabs">
             {(
               [
@@ -1230,7 +1216,6 @@ export default function ExtraEmpaquetadorStationPage() {
                 key={key}
                 type="button"
                 className={tab === key ? "active" : ""}
-                disabled={!catalogoHabilitado}
                 onClick={() => setTab(key)}
               >
                 {label}
@@ -1248,7 +1233,6 @@ export default function ExtraEmpaquetadorStationPage() {
               onChange={(e) => setBusqueda(e.target.value)}
               placeholder="Buscar producto..."
               inputMode="search"
-              disabled={!catalogoHabilitado}
             />
           </div>
 
