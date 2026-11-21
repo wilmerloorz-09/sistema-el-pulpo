@@ -346,12 +346,11 @@ export default function ExtraStationPage() {
   }, [llevarSeleccionado, mesaActiva, etiquetaOrdenSeleccionada]);
 
   const totalMesaSeleccionada = useMemo(() => {
+    // Siempre el total/saldo de la orden seleccionada, no el de toda la mesa.
+    if (ordenActiva) return ordenActiva.saldo > 0 ? ordenActiva.saldo : ordenActiva.total;
     if (mesaActiva) {
-      if (Number(mesaActiva.total_pendiente) > 0) return Number(mesaActiva.total_pendiente);
-      if (ordenActiva) return ordenActiva.saldo > 0 ? ordenActiva.saldo : ordenActiva.total;
       return mesaActiva.ordenes.reduce((sum, o) => sum + Number(o.total ?? 0), 0);
     }
-    if (ordenActiva) return ordenActiva.saldo > 0 ? ordenActiva.saldo : ordenActiva.total;
     return 0;
   }, [mesaActiva, ordenActiva]);
 
