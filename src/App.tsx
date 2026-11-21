@@ -535,9 +535,7 @@ const App = () => (
                 element={
                   <AuthGateLector>
                     <ExtraStationEntryGate>
-                      <ExtraPackerOrAdminGate>
-                        <LectorCodigosPage />
-                      </ExtraPackerOrAdminGate>
+                      <LectorCodigosPage />
                     </ExtraStationEntryGate>
                   </AuthGateLector>
                 }
