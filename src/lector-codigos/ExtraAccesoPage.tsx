@@ -3,39 +3,15 @@ import { useNavigate } from "react-router-dom";
 import { Loader2, PackageCheck, ScanBarcode, Store } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { listarSucursalesAccesibles } from "./dominio/api";
 import type { Sucursal } from "./dominio/tipos";
 import { setExtraStationBranchId } from "./extraStationBranch";
 
 type Step = "branch" | "mode" | "loading";
 
-async function shiftHasEnabledPacker(branchId: string): Promise<boolean> {
-  const { data: shifts, error: shiftErr } = await supabase
-    .from("cash_shifts")
-    .select("id")
-    .eq("branch_id", branchId)
-    .eq("status", "OPEN")
-    .order("opened_at", { ascending: false })
-    .limit(1);
-  if (shiftErr) throw shiftErr;
-  const shiftId = shifts?.[0]?.id;
-  if (!shiftId) return false;
-
-  const { data: packers, error: packErr } = await supabase
-    .from("cash_shift_users")
-    .select("user_id")
-    .eq("shift_id", shiftId)
-    .eq("is_enabled", true)
-    .eq("can_pack_orders", true)
-    .limit(1);
-  if (packErr) throw packErr;
-  return (packers ?? []).length > 0;
-}
-
-/** Entrada externa a Extra / Extra Empaquetador (fuera del menú principal). */
+/** Entrada externa a Extra / Extra Empaquetador. No requiere sesión. */
 export default function ExtraAccesoPage() {
   const navigate = useNavigate();
-  const { signOut } = useAuth();
+  const { user, signOut } = useAuth();
   const [step, setStep] = useState<Step>("loading");
   const [sucursales, setSucursales] = useState<Sucursal[]>([]);
   const [selected, setSelected] = useState<Sucursal | null>(null);
@@ -50,7 +26,7 @@ export default function ExtraAccesoPage() {
       link = document.createElement("link");
       link.id = cssId;
       link.rel = "stylesheet";
-      link.href = "/lector-codigos/extra-station.css?v=20261121-extra-acceso";
+      link.href = "/lector-codigos/extra-station.css?v=20261121-extra-acceso-public";
       document.head.appendChild(link);
     }
     document.documentElement.classList.add(bodyClass);
@@ -66,29 +42,15 @@ export default function ExtraAccesoPage() {
     let cancel = false;
     (async () => {
       try {
-        const list = await listarSucursalesAccesibles();
-        if (!list.length) {
-          if (!cancel) {
-            setSucursales([]);
-            setStep("branch");
-          }
-          return;
-        }
-
-        const ids = list.map((s) => s.id);
-        const { data: openShifts, error: shiftErr } = await supabase
-          .from("cash_shifts")
-          .select("branch_id")
-          .eq("status", "OPEN")
-          .in("branch_id", ids);
-        if (shiftErr) throw shiftErr;
-
-        const openBranchIds = new Set(
-          (openShifts ?? []).map((row: any) => String(row.branch_id)).filter(Boolean),
-        );
-        const conTurno = list.filter((s) => openBranchIds.has(s.id));
+        const { data, error } = await supabase.rpc("list_extra_acceso_open_branches" as any);
+        if (error) throw error;
+        const list: Sucursal[] = (Array.isArray(data) ? data : []).map((row: any) => ({
+          id: String(row.id),
+          nombre: String(row.nombre ?? "Sucursal"),
+          codigo: row.codigo ? String(row.codigo) : null,
+        }));
         if (cancel) return;
-        setSucursales(conTurno);
+        setSucursales(list);
         setStep("branch");
       } catch (e: any) {
         if (!cancel) {
@@ -104,12 +66,12 @@ export default function ExtraAccesoPage() {
 
   const activarSucursal = useCallback(async (sucursal: Sucursal) => {
     setExtraStationBranchId(sucursal.id);
-    // Alinea BranchProvider (cobro Extra Empaquetador) sin pasar por el menú POS.
+    if (!user) return;
     const { error } = await supabase.rpc("set_my_active_branch" as any, {
       p_branch_id: sucursal.id,
     } as any);
     if (error) throw error;
-  }, []);
+  }, [user]);
 
   const irAModulo = useCallback(
     async (sucursal: Sucursal, destino: "/extra" | "/extra-empaquetador") => {
@@ -117,13 +79,17 @@ export default function ExtraAccesoPage() {
       setErrorMsg(null);
       try {
         await activarSucursal(sucursal);
+        if (!user) {
+          navigate(`/login?next=${encodeURIComponent(destino)}`, { replace: true });
+          return;
+        }
         navigate(destino, { replace: true });
       } catch (e: any) {
         setErrorMsg(e?.message || "No se pudo activar la sucursal.");
         setBusy(false);
       }
     },
-    [activarSucursal, navigate],
+    [activarSucursal, navigate, user],
   );
 
   const onSelectBranch = useCallback(
@@ -132,7 +98,11 @@ export default function ExtraAccesoPage() {
       setErrorMsg(null);
       setSelected(sucursal);
       try {
-        const hasPacker = await shiftHasEnabledPacker(sucursal.id);
+        const { data, error } = await supabase.rpc("extra_acceso_branch_has_packer" as any, {
+          p_branch_id: sucursal.id,
+        } as any);
+        if (error) throw error;
+        const hasPacker = Boolean(data);
         if (!hasPacker) {
           await irAModulo(sucursal, "/extra");
           return;
@@ -260,7 +230,7 @@ export default function ExtraAccesoPage() {
                 ))}
                 {!sucursales.length ? (
                   <p style={{ margin: 0, color: "#809284", fontSize: 13 }}>
-                    No hay sucursales con turno abierto accesibles para tu usuario.
+                    No hay sucursales con turno abierto.
                   </p>
                 ) : null}
               </div>
@@ -369,22 +339,24 @@ export default function ExtraAccesoPage() {
             </>
           ) : null}
 
-          <div style={{ marginTop: 18, displayTop: "1px solid #e4ebe4", paddingTop: 14 }}>
-            <button
-              type="button"
-              onClick={() => void signOut()}
-              style={{
-                border: 0,
-                background: "transparent",
-                color: "#809284",
-                fontWeight: 600,
-                cursor: "pointer",
-                fontSize: 13,
-              }}
-            >
-              Cerrar sesión
-            </button>
-          </div>
+          {user ? (
+            <div style={{ marginTop: 18, borderTop: "1px solid #e4ebe4", paddingTop: 14 }}>
+              <button
+                type="button"
+                onClick={() => void signOut()}
+                style={{
+                  border: 0,
+                  background: "transparent",
+                  color: "#809284",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  fontSize: 13,
+                }}
+              >
+                Cerrar sesión
+              </button>
+            </div>
+          ) : null}
         </div>
       </div>
     </div>

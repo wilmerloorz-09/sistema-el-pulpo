@@ -265,54 +265,14 @@ const AuthGate = ({ children }: { children: React.ReactNode }) => {
 };
 
 /**
- * Misma sesión del POS, sin BranchGate ni CierreSesionPorTurno.
- * El lector elige sucursal en local (no llama set_my_active_branch).
- * Temporal: solo administradores.
+ * Sesión para estaciones Extra: cualquier usuario autenticado.
+ * Sin BranchGate ni CierreSesionPorTurno (la sucursal viene de /extra-acceso).
  */
 const AuthGateLector = ({ children }: { children: React.ReactNode }) => {
   const { user, loading } = useAuth();
   const location = useLocation();
-  const [adminAccess, setAdminAccess] = useState<"loading" | "allowed" | "denied">("loading");
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const checkAdmin = async () => {
-      if (!user) {
-        if (!cancelled) setAdminAccess("denied");
-        return;
-      }
-
-      try {
-        const { data, error } = await supabase.rpc("get_my_access_context" as any);
-        if (error) throw error;
-
-        const payload = (data ?? {}) as {
-          is_global_admin?: boolean;
-          permissions?: Record<string, unknown>;
-        };
-        const permissions = payload.permissions ?? {};
-        const allowed =
-          Boolean(payload.is_global_admin)
-          || canView(permissions, "admin_sucursal")
-          || canView(permissions, "admin_global");
-
-        if (!cancelled) setAdminAccess(allowed ? "allowed" : "denied");
-      } catch {
-        if (!cancelled) setAdminAccess("denied");
-      }
-    };
-
-    if (!loading) {
-      void checkAdmin();
-    }
-
-    return () => {
-      cancelled = true;
-    };
-  }, [user, loading]);
-
-  if (loading || (user && adminAccess === "loading")) {
+  if (loading) {
     return <LoadingScreen />;
   }
 
@@ -321,11 +281,6 @@ const AuthGateLector = ({ children }: { children: React.ReactNode }) => {
     return <Navigate to={`/login?next=${encodeURIComponent(next)}`} replace />;
   }
 
-  if (adminAccess !== "allowed") {
-    return <Navigate to="/" replace />;
-  }
-
-  // Sin BranchProvider: evita fijar sucursal activa del POS al usar el lector.
   return <>{children}</>;
 };
 
@@ -573,14 +528,7 @@ const App = () => (
               <Route path="/promociones/registro" element={<PromocionRegistro />} />
               <Route path="/qr-pedido/:token" element={<QrPedido />} />
               <Route path="/imprimir-reporte-caja" element={<PrintCashReport />} />
-              <Route
-                path="/extra-acceso"
-                element={
-                  <AuthGateLector>
-                    <ExtraAccesoPage />
-                  </AuthGateLector>
-                }
-              />
+              <Route path="/extra-acceso" element={<ExtraAccesoPage />} />
               <Route
                 path="/extra"
                 element={
