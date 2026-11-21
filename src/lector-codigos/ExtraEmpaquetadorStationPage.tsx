@@ -22,6 +22,7 @@ import ExtraEmpaquetadorPackingPanel from "./componentes/ExtraEmpaquetadorPackin
 import ExtraEmpaquetadorPaymentDialog from "./componentes/ExtraEmpaquetadorPaymentDialog";
 import ExtraFrecuentesManager from "./componentes/ExtraFrecuentesManager";
 import type { DispatchOrder } from "@/hooks/useDispatchOrders";
+import type { PayableOrder } from "@/hooks/useCaja";
 import {
   listarMesasSucursal,
   listarOrdenesAbiertas,
@@ -302,8 +303,9 @@ export default function ExtraEmpaquetadorStationPage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [gestionarFrecuentes, setGestionarFrecuentes] = useState(false);
   const [authFrecuentesOpen, setAuthFrecuentesOpen] = useState(false);
-  const [cobroOrderId, setCobroOrderId] = useState<string | null>(null);
   const [cobroOpen, setCobroOpen] = useState(false);
+  const [cobroPreparing, setCobroPreparing] = useState(false);
+  const [cobroPayable, setCobroPayable] = useState<PayableOrder | null>(null);
   const [marcaPicker, setMarcaPicker] = useState<{
     title: string;
     productos: CatalogProduct[];
@@ -772,14 +774,19 @@ export default function ExtraEmpaquetadorStationPage() {
       return;
     }
 
+    const draftSnapshot = draft;
     setRegistrando(true);
     setErrorMsg(null);
+    setCobroPayable(null);
+    setCobroPreparing(true);
+    setCobroOpen(true); // feedback inmediato
+
     try {
       const { data, error } = await supabase.rpc(
         "create_extra_empaquetador_charge_order" as any,
         {
           p_branch_id: sucursal.id,
-          p_items: draft.map((line) => ({
+          p_items: draftSnapshot.map((line) => ({
             product_id: line.productId,
             quantity: line.qty,
           })),
@@ -787,17 +794,104 @@ export default function ExtraEmpaquetadorStationPage() {
       );
       if (error) throw error;
 
-      const orderId = String((data as any)?.order_id ?? "");
+      const payload = (data ?? {}) as {
+        order_id?: string;
+        order_code?: string | null;
+        order_number?: number | null;
+        status?: string;
+        items?: Array<{
+          id: string;
+          product_id: string;
+          menu_node_id?: string | null;
+          description_snapshot?: string | null;
+          quantity?: number | null;
+          unit_price?: number | null;
+          total?: number | null;
+          tray_item_type?: "A" | "B" | "C" | null;
+          tray_container_cost?: number | null;
+        }>;
+      };
+
+      const orderId = String(payload.order_id ?? "");
       if (!orderId) {
         throw new Error("No se pudo crear la orden para cobrar.");
       }
 
+      const rpcItems = Array.isArray(payload.items) ? payload.items : [];
+      const mappedItems =
+        rpcItems.length > 0
+          ? rpcItems.map((item) => {
+              const qty = Math.max(0, Number(item.quantity ?? 0));
+              const unit = Number(item.unit_price ?? 0);
+              const trayCost = Number(item.tray_container_cost ?? 0);
+              const total = Number(item.total ?? qty * unit + trayCost);
+              return {
+                id: String(item.id),
+                product_id: String(item.product_id),
+                menu_node_id: item.menu_node_id ? String(item.menu_node_id) : null,
+                image_url: null,
+                icon: null,
+                description_snapshot: String(item.description_snapshot ?? "Producto"),
+                quantity: qty,
+                unit_price: unit,
+                total,
+                tray_item_type: item.tray_item_type ?? null,
+                tray_container_cost: trayCost,
+                paid_at: null,
+                quantity_paid: 0,
+                quantity_pending: qty,
+                pending_total: total,
+              };
+            })
+          : draftSnapshot.map((line, idx) => ({
+              id: `tmp-${idx}-${line.productId}`,
+              product_id: line.productId,
+              menu_node_id: null,
+              image_url: line.imageUrl,
+              icon: null,
+              description_snapshot: line.nombre,
+              quantity: line.qty,
+              unit_price: line.precio,
+              total: line.precio * line.qty,
+              tray_item_type: null,
+              tray_container_cost: 0,
+              paid_at: null,
+              quantity_paid: 0,
+              quantity_pending: line.qty,
+              pending_total: line.precio * line.qty,
+            }));
+
+      const realTotal = mappedItems.reduce((sum, item) => sum + Number(item.pending_total ?? 0), 0);
+      const payable: PayableOrder = {
+        id: orderId,
+        order_number: payload.order_number == null ? null : Number(payload.order_number),
+        order_code: payload.order_code ?? null,
+        order_type: "EXTRA",
+        is_special: false,
+        is_tray_order: false,
+        created_by: user?.id ?? null,
+        created_by_name: null,
+        special_total_manual: null,
+        special_real_total: realTotal,
+        special_paid_amount: 0,
+        special_pending_amount: realTotal,
+        table_name: null,
+        table_name_snapshot: null,
+        split_code: null,
+        total: realTotal,
+        ready_to_collect: true,
+        items: mappedItems,
+      };
+
       setDraft([]);
       setOrdenId(null);
       setMesaId(null);
-      setCobroOrderId(orderId);
-      setCobroOpen(true);
+      setCobroPayable(payable);
+      setCobroPreparing(false);
     } catch (e: any) {
+      setCobroOpen(false);
+      setCobroPreparing(false);
+      setCobroPayable(null);
       setErrorMsg(e?.message || "No se pudo crear la orden para cobrar.");
     } finally {
       setRegistrando(false);
@@ -806,7 +900,8 @@ export default function ExtraEmpaquetadorStationPage() {
 
   const cerrarCobro = () => {
     setCobroOpen(false);
-    setCobroOrderId(null);
+    setCobroPreparing(false);
+    setCobroPayable(null);
   };
 
   const ajustarCantidadDraft = (productId: string, delta: number) => {
@@ -1580,17 +1675,16 @@ export default function ExtraEmpaquetadorStationPage() {
         </>
       ) : null}
 
-      {cobroOpen ? (
-        <ExtraEmpaquetadorPaymentDialog
-          orderId={cobroOrderId}
-          open={cobroOpen}
-          onClose={cerrarCobro}
-          onPaid={() => {
-            void refrescarOrdenes();
-            void stockBodegaQuery.refetch();
-          }}
-        />
-      ) : null}
+      <ExtraEmpaquetadorPaymentDialog
+        order={cobroPayable}
+        open={cobroOpen}
+        preparing={cobroPreparing || (cobroOpen && !cobroPayable)}
+        onClose={cerrarCobro}
+        onPaid={() => {
+          void refrescarOrdenes();
+          void stockBodegaQuery.refetch();
+        }}
+      />
     </div>
   );
 }
