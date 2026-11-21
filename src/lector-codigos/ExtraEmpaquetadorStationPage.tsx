@@ -22,11 +22,9 @@ import ExtraEmpaquetadorPackingPanel from "./componentes/ExtraEmpaquetadorPackin
 import ExtraFrecuentesManager from "./componentes/ExtraFrecuentesManager";
 import type { DispatchOrder } from "@/hooks/useDispatchOrders";
 import {
-  agregarPorCodigo,
   listarMesasSucursal,
   listarOrdenesAbiertas,
   obtenerSucursalActiva,
-  quitarCantidadesOrden,
 } from "./dominio/api";
 import {
   esChifle,
@@ -39,7 +37,7 @@ import {
   normalizarNombreProducto,
   type MarcaAtajo,
 } from "./dominio/atajosLayout";
-import { dinero, etiquetaTipoOrden, nuevoIdOperacion } from "./dominio/formato";
+import { dinero, etiquetaTipoOrden } from "./dominio/formato";
 import type {
   MesaSucursal,
   OrdenAbierta,
@@ -358,7 +356,7 @@ export default function ExtraEmpaquetadorStationPage() {
       link = document.createElement("link");
       link.id = cssId;
       link.rel = "stylesheet";
-      link.href = "/lector-codigos/extra-station.css?v=20261121-extra-empaquetador-packing";
+      link.href = "/lector-codigos/extra-station.css?v=20261121-extra-empaquetador-cobrar";
       document.head.appendChild(link);
     }
     document.documentElement.classList.add(bodyClass);
@@ -736,32 +734,7 @@ export default function ExtraEmpaquetadorStationPage() {
   /** Segunda columna (catálogo): siempre activa; ya no depende de mesas. */
   const catalogoHabilitado = true;
 
-  const volcarDraftAOrden = async (idOrden: string, lineas: DraftLine[]) => {
-    if (!lineas.length) return;
-    setRegistrando(true);
-    setErrorMsg(null);
-    try {
-      for (const line of lineas) {
-        await agregarPorCodigo({
-          idOperacion: nuevoIdOperacion(),
-          idOrden,
-          codigo: null,
-          idProducto: line.productId,
-          cantidad: line.qty,
-          fuente: "extra",
-        });
-      }
-      await refrescarOrdenes();
-      void stockBodegaQuery.refetch();
-    } catch (e: any) {
-      setErrorMsg(e?.message || "No se pudo registrar el draft en la orden.");
-    } finally {
-      setRegistrando(false);
-    }
-  };
-
   const seleccionarOrdenEmpaquetador = (order: DispatchOrder) => {
-    const volcarPendiente = !ordenId && draft.length > 0;
     setMesaId(null);
     setPickerMesa(null);
     setOrdenId(order.id);
@@ -783,10 +756,6 @@ export default function ExtraEmpaquetadorStationPage() {
       };
       return [stub, ...prev];
     });
-    // Solo al pasar de “sin orden” a una orden: registrar el draft local.
-    if (volcarPendiente) {
-      void volcarDraftAOrden(order.id, draft);
-    }
   };
 
   const limpiarDraft = () => {
@@ -832,66 +801,33 @@ export default function ExtraEmpaquetadorStationPage() {
     }
   };
 
-  const ajustarCantidadDraft = async (productId: string, delta: number) => {
+  const ajustarCantidadDraft = (productId: string, delta: number) => {
     if (registrando) return;
     const line = draft.find((l) => l.productId === productId);
     if (!line) return;
 
     if (delta > 0) {
-      const producto: CatalogProduct = {
-        menuNodeId: productId,
-        productId: line.productId,
-        nombre: line.nombre,
-        precio: line.precio,
-        imageUrl: line.imageUrl,
-        imageFit: line.imageFit,
-        categoryKey: "varios",
-      };
-      await registrarProductoInmediato(producto);
+      setDraft((prev) =>
+        prev.map((l) =>
+          l.productId === productId ? { ...l, qty: l.qty + 1 } : l,
+        ),
+      );
       return;
     }
 
     const quitar = Math.min(line.qty, Math.abs(delta));
     if (quitar <= 0) return;
-
-    // Sin orden: solo draft local. Con orden: también deshacer en backend.
-    if (!ordenActiva) {
-      setDraft((prev) =>
-        prev
-          .map((l) => (l.productId === productId ? { ...l, qty: l.qty - quitar } : l))
-          .filter((l) => l.qty > 0),
-      );
-      return;
-    }
-
-    setRegistrando(true);
-    setErrorMsg(null);
-    try {
-      await quitarCantidadesOrden({
-        idOrden: ordenActiva.id,
-        idProducto: productId,
-        cantidad: quitar,
-        idOperacion: nuevoIdOperacion(),
-        idUsuario: user?.id,
-      });
-      setDraft((prev) =>
-        prev
-          .map((l) => (l.productId === productId ? { ...l, qty: l.qty - quitar } : l))
-          .filter((l) => l.qty > 0),
-      );
-      await refrescarOrdenes();
-      await stockBodegaQuery.refetch();
-    } catch (e: any) {
-      setErrorMsg(e?.message || "No se pudo ajustar la cantidad.");
-    } finally {
-      setRegistrando(false);
-    }
+    setDraft((prev) =>
+      prev
+        .map((l) => (l.productId === productId ? { ...l, qty: l.qty - quitar } : l))
+        .filter((l) => l.qty > 0),
+    );
   };
 
   const quitarLineaDraft = (productId: string) => {
     const line = draft.find((l) => l.productId === productId);
     if (!line) return;
-    void ajustarCantidadDraft(productId, -line.qty);
+    ajustarCantidadDraft(productId, -line.qty);
   };
 
   const sumarProductoAlDraft = (producto: CatalogProduct) => {
@@ -916,42 +852,15 @@ export default function ExtraEmpaquetadorStationPage() {
     });
   };
 
-  const registrarProductoInmediato = async (producto: CatalogProduct) => {
-    // Integra=Sí + stock 0 → bloquear. Integra=No → no valida ni descuenta (backend).
+  /** Catálogo → solo draft local. Cobrar crea la orden P. */
+  const registrarProductoInmediato = (producto: CatalogProduct) => {
     if (bloqueadoPorStock(producto.productId)) {
       setErrorMsg(`Sin stock en bodega: ${producto.nombre}`);
       return;
     }
     if (registrando) return;
-
-    // Sin orden de Empaquetador: el catálogo trabaja solo con draft local.
-    if (!ordenActiva) {
-      setErrorMsg(null);
-      sumarProductoAlDraft(producto);
-      return;
-    }
-
-    setRegistrando(true);
     setErrorMsg(null);
-    try {
-      await agregarPorCodigo({
-        idOperacion: nuevoIdOperacion(),
-        idOrden: ordenActiva.id,
-        codigo: null,
-        idProducto: producto.productId,
-        cantidad: 1,
-        fuente: "extra",
-      });
-
-      sumarProductoAlDraft(producto);
-
-      await refrescarOrdenes();
-      void stockBodegaQuery.refetch();
-    } catch (e: any) {
-      setErrorMsg(e?.message || "No se pudo agregar el producto a la orden.");
-    } finally {
-      setRegistrando(false);
-    }
+    sumarProductoAlDraft(producto);
   };
 
   const tocarYAgregar = (
@@ -969,7 +878,7 @@ export default function ExtraEmpaquetadorStationPage() {
         if (opts?.cerrarPicker) setMarcaPicker(null);
       }, 380);
     });
-    void registrarProductoInmediato(producto);
+    registrarProductoInmediato(producto);
   };
 
   const abrirMarcaBebida = (marca: MarcaAtajo, productos: CatalogProduct[]) => {
@@ -1444,7 +1353,7 @@ export default function ExtraEmpaquetadorStationPage() {
                       className="extra-order-step"
                       aria-label={`Restar ${line.nombre}`}
                       disabled={registrando || line.qty <= 0}
-                      onClick={() => void ajustarCantidadDraft(line.productId, -1)}
+                      onClick={() => ajustarCantidadDraft(line.productId, -1)}
                     >
                       −
                     </button>
@@ -1454,7 +1363,7 @@ export default function ExtraEmpaquetadorStationPage() {
                       className="extra-order-step"
                       aria-label={`Sumar ${line.nombre}`}
                       disabled={registrando}
-                      onClick={() => void ajustarCantidadDraft(line.productId, 1)}
+                      onClick={() => ajustarCantidadDraft(line.productId, 1)}
                     >
                       +
                     </button>
@@ -1504,7 +1413,8 @@ export default function ExtraEmpaquetadorStationPage() {
             <button
               type="button"
               className="extra-btn-register"
-              disabled={registrando || !draft.length}
+              disabled={registrando || draft.length === 0}
+              aria-disabled={registrando || draft.length === 0}
               onClick={() => void cobrarDraftExtraEmpaquetador()}
             >
               {registrando ? "Creando orden…" : "Cobrar"}
