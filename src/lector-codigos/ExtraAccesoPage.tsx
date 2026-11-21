@@ -67,8 +67,28 @@ export default function ExtraAccesoPage() {
     (async () => {
       try {
         const list = await listarSucursalesAccesibles();
+        if (!list.length) {
+          if (!cancel) {
+            setSucursales([]);
+            setStep("branch");
+          }
+          return;
+        }
+
+        const ids = list.map((s) => s.id);
+        const { data: openShifts, error: shiftErr } = await supabase
+          .from("cash_shifts")
+          .select("branch_id")
+          .eq("status", "OPEN")
+          .in("branch_id", ids);
+        if (shiftErr) throw shiftErr;
+
+        const openBranchIds = new Set(
+          (openShifts ?? []).map((row: any) => String(row.branch_id)).filter(Boolean),
+        );
+        const conTurno = list.filter((s) => openBranchIds.has(s.id));
         if (cancel) return;
-        setSucursales(list);
+        setSucursales(conTurno);
         setStep("branch");
       } catch (e: any) {
         if (!cancel) {
@@ -240,7 +260,7 @@ export default function ExtraAccesoPage() {
                 ))}
                 {!sucursales.length ? (
                   <p style={{ margin: 0, color: "#809284", fontSize: 13 }}>
-                    No hay sucursales accesibles para tu usuario.
+                    No hay sucursales con turno abierto accesibles para tu usuario.
                   </p>
                 ) : null}
               </div>
