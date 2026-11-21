@@ -360,7 +360,7 @@ export default function ExtraEmpaquetadorStationPage() {
       link = document.createElement("link");
       link.id = cssId;
       link.rel = "stylesheet";
-      link.href = "/lector-codigos/extra-station.css?v=20261121-extra-empaquetador-freq3";
+      link.href = "/lector-codigos/extra-station.css?v=20261121-extra-empaquetador-col3";
       document.head.appendChild(link);
     }
     document.documentElement.classList.add(bodyClass);
