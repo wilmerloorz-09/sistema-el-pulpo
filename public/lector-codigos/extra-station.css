@@ -1540,3 +1540,166 @@ html.extra-station-active body {
     grid-template-columns: 1fr;
   }
 }
+
+/* Selector de órdenes (mesa con varias cuentas) — estilo tarjeta naranja */
+.extra-order-picker-dialog {
+  border: 0;
+  border-radius: 18px;
+  padding: 0;
+  width: min(720px, 94vw);
+  max-height: min(86vh, 820px);
+  background: #f7f1e8;
+  box-shadow: 0 22px 50px rgba(60, 30, 10, 0.28);
+}
+
+.extra-order-picker-dialog::backdrop {
+  background: rgba(28, 18, 10, 0.45);
+}
+
+.extra-order-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  max-height: min(86vh, 820px);
+}
+
+.extra-order-picker-head h2 {
+  margin: 0;
+  font-size: 18px;
+  color: #3b2414;
+}
+
+.extra-order-picker-head p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: #7a5a42;
+}
+
+.extra-order-picker-loading {
+  padding: 28px 12px;
+  text-align: center;
+  color: #8a6a52;
+  font-weight: 700;
+}
+
+.extra-order-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  overflow: auto;
+  padding: 2px;
+}
+
+.extra-order-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  text-align: left;
+  border: 2px solid #f0b27a;
+  border-radius: 14px;
+  background: #fff;
+  padding: 0;
+  overflow: hidden;
+  cursor: pointer;
+  box-shadow: 0 6px 16px rgba(180, 90, 30, 0.12);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.12s ease;
+}
+
+.extra-order-card:hover,
+.extra-order-card:focus-visible {
+  border-color: #e67e22;
+  border-width: 3px;
+  box-shadow: 0 10px 22px rgba(180, 90, 30, 0.2);
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.extra-order-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  padding: 12px 14px 10px;
+  background: linear-gradient(180deg, #ffe8d2 0%, #fff4ea 100%);
+  border-bottom: 2px solid #f0a45a;
+  color: #3b2414;
+}
+
+.extra-order-card-head strong {
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.extra-order-card-head span {
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.extra-order-card-items {
+  list-style: none;
+  margin: 0;
+  padding: 12px 14px;
+  display: grid;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-height: 72px;
+}
+
+.extra-order-card-items li {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: #2f241c;
+  line-height: 1.25;
+}
+
+.extra-order-card-items li b {
+  font-weight: 800;
+  margin-right: 4px;
+}
+
+.extra-order-card-items li.is-empty {
+  color: #9a8574;
+  font-weight: 600;
+}
+
+.extra-order-card-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px 12px;
+  border-top: 1px solid #f3d5b5;
+  background: #fffaf5;
+  color: #3b2414;
+}
+
+.extra-order-card-total span {
+  font-size: 12px;
+  font-weight: 700;
+  color: #8a6a52;
+}
+
+.extra-order-card-total strong {
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.extra-order-picker-cancel {
+  width: 100%;
+  min-height: 44px;
+  border-radius: 10px;
+  border: 1px solid #e2cbb3;
+  background: #fff;
+  color: #5a4030;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+@media (max-width: 640px) {
+  .extra-order-picker-grid {
+    grid-template-columns: 1fr;
+  }
+}

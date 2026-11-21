@@ -21,6 +21,7 @@ import ExtraFrecuentesManager from "./componentes/ExtraFrecuentesManager";
 import type { ExtraFreqAdminAuth } from "./dominio/adminSessionClient";
 import {
   agregarPorCodigo,
+  listarItemsOrden,
   listarMesasSucursal,
   listarOrdenesAbiertas,
   obtenerSucursalActiva,
@@ -39,11 +40,17 @@ import {
 } from "./dominio/atajosLayout";
 import { dinero, etiquetaTipoOrden, nuevoIdOperacion } from "./dominio/formato";
 import type {
+  ItemOrden,
   MesaSucursal,
   OrdenAbierta,
   OrdenEnMesa,
   Sucursal,
 } from "./dominio/tipos";
+
+type OrdenPickerCard = OrdenEnMesa & {
+  items: Array<{ cantidad: number; descripcion: string }>;
+  estadoLabel: string;
+};
 
 const PARA_LLEVAR_ID = "__para-llevar__";
 const MARCAS_IMAGEN = [...FILA_MARCAS_COCA, ...FILA_MARCAS_PEPSI, ...FILA_OTRAS];
@@ -285,7 +292,8 @@ export default function ExtraStationPage() {
   const [cargandoOrdenes, setCargandoOrdenes] = useState(false);
   const [pickerMesa, setPickerMesa] = useState<{
     mesa: MesaSucursal;
-    ordenes: OrdenEnMesa[];
+    ordenes: OrdenPickerCard[];
+    cargando?: boolean;
   } | null>(null);
   const pickerRef = useRef<HTMLDialogElement | null>(null);
 
@@ -356,7 +364,7 @@ export default function ExtraStationPage() {
       link = document.createElement("link");
       link.id = cssId;
       link.rel = "stylesheet";
-      link.href = "/lector-codigos/extra-station.css?v=20261121-sin-auto-despacho";
+      link.href = "/lector-codigos/extra-station.css?v=20261121-order-picker-cards";
       document.head.appendChild(link);
     }
     document.documentElement.classList.add(bodyClass);
@@ -929,6 +937,44 @@ export default function ExtraStationPage() {
     );
   };
 
+  const etiquetaEstadoPicker = (mesa: MesaSucursal, orden?: OrdenAbierta | null) => {
+    if (orden?.estado === "PAID" || (orden && orden.total > 0 && orden.saldo <= 0)) {
+      return "Pagada";
+    }
+    if (mesa.estado === "por_cobrar") return "En caja";
+    return "En caja";
+  };
+
+  const abrirPickerOrdenes = async (mesa: MesaSucursal, candidatas: OrdenEnMesa[]) => {
+    setErrorMsg(null);
+    setPickerMesa({ mesa, ordenes: [], cargando: true });
+    try {
+      const cards = await Promise.all(
+        candidatas.map(async (o) => {
+          const abierta = ordenes.find((x) => x.id === o.id) ?? null;
+          let items: ItemOrden[] = [];
+          try {
+            items = await listarItemsOrden(o.id);
+          } catch {
+            items = [];
+          }
+          return {
+            ...o,
+            items: items.map((it) => ({
+              cantidad: it.cantidad,
+              descripcion: it.descripcion,
+            })),
+            estadoLabel: etiquetaEstadoPicker(mesa, abierta),
+          } satisfies OrdenPickerCard;
+        }),
+      );
+      setPickerMesa({ mesa, ordenes: cards, cargando: false });
+    } catch (e: any) {
+      setPickerMesa(null);
+      setErrorMsg(e?.message || "No se pudieron cargar las órdenes de la mesa.");
+    }
+  };
+
   const aplicarOrdenMesa = (m: MesaSucursal, ordenIdElegida: string | null) => {
     setPickerMesa(null);
     setErrorMsg(null);
@@ -976,21 +1022,19 @@ export default function ExtraStationPage() {
       return;
     }
 
-    setPickerMesa({
-      mesa: {
-        id: PARA_LLEVAR_ID,
-        nombre: "Para Llevar",
-        orden_visual: 0,
-        estado: "ocupada",
-        id_orden_activa: candidatas[0].id,
-        total_pendiente: totalLlevar,
-        ordenes: candidatas,
-        cantidad_ordenes: candidatas.length,
-        especial: false,
-        creado_por: null,
-      },
+    const mesaLlevar: MesaSucursal = {
+      id: PARA_LLEVAR_ID,
+      nombre: "Para Llevar",
+      orden_visual: 0,
+      estado: "ocupada",
+      id_orden_activa: candidatas[0].id,
+      total_pendiente: totalLlevar,
       ordenes: candidatas,
-    });
+      cantidad_ordenes: candidatas.length,
+      especial: false,
+      creado_por: null,
+    };
+    void abrirPickerOrdenes(mesaLlevar, candidatas);
   };
 
   const seleccionarMesa = (m: MesaSucursal) => {
@@ -1026,8 +1070,7 @@ export default function ExtraStationPage() {
     const candidatas = [...byId.values()];
 
     if (candidatas.length > 1) {
-      setErrorMsg(null);
-      setPickerMesa({ mesa: m, ordenes: candidatas });
+      void abrirPickerOrdenes(m, candidatas);
       return;
     }
 
@@ -1462,68 +1505,68 @@ export default function ExtraStationPage() {
 
       <dialog
         ref={pickerRef}
+        className="extra-order-picker-dialog"
         onClose={() => setPickerMesa(null)}
         onCancel={(e) => {
           e.preventDefault();
           setPickerMesa(null);
         }}
-        style={{
-          border: 0,
-          borderRadius: 16,
-          padding: 0,
-          width: "min(420px, 92vw)",
-          boxShadow: "0 20px 50px rgba(0,0,0,.25)",
-        }}
       >
         {pickerMesa ? (
-          <div style={{ padding: 18 }}>
-            <h2 style={{ margin: "0 0 6px", fontSize: 18 }}>Varias órdenes</h2>
-            <p style={{ margin: "0 0 14px", color: "#667", fontSize: 13 }}>
-              Elige la orden de {pickerMesa.mesa.nombre} a la que vas a agregar extras.
-            </p>
-            <div style={{ display: "grid", gap: 8 }}>
-              {pickerMesa.ordenes.map((o, idx) => (
-                <button
-                  key={o.id}
-                  type="button"
-                  onClick={() => aplicarOrdenMesa(pickerMesa.mesa, o.id)}
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    gap: 10,
-                    padding: "12px 14px",
-                    borderRadius: 12,
-                    border: "1px solid #d5e0d4",
-                    background: "#f8fbf7",
-                    cursor: "pointer",
-                    fontWeight: 700,
-                  }}
-                >
-                  <span>
-                    {o.especial
-                      ? "Orden especial"
-                      : o.codigo
-                        ? String(o.codigo)
-                        : `Orden ${idx + 1}`}
-                  </span>
-                  <strong>{dinero(o.total)}</strong>
-                </button>
-              ))}
+          <div className="extra-order-picker">
+            <div className="extra-order-picker-head">
+              <h2>Elige la orden</h2>
+              <p>
+                {pickerMesa.mesa.nombre}: selecciona a cuál vas a agregar extras.
+              </p>
             </div>
+
+            {pickerMesa.cargando ? (
+              <div className="extra-order-picker-loading">Cargando órdenes…</div>
+            ) : (
+              <div className="extra-order-picker-grid">
+                {pickerMesa.ordenes.map((o, idx) => {
+                  const titulo = o.especial
+                    ? "Orden especial"
+                    : o.codigo
+                      ? `Orden #${String(o.codigo).replace(/^#/, "")}`
+                      : `Orden #${idx + 1}`;
+                  return (
+                    <button
+                      key={o.id}
+                      type="button"
+                      className="extra-order-card"
+                      onClick={() => aplicarOrdenMesa(pickerMesa.mesa, o.id)}
+                    >
+                      <div className="extra-order-card-head">
+                        <strong>{titulo}</strong>
+                        <span>{o.estadoLabel}</span>
+                      </div>
+                      <ul className="extra-order-card-items">
+                        {o.items.length ? (
+                          o.items.map((it, i) => (
+                            <li key={`${o.id}-${i}`}>
+                              <b>{it.cantidad}</b> {it.descripcion}
+                            </li>
+                          ))
+                        ) : (
+                          <li className="is-empty">Sin ítems visibles</li>
+                        )}
+                      </ul>
+                      <div className="extra-order-card-total">
+                        <span>Total</span>
+                        <strong>{dinero(o.total)}</strong>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
             <button
               type="button"
+              className="extra-order-picker-cancel"
               onClick={() => setPickerMesa(null)}
-              style={{
-                marginTop: 14,
-                width: "100%",
-                minHeight: 42,
-                borderRadius: 10,
-                border: "1px solid #d5e0d4",
-                background: "#fff",
-                cursor: "pointer",
-                fontWeight: 700,
-              }}
             >
               Cancelar
             </button>
