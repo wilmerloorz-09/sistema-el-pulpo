@@ -69,6 +69,8 @@ import NotFound from "./pages/NotFound";
 import PrintCashReport from "./pages/PrintCashReport";
 import LectorCodigosPage from "./lector-codigos/LectorCodigosPage";
 import ExtraEmpaquetadorPage from "./lector-codigos/ExtraEmpaquetadorPage";
+import ExtraAccesoPage from "./lector-codigos/ExtraAccesoPage";
+import ExtraStationEntryGate from "./lector-codigos/ExtraStationEntryGate";
 
 const queryClient = new QueryClient({
   mutationCache: new MutationCache({
@@ -448,6 +450,7 @@ const InstallPrompt = () => {
   if (
     window.location.pathname === "/extra"
     || window.location.pathname === "/extra-empaquetador"
+    || window.location.pathname === "/extra-acceso"
     || window.location.pathname.startsWith("/lector")
     || window.location.pathname.startsWith("/bebidas")
   ) {
@@ -571,10 +574,20 @@ const App = () => (
               <Route path="/qr-pedido/:token" element={<QrPedido />} />
               <Route path="/imprimir-reporte-caja" element={<PrintCashReport />} />
               <Route
+                path="/extra-acceso"
+                element={
+                  <AuthGateLector>
+                    <ExtraAccesoPage />
+                  </AuthGateLector>
+                }
+              />
+              <Route
                 path="/extra"
                 element={
                   <AuthGateLector>
-                    <LectorCodigosPage />
+                    <ExtraStationEntryGate>
+                      <LectorCodigosPage />
+                    </ExtraStationEntryGate>
                   </AuthGateLector>
                 }
               />
@@ -582,14 +595,16 @@ const App = () => (
                 path="/extra-empaquetador"
                 element={
                   <AuthGateLector>
-                    <BranchProvider>
-                      <ExtraEmpaquetadorPage />
-                    </BranchProvider>
+                    <ExtraStationEntryGate>
+                      <BranchProvider>
+                        <ExtraEmpaquetadorPage />
+                      </BranchProvider>
+                    </ExtraStationEntryGate>
                   </AuthGateLector>
                 }
               />
-              <Route path="/lector" element={<Navigate to="/extra" replace />} />
-              <Route path="/bebidas" element={<Navigate to="/extra" replace />} />
+              <Route path="/lector" element={<Navigate to="/extra-acceso" replace />} />
+              <Route path="/bebidas" element={<Navigate to="/extra-acceso" replace />} />
               <Route
                 element={
                   <AuthGate>

@@ -101,6 +101,7 @@ const Login = () => {
     if (
       nextPath === "/extra"
       || nextPath === "/extra-empaquetador"
+      || nextPath === "/extra-acceso"
       || nextPath.startsWith("/lector")
       || nextPath.startsWith("/bebidas")
     ) return;

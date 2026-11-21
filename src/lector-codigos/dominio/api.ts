@@ -45,13 +45,23 @@ export async function listarSucursalesAccesibles(): Promise<Sucursal[]> {
   return (data ?? []).map(mapSucursal);
 }
 
-/** Sucursal ya activa en el POS (sin pedir otra ni llamar set_my_active_branch). */
+/** Sucursal de la estación Extra (portal) o la activa en el POS. */
 export async function obtenerSucursalActiva(): Promise<Sucursal | null> {
   const { data: ctx, error } = await supabase.rpc("get_my_access_context" as any);
   if (error) throw error;
 
+  let stationId: string | null = null;
+  try {
+    stationId =
+      sessionStorage.getItem("extraStationBranchId")
+      || localStorage.getItem("extraStationBranchId");
+  } catch {
+    stationId = null;
+  }
+
   const activeId =
-    (ctx as any)?.active_branch_id
+    stationId
+    ?? (ctx as any)?.active_branch_id
     ?? localStorage.getItem("activeBranchId");
   if (!activeId) return null;
 

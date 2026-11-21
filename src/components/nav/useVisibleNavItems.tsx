@@ -1,6 +1,6 @@
 import { useMemo, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { BarChart3, ChefHat, CircleDollarSign, ConciergeBell, LayoutGrid, Package, PackagePlus, ScanBarcode, Settings, UtensilsCrossed, PlayCircle, ShoppingBag, Sparkles, Zap, Banknote, History, Users, Gift, Megaphone, Search, PowerOff, PackageCheck, ArrowLeftRight, FileText, HandCoins, Warehouse, Snowflake, Flame, Wallet } from "lucide-react";
+import { BarChart3, ChefHat, CircleDollarSign, ConciergeBell, LayoutGrid, Package, PackagePlus, Settings, UtensilsCrossed, PlayCircle, ShoppingBag, Sparkles, Zap, Banknote, History, Users, Gift, Megaphone, Search, PowerOff, PackageCheck, ArrowLeftRight, FileText, HandCoins, Warehouse, Snowflake, Flame, Wallet } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useBranch } from "@/contexts/BranchContext";
 import { useBranchShiftGate } from "@/hooks/useBranchShiftGate";
@@ -109,34 +109,6 @@ const NAV_ITEMS: AppNavItem[] = [
       iconIdle: "bg-orange-50 text-orange-600",
     },
     visible: (permissions) => canView(permissions, "mesas"),
-  },
-  {
-    to: "/extra",
-    label: "Extra",
-    icon: <ScanBarcode className="h-5 w-5" />,
-    group: "VENTA",
-    tone: {
-      active: "from-emerald-500 to-lime-400",
-      idle: "hover:border-emerald-200 hover:bg-emerald-50/90 hover:text-emerald-700",
-      iconIdle: "bg-emerald-50 text-emerald-600",
-    },
-    // Temporal: solo administradores mientras se valida el módulo.
-    visible: (permissions) =>
-      canView(permissions, "admin_sucursal") || canView(permissions, "admin_global"),
-  },
-  {
-    to: "/extra-empaquetador",
-    label: "Extra Empaquetador",
-    icon: <PackageCheck className="h-5 w-5" />,
-    group: "VENTA",
-    tone: {
-      active: "from-teal-500 to-emerald-400",
-      idle: "hover:border-teal-200 hover:bg-teal-50/90 hover:text-teal-700",
-      iconIdle: "bg-teal-50 text-teal-600",
-    },
-    // Temporal: solo administradores (misma regla que Extra).
-    visible: (permissions) =>
-      canView(permissions, "admin_sucursal") || canView(permissions, "admin_global"),
   },
   {
     to: "/clientes?origin=clientes",
@@ -610,14 +582,8 @@ export function useVisibleNavItems() {
           || (item.to === "/personal" && item.visible(permissions))
           || (item.to === "/caja-chica" && item.visible(permissions))
           || (item.to === "/cierres-caja" && canAccessAdmin)
-          || (item.to === "/extra" && canAccessAdmin)
-          || (item.to === "/extra-empaquetador" && canAccessAdmin)
           || (item.to === "/monitoreo-global" && isGlobalAdmin)
         );
-      }
-
-      if (item.to === "/extra" || item.to === "/extra-empaquetador") {
-        return canAccessAdmin;
       }
 
       if (item.to === "/admin" && isGlobalAdmin) {

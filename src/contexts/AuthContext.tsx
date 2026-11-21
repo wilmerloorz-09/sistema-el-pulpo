@@ -391,6 +391,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const esEstacionExtra =
           path === "/extra"
           || path === "/extra-empaquetador"
+          || path === "/extra-acceso"
           || path.startsWith("/lector")
           || path.startsWith("/bebidas");
         if (esEstacionExtra) {

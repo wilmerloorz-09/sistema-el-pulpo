@@ -1227,12 +1227,12 @@ export default function ExtraEmpaquetadorStationPage() {
                 }}
               >
                 <Link
-                  to="/mesas"
+                  to="/extra-acceso"
                   className="extra-back-link"
                   style={{ display: "block", padding: "12px 14px", color: "#1f3a2e", fontWeight: 600 }}
                   onClick={() => setMenuOpen(false)}
                 >
-                  Volver al sistema
+                  Cambiar sucursal / módulo
                 </Link>
                 <button
                   type="button"
