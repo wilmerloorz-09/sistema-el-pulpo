@@ -12,9 +12,10 @@ import {
   type MenuNode,
 } from "@/hooks/useMenuTree";
 import {
-  fetchInventarioStockVendibleMap,
+  fetchInventarioBodegaSucursalMap,
   resolveMenuNodeProductId,
 } from "@/lib/inventarioMenuData";
+import { productoBloqueadoPorStockInventario } from "@/lib/inventarioProductos";
 import ExtraFrecuentesManager from "./componentes/ExtraFrecuentesManager";
 import {
   agregarPorCodigo,
@@ -464,10 +465,10 @@ export default function ExtraStationPage() {
     staleTime: 30_000,
   });
 
-  // Stock vendible = bodega sucursal (RPC). Única fuente para Extra.
-  const stockVendibleQuery = useQuery({
-    queryKey: ["extra-stock-vendible", sucursal?.id],
-    queryFn: () => fetchInventarioStockVendibleMap(sucursal!.id),
+  // Bodega sucursal completa (incluye Integra Sí/No) para Extra.
+  const stockBodegaQuery = useQuery({
+    queryKey: ["extra-stock-bodega-sucursal", sucursal?.id],
+    queryFn: () => fetchInventarioBodegaSucursalMap(sucursal!.id),
     enabled: Boolean(sucursal?.id),
     staleTime: 0,
     gcTime: 30_000,
@@ -482,7 +483,7 @@ export default function ExtraStationPage() {
     if (!sucursal?.id) return;
     const refrescar = () => {
       if (document.visibilityState === "hidden") return;
-      void stockVendibleQuery.refetch();
+      void stockBodegaQuery.refetch();
     };
     refrescar();
     window.addEventListener("focus", refrescar);
@@ -496,11 +497,31 @@ export default function ExtraStationPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- solo al cambiar sucursal / montar Extra
   }, [sucursal?.id]);
 
-  const stockVendibleMap = stockVendibleQuery.data;
+  const stockBodegaMap = stockBodegaQuery.data;
+
+  const stockBodegaQty = useCallback(
+    (productId: string) => stockBodegaMap?.get(productId)?.cantidadDisponible ?? 0,
+    [stockBodegaMap],
+  );
+
+  const integraVentas = useCallback(
+    (productId: string) => Boolean(stockBodegaMap?.get(productId)?.integraConVentas),
+    [stockBodegaMap],
+  );
 
   const tieneStockBodega = useCallback(
-    (productId: string) => (stockVendibleMap?.get(productId)?.cantidadDisponible ?? 0) > 0,
-    [stockVendibleMap],
+    (productId: string) => stockBodegaQty(productId) > 0,
+    [stockBodegaQty],
+  );
+
+  /** Igual que venta normal: solo bloquea si Integra=Sí y stock <= 0. */
+  const bloqueadoPorStock = useCallback(
+    (productId: string) =>
+      productoBloqueadoPorStockInventario({
+        integraConVentas: integraVentas(productId),
+        cantidadDisponible: stockBodegaQty(productId),
+      }),
+    [integraVentas, stockBodegaQty],
   );
 
   /** Catálogo completo del menú (para menús de marca: mostrar también sin stock). */
@@ -509,11 +530,11 @@ export default function ExtraStationPage() {
     [menuQuery.data],
   );
 
-  /** Catálogo con stock bodega sucursal > 0. */
+  /** Catálogo agregable (no bloqueado por Integra+stock). */
   const catalog = useMemo(() => {
-    if (!stockVendibleMap) return [];
-    return catalogAll.filter((p) => tieneStockBodega(p.productId));
-  }, [catalogAll, stockVendibleMap, tieneStockBodega]);
+    if (!stockBodegaMap) return [];
+    return catalogAll.filter((p) => !bloqueadoPorStock(p.productId));
+  }, [catalogAll, stockBodegaMap, bloqueadoPorStock]);
 
   const catalogById = useMemo(() => {
     const map = new Map<string, CatalogProduct>();
@@ -522,8 +543,8 @@ export default function ExtraStationPage() {
   }, [catalogAll]);
 
   const frecuentes = useMemo(() => {
-    // Orden de Frecuentes Extra → solo bodega > 0 → máx. 4 filas (16).
-    if (!stockVendibleMap) return [];
+    // Frecuentes Extra: solo stock bodega > 0 (da igual Integra Sí/No) → máx. 16.
+    if (!stockBodegaMap) return [];
     const rows = frequentQuery.data ?? [];
     const out: CatalogProduct[] = [];
     const seen = new Set<string>();
@@ -552,7 +573,7 @@ export default function ExtraStationPage() {
       }
     }
     return out;
-  }, [frequentQuery.data, catalogById, stockVendibleMap, tieneStockBodega]);
+  }, [frequentQuery.data, catalogById, stockBodegaMap, tieneStockBodega]);
 
   const productosTab = useMemo(() => {
     const q = busqueda.trim().toLowerCase();
@@ -700,7 +721,7 @@ export default function ExtraStationPage() {
           .filter((l) => l.qty > 0),
       );
       await refrescarOrdenes();
-      await stockVendibleQuery.refetch();
+      await stockBodegaQuery.refetch();
     } catch (e: any) {
       setErrorMsg(e?.message || "No se pudo ajustar la cantidad.");
     } finally {
@@ -715,7 +736,8 @@ export default function ExtraStationPage() {
   };
 
   const registrarProductoInmediato = async (producto: CatalogProduct) => {
-    if (!tieneStockBodega(producto.productId)) {
+    // Integra=Sí + stock 0 → bloquear. Integra=No → no valida ni descuenta (backend).
+    if (bloqueadoPorStock(producto.productId)) {
       setErrorMsg(`Sin stock en bodega: ${producto.nombre}`);
       return;
     }
@@ -762,7 +784,7 @@ export default function ExtraStationPage() {
       });
 
       await refrescarOrdenes();
-      void stockVendibleQuery.refetch();
+      void stockBodegaQuery.refetch();
     } catch (e: any) {
       setErrorMsg(e?.message || "No se pudo agregar el producto a la orden.");
     } finally {
@@ -795,7 +817,8 @@ export default function ExtraStationPage() {
 
   const renderProductCard = (p: CatalogProduct, opts?: { requireBodega?: boolean }) => {
     const requireBodega = opts?.requireBodega ?? false;
-    const sinBodega = requireBodega && !tieneStockBodega(p.productId);
+    // requireBodega = aplicar gate de venta (Integra Sí + stock 0).
+    const sinBodega = requireBodega && bloqueadoPorStock(p.productId);
     const flashing = flashProductId === p.productId;
     return (
       <button
@@ -1250,7 +1273,7 @@ export default function ExtraStationPage() {
               )}
               {!productosTab.length ? (
                 <div className="extra-products-empty">
-                  {menuQuery.isLoading || frequentQuery.isLoading || stockVendibleQuery.isLoading
+                  {menuQuery.isLoading || frequentQuery.isLoading || stockBodegaQuery.isLoading
                     ? "Cargando productos…"
                     : tab === "frecuentes"
                       ? "No hay frecuentes de Extra con stock en bodega sucursal."
@@ -1457,7 +1480,7 @@ export default function ExtraStationPage() {
             </div>
             <div className="extra-products extra-products-inline">
               {marcaPicker.productos.map((p) => {
-                const sinBodega = !tieneStockBodega(p.productId);
+                const sinBodega = bloqueadoPorStock(p.productId);
                 const flashing = flashProductId === p.productId;
                 return (
                   <button
