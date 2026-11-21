@@ -79,8 +79,8 @@ export default function ExtraAccesoPage() {
       setErrorMsg(null);
       try {
         await activarSucursal(sucursal);
-        // Extra normal: sin login. Extra Empaquetador: sí requiere sesión.
-        if (destino === "/extra-empaquetador" && !user) {
+        // Extra normal y Extra Empaquetador requieren sesión para operar.
+        if (!user) {
           navigate(`/login?next=${encodeURIComponent(destino)}`, { replace: true });
           return;
         }

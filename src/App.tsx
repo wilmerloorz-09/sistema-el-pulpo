@@ -265,7 +265,7 @@ const AuthGate = ({ children }: { children: React.ReactNode }) => {
 };
 
 /**
- * Sesión para estaciones Extra: cualquier usuario autenticado.
+ * Sesión obligatoria para Extra normal y Extra Empaquetador.
  * Sin BranchGate ni CierreSesionPorTurno (la sucursal viene de /extra-acceso).
  */
 const AuthGateLector = ({ children }: { children: React.ReactNode }) => {
@@ -532,9 +532,11 @@ const App = () => (
               <Route
                 path="/extra"
                 element={
-                  <ExtraStationEntryGate>
-                    <LectorCodigosPage />
-                  </ExtraStationEntryGate>
+                  <AuthGateLector>
+                    <ExtraStationEntryGate>
+                      <LectorCodigosPage />
+                    </ExtraStationEntryGate>
+                  </AuthGateLector>
                 }
               />
               <Route

@@ -367,7 +367,7 @@ export default function ExtraStationPage() {
   }, []);
 
   useEffect(() => {
-    if (authLoading) return;
+    if (authLoading || !user) return;
     let cancel = false;
     (async () => {
       setCargandoSucursales(true);
@@ -1048,11 +1048,9 @@ export default function ExtraStationPage() {
           <p>{errorSucursal || "No hay sucursal activa."}</p>
           <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
             <Link to="/extra-acceso">Elegir sucursal</Link>
-            {user ? (
-              <button type="button" onClick={() => void signOut()}>
-                Cerrar sesión
-              </button>
-            ) : null}
+            <button type="button" onClick={() => void signOut()}>
+              Cerrar sesión
+            </button>
           </div>
         </div>
       </div>
@@ -1156,11 +1154,10 @@ export default function ExtraStationPage() {
                   }}
                   onClick={() => {
                     setMenuOpen(false);
-                    if (user) void signOut();
-                    else window.location.assign("/extra-acceso");
+                    void signOut();
                   }}
                 >
-                  {user ? "Cerrar sesión" : "Cambiar sucursal"}
+                  Cerrar sesión
                 </button>
               </div>
             )}
