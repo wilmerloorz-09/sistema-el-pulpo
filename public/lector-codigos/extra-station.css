@@ -527,6 +527,11 @@ html.extra-station-active body {
   -webkit-overflow-scrolling: touch;
 }
 
+/* Extra Empaquetador: Más Frecuentes en 3 columnas */
+.extra-products.extra-products-cols-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .extra-products-inline {
   flex: 0 0 auto;
   min-height: 0;

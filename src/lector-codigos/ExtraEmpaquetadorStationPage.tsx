@@ -360,7 +360,7 @@ export default function ExtraEmpaquetadorStationPage() {
       link = document.createElement("link");
       link.id = cssId;
       link.rel = "stylesheet";
-      link.href = "/lector-codigos/extra-station.css?v=20261121-extra-empaquetador-col1";
+      link.href = "/lector-codigos/extra-station.css?v=20261121-extra-empaquetador-freq3";
       document.head.appendChild(link);
     }
     document.documentElement.classList.add(bodyClass);
@@ -1397,7 +1397,9 @@ export default function ExtraEmpaquetadorStationPage() {
               ) : null}
             </div>
           ) : (
-            <div className="extra-products">
+            <div
+              className={`extra-products${tab === "frecuentes" ? " extra-products-cols-3" : ""}`}
+            >
               {productosTab.map((p) =>
                 renderProductCard(p, {
                   requireBodega: tab === "jugos" || tab === "varios",
