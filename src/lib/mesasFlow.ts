@@ -68,6 +68,7 @@ export function siblingPlaceholdersFromTableOverview(input: {
   table_order_position: null;
   created_at: null;
   item_count: number;
+  total: number;
   is_special: boolean;
 }> {
   const byId = new Map<string, {
@@ -79,6 +80,7 @@ export function siblingPlaceholdersFromTableOverview(input: {
     table_order_position: null;
     created_at: null;
     item_count: number;
+    total: number;
     is_special: boolean;
   }>();
 
@@ -94,6 +96,7 @@ export function siblingPlaceholdersFromTableOverview(input: {
       table_order_position: null,
       created_at: null,
       item_count: isSpecial ? 1 : 1,
+      total: Math.max(0, Number(row.totalDue ?? 0)),
       is_special: isSpecial,
     });
   }
@@ -108,6 +111,7 @@ export function siblingPlaceholdersFromTableOverview(input: {
       table_order_position: null,
       created_at: null,
       item_count: 1,
+      total: 0,
       is_special: false,
     });
   }
