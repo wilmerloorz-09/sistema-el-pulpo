@@ -54,10 +54,10 @@ export function usePreferredHomePath() {
       else preferredPath = null;
     } else if (gate?.isCaptureDeviceOnly) {
       preferredPath = menuRestricted ? safeHomePathForRestrictedUser(["/mesas", "/ordenes"]) : "/caja";
-    } else if (!hasSupervisorBypass && gate?.canPackOrders) {
-      preferredPath = "/empaquetador";
     } else if (hasSupervisorBypass || gate?.canServeTables) {
       preferredPath = "/mesas";
+    } else if (!hasSupervisorBypass && gate?.canPackOrders) {
+      preferredPath = "/empaquetador";
     } else if (hasSupervisorBypass || gate?.canAccessOrders) {
       preferredPath = "/ordenes";
     } else if (hasSupervisorBypass || gate?.canEditOrders) {

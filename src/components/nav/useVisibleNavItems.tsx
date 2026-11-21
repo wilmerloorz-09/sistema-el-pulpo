@@ -623,10 +623,6 @@ export function useVisibleNavItems() {
           return false;
         }
 
-        if (!hasSupervisorBypass && Boolean(sg?.canPackOrders) && !isDispatchFirstWorkflow) {
-          return item.to === "/ordenes-extra";
-        }
-        
         if (item.to === "/mesas") {
           return hasSupervisorBypass || Boolean(sg?.canServeTables);
         }
