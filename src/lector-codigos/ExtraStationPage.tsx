@@ -367,7 +367,7 @@ export default function ExtraStationPage() {
   }, []);
 
   useEffect(() => {
-    if (!user) return;
+    if (authLoading) return;
     let cancel = false;
     (async () => {
       setCargandoSucursales(true);
@@ -378,7 +378,7 @@ export default function ExtraStationPage() {
         if (!activa) {
           setSucursal(null);
           setErrorSucursal(
-            "No hay sucursal activa. Entra desde el menú con una sucursal ya seleccionada.",
+            "No hay sucursal activa. Entra desde /extra-acceso y elige una sucursal.",
           );
           return;
         }
@@ -392,7 +392,7 @@ export default function ExtraStationPage() {
     return () => {
       cancel = true;
     };
-  }, [user]);
+  }, [authLoading, user]);
 
   useEffect(() => {
     const on = () => setOnline(true);
@@ -1047,10 +1047,12 @@ export default function ExtraStationPage() {
           <h1 style={{ marginTop: 0 }}>Extra</h1>
           <p>{errorSucursal || "No hay sucursal activa."}</p>
           <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
-            <Link to="/mesas">Ir a Mesas</Link>
-            <button type="button" onClick={() => void signOut()}>
-              Cerrar sesión
-            </button>
+            <Link to="/extra-acceso">Elegir sucursal</Link>
+            {user ? (
+              <button type="button" onClick={() => void signOut()}>
+                Cerrar sesión
+              </button>
+            ) : null}
           </div>
         </div>
       </div>
@@ -1154,10 +1156,11 @@ export default function ExtraStationPage() {
                   }}
                   onClick={() => {
                     setMenuOpen(false);
-                    void signOut();
+                    if (user) void signOut();
+                    else window.location.assign("/extra-acceso");
                   }}
                 >
-                  Cerrar sesión
+                  {user ? "Cerrar sesión" : "Cambiar sucursal"}
                 </button>
               </div>
             )}

@@ -532,11 +532,9 @@ const App = () => (
               <Route
                 path="/extra"
                 element={
-                  <AuthGateLector>
-                    <ExtraStationEntryGate>
-                      <LectorCodigosPage />
-                    </ExtraStationEntryGate>
-                  </AuthGateLector>
+                  <ExtraStationEntryGate>
+                    <LectorCodigosPage />
+                  </ExtraStationEntryGate>
                 }
               />
               <Route

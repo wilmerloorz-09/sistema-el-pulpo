@@ -47,9 +47,6 @@ export async function listarSucursalesAccesibles(): Promise<Sucursal[]> {
 
 /** Sucursal de la estación Extra (portal) o la activa en el POS. */
 export async function obtenerSucursalActiva(): Promise<Sucursal | null> {
-  const { data: ctx, error } = await supabase.rpc("get_my_access_context" as any);
-  if (error) throw error;
-
   let stationId: string | null = null;
   try {
     stationId =
@@ -57,6 +54,30 @@ export async function obtenerSucursalActiva(): Promise<Sucursal | null> {
       || localStorage.getItem("extraStationBranchId");
   } catch {
     stationId = null;
+  }
+
+  // Extra público: resolver sucursal sin sesión.
+  if (stationId) {
+    const { data: publicBranch, error: publicErr } = await supabase.rpc(
+      "extra_acceso_get_branch" as any,
+      { p_branch_id: stationId } as any,
+    );
+    if (!publicErr) {
+      const row = Array.isArray(publicBranch) ? publicBranch[0] : publicBranch;
+      if (row?.id) {
+        return {
+          id: String(row.id),
+          nombre: String(row.nombre ?? "Sucursal"),
+          codigo: row.codigo ? String(row.codigo) : null,
+        };
+      }
+    }
+  }
+
+  const { data: ctx, error } = await supabase.rpc("get_my_access_context" as any);
+  if (error) {
+    if (stationId) return null;
+    throw error;
   }
 
   const activeId =
@@ -144,6 +165,26 @@ export async function listarMesasSucursal(idSucursal: string): Promise<MesaSucur
 }
 
 export async function listarOrdenesAbiertas(idSucursal: string): Promise<OrdenAbierta[]> {
+  const { data: publicRows, error: publicErr } = await supabase.rpc(
+    "extra_acceso_list_open_orders" as any,
+    { p_branch_id: idSucursal } as any,
+  );
+  if (!publicErr && Array.isArray(publicRows)) {
+    return publicRows.map((o: any) => ({
+      id: String(o.id),
+      codigo: o.codigo ?? null,
+      tipo: o.tipo ?? null,
+      estado: o.estado ?? null,
+      mesa: o.mesa ?? null,
+      id_mesa: o.id_mesa ? String(o.id_mesa) : null,
+      total: Number(o.total ?? 0),
+      pagado: Number(o.pagado ?? 0),
+      saldo: Number(o.saldo ?? 0),
+      creada_en: o.creada_en ?? null,
+      cliente: null,
+    })) satisfies OrdenAbierta[];
+  }
+
   const desde = new Date();
   desde.setDate(desde.getDate() - 2);
 
@@ -262,6 +303,24 @@ function cantidadAnulableSnapshot(snap: SnapshotRow | undefined, qtyFallback: nu
  * Cantidad = unidades anulables del snapshot (no order_items.quantity cruda).
  */
 export async function listarItemsLectorOrden(idOrden: string): Promise<ItemOrden[]> {
+  const { data: publicRows, error: publicErr } = await supabase.rpc(
+    "extra_acceso_list_lector_items" as any,
+    { p_order_id: idOrden } as any,
+  );
+  if (!publicErr && Array.isArray(publicRows)) {
+    return publicRows
+      .map((i: any) => ({
+        id: String(i.id),
+        descripcion: String(i.descripcion ?? ""),
+        cantidad: Number(i.cantidad ?? 0),
+        precio: Number(i.precio ?? 0),
+        total: Number(i.total ?? 0),
+        id_producto: i.id_producto ? String(i.id_producto) : null,
+        creado_en: i.creado_en ? String(i.creado_en) : undefined,
+      }))
+      .filter((i) => i.cantidad > 0);
+  }
+
   const [{ data: ops, error: opsErr }, { data: undos, error: undosErr }, items, snapRes] =
     await Promise.all([
       supabase
@@ -371,7 +430,19 @@ export async function quitarCantidadesOrden(params: {
 
 /** Catálogo de productos con código de barras habilitados para el lector. */
 export async function listarCatalogoProductos(): Promise<ProductoCatalogo[]> {
-  // Tablas creadas por la migración del lector (nombre histórico en BD).
+  const { data: publicRows, error: publicErr } = await supabase.rpc(
+    "extra_acceso_list_catalog" as any,
+  );
+  if (!publicErr && Array.isArray(publicRows)) {
+    return publicRows.map((r: any) => ({
+      id_producto: String(r.id_producto),
+      codigo_barras: String(r.codigo_barras ?? ""),
+      nombre: String(r.nombre ?? "Producto"),
+      precio: Number(r.precio ?? 0),
+    }));
+  }
+
+  // Fallback autenticado (nombre histórico en BD).
   const { data, error } = await supabase
     .from("codigos_barras_bebidas" as any)
     .select("codigo_barras, id_producto, activo, products(description, unit_price, is_active)")
