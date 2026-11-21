@@ -306,6 +306,7 @@ export default function ExtraEmpaquetadorStationPage() {
   const [cobroOpen, setCobroOpen] = useState(false);
   const [cobroPreparing, setCobroPreparing] = useState(false);
   const [cobroPayable, setCobroPayable] = useState<PayableOrder | null>(null);
+  const [puedeCobrarCaja, setPuedeCobrarCaja] = useState(false);
   const [marcaPicker, setMarcaPicker] = useState<{
     title: string;
     productos: CatalogProduct[];
@@ -383,14 +384,24 @@ export default function ExtraEmpaquetadorStationPage() {
         if (cancel) return;
         if (!activa) {
           setSucursal(null);
+          setPuedeCobrarCaja(false);
           setErrorSucursal(
             "No hay sucursal activa. Entra desde el menú con una sucursal ya seleccionada.",
           );
           return;
         }
         setSucursal(activa);
+        const { data: hasCaja, error: cajaErr } = await supabase.rpc(
+          "extra_acceso_user_has_caja" as any,
+          { p_branch_id: activa.id } as any,
+        );
+        if (cajaErr) throw cajaErr;
+        if (!cancel) setPuedeCobrarCaja(Boolean(hasCaja));
       } catch (e: any) {
-        if (!cancel) setErrorSucursal(e?.message || "No se pudo cargar la sucursal activa");
+        if (!cancel) {
+          setPuedeCobrarCaja(false);
+          setErrorSucursal(e?.message || "No se pudo cargar la sucursal activa");
+        }
       } finally {
         if (!cancel) setCargandoSucursales(false);
       }
@@ -771,6 +782,10 @@ export default function ExtraEmpaquetadorStationPage() {
     if (!sucursal || registrando) return;
     if (!draft.length) {
       setErrorMsg("Agrega al menos un producto antes de cobrar.");
+      return;
+    }
+    if (!puedeCobrarCaja) {
+      setErrorMsg("Para cobrar necesitas caja habilitada en el turno.");
       return;
     }
 
@@ -1518,13 +1533,38 @@ export default function ExtraEmpaquetadorStationPage() {
             <button
               type="button"
               className="extra-btn-register"
-              disabled={registrando || draft.length === 0}
-              aria-disabled={registrando || draft.length === 0}
+              disabled={registrando || draft.length === 0 || !puedeCobrarCaja}
+              aria-disabled={registrando || draft.length === 0 || !puedeCobrarCaja}
+              title={
+                puedeCobrarCaja
+                  ? undefined
+                  : "Necesitas caja habilitada en el turno para cobrar"
+              }
               onClick={() => void cobrarDraftExtraEmpaquetador()}
             >
-              {registrando ? "Creando orden…" : "Cobrar"}
+              {registrando
+                ? "Creando orden…"
+                : !puedeCobrarCaja
+                  ? "Sin caja"
+                  : "Cobrar"}
             </button>
           </div>
+          {!puedeCobrarCaja ? (
+            <p
+              style={{
+                margin: "0 8px 8px",
+                padding: "8px 10px",
+                borderRadius: 8,
+                background: "#fff7ed",
+                border: "1px solid #fed7aa",
+                color: "#9a3412",
+                fontSize: 12,
+                fontWeight: 600,
+              }}
+            >
+              Para cobrar órdenes Extra habilita Caja a este usuario en el turno.
+            </p>
+          ) : null}
         </section>
       </div>
 
