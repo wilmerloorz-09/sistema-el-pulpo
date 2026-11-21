@@ -817,8 +817,9 @@ export default function ExtraStationPage() {
 
   const renderProductCard = (p: CatalogProduct, opts?: { requireBodega?: boolean }) => {
     const requireBodega = opts?.requireBodega ?? false;
-    // requireBodega = aplicar gate de venta (Integra Sí + stock 0).
-    const sinBodega = requireBodega && bloqueadoPorStock(p.productId);
+    // En Extra: sin stock bodega → tarjeta desactivada (aunque Integra=No).
+    // Al agregar, Integra=No igual no descuenta (backend).
+    const sinBodega = requireBodega && !tieneStockBodega(p.productId);
     const flashing = flashProductId === p.productId;
     return (
       <button
@@ -1480,7 +1481,7 @@ export default function ExtraStationPage() {
             </div>
             <div className="extra-products extra-products-inline">
               {marcaPicker.productos.map((p) => {
-                const sinBodega = bloqueadoPorStock(p.productId);
+                const sinBodega = !tieneStockBodega(p.productId);
                 const flashing = flashProductId === p.productId;
                 return (
                   <button
