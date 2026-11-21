@@ -1,9 +1,9 @@
 {
-  "appId": "com.sistemaelpulpo.app",
-  "appName": "Sistema El Pulpo",
+  "appId": "com.sistemaelpulpo.extra",
+  "appName": "Extra El Pulpo",
   "webDir": "dist",
   "server": {
-    "url": "https://sistema-el-pulpo.vercel.app",
+    "url": "https://sistema-el-pulpo.vercel.app/extra-acceso",
     "cleartext": true,
     "errorPath": "/error.html"
   },

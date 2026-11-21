@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Sistema El Pulpo</string>
-    <string name="title_activity_main">Sistema El Pulpo</string>
-    <string name="package_name">com.sistemaelpulpo.app</string>
-    <string name="custom_url_scheme">com.sistemaelpulpo.app</string>
+    <string name="app_name">Extra El Pulpo</string>
+    <string name="title_activity_main">Extra El Pulpo</string>
+    <string name="package_name">com.sistemaelpulpo.extra</string>
+    <string name="custom_url_scheme">com.sistemaelpulpo.extra</string>
 </resources>
