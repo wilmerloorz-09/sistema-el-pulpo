@@ -95,11 +95,12 @@ const Login = () => {
 
   // Solo con auth resuelta y sin usuario: corta JWT/refresh basura que satura Auth.
   // No tocar mientras loading (evitar botar una sesión válida al abrir /login).
-  // Si next es /extra (estación), no limpiar: un parpadeo de AuthGateLector no debe tumbar el POS.
+  // Si next es estación Extra / Extra Empaquetador, no limpiar: un parpadeo de AuthGateLector no debe tumbar el POS.
   useEffect(() => {
     if (authLoading || user) return;
     if (
       nextPath === "/extra"
+      || nextPath === "/extra-empaquetador"
       || nextPath.startsWith("/lector")
       || nextPath.startsWith("/bebidas")
     ) return;

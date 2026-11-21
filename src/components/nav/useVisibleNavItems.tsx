@@ -125,6 +125,20 @@ const NAV_ITEMS: AppNavItem[] = [
       canView(permissions, "admin_sucursal") || canView(permissions, "admin_global"),
   },
   {
+    to: "/extra-empaquetador",
+    label: "Extra Empaquetador",
+    icon: <PackageCheck className="h-5 w-5" />,
+    group: "VENTA",
+    tone: {
+      active: "from-teal-500 to-emerald-400",
+      idle: "hover:border-teal-200 hover:bg-teal-50/90 hover:text-teal-700",
+      iconIdle: "bg-teal-50 text-teal-600",
+    },
+    // Temporal: solo administradores (misma regla que Extra).
+    visible: (permissions) =>
+      canView(permissions, "admin_sucursal") || canView(permissions, "admin_global"),
+  },
+  {
     to: "/clientes?origin=clientes",
     label: "Clientes",
     icon: <Users className="h-5 w-5" />,
@@ -597,11 +611,12 @@ export function useVisibleNavItems() {
           || (item.to === "/caja-chica" && item.visible(permissions))
           || (item.to === "/cierres-caja" && canAccessAdmin)
           || (item.to === "/extra" && canAccessAdmin)
+          || (item.to === "/extra-empaquetador" && canAccessAdmin)
           || (item.to === "/monitoreo-global" && isGlobalAdmin)
         );
       }
 
-      if (item.to === "/extra") {
+      if (item.to === "/extra" || item.to === "/extra-empaquetador") {
         return canAccessAdmin;
       }
 

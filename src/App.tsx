@@ -68,6 +68,7 @@ import MonitoreoGlobal from "./pages/MonitoreoGlobal";
 import NotFound from "./pages/NotFound";
 import PrintCashReport from "./pages/PrintCashReport";
 import LectorCodigosPage from "./lector-codigos/LectorCodigosPage";
+import ExtraEmpaquetadorPage from "./lector-codigos/ExtraEmpaquetadorPage";
 
 const queryClient = new QueryClient({
   mutationCache: new MutationCache({
@@ -446,6 +447,7 @@ const InstallPrompt = () => {
   }
   if (
     window.location.pathname === "/extra"
+    || window.location.pathname === "/extra-empaquetador"
     || window.location.pathname.startsWith("/lector")
     || window.location.pathname.startsWith("/bebidas")
   ) {
@@ -573,6 +575,14 @@ const App = () => (
                 element={
                   <AuthGateLector>
                     <LectorCodigosPage />
+                  </AuthGateLector>
+                }
+              />
+              <Route
+                path="/extra-empaquetador"
+                element={
+                  <AuthGateLector>
+                    <ExtraEmpaquetadorPage />
                   </AuthGateLector>
                 }
               />

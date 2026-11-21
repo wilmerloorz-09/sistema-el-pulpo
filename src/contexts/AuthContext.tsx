@@ -384,11 +384,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           return;
         }
 
-        // /extra (estación) puede convivir con el POS: no registrar un slot nuevo
-        // que desplace la sesión principal, ni cerrarse si el POS ya ocupa el slot.
+        // /extra y /extra-empaquetador (estaciones) pueden convivir con el POS:
+        // no registrar un slot nuevo que desplace la sesión principal, ni cerrarse
+        // si el POS ya ocupa el slot.
         const path = typeof window !== "undefined" ? window.location.pathname : "";
         const esEstacionExtra =
           path === "/extra"
+          || path === "/extra-empaquetador"
           || path.startsWith("/lector")
           || path.startsWith("/bebidas");
         if (esEstacionExtra) {
