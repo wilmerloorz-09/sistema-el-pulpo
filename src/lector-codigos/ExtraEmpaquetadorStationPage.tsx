@@ -444,17 +444,12 @@ export default function ExtraEmpaquetadorStationPage() {
     return () => window.clearInterval(t);
   }, [sucursal, refrescarOrdenes]);
 
-  useEffect(() => {
-    setDraft([]);
-    setErrorMsg(null);
-  }, [ordenId, mesaId]);
-
   const deseleccionarMesaPorInactividad = useCallback(() => {
     setMesaId(null);
     setOrdenId(null);
     setPickerMesa(null);
     setMarcaPicker(null);
-    setDraft([]);
+    // El draft del catálogo es independiente de la cola Empaquetador.
     setErrorMsg(null);
     setBusqueda("");
   }, []);
@@ -739,7 +734,32 @@ export default function ExtraEmpaquetadorStationPage() {
   /** Segunda columna (catálogo): siempre activa; ya no depende de mesas. */
   const catalogoHabilitado = true;
 
+  const volcarDraftAOrden = async (idOrden: string, lineas: DraftLine[]) => {
+    if (!lineas.length) return;
+    setRegistrando(true);
+    setErrorMsg(null);
+    try {
+      for (const line of lineas) {
+        await agregarPorCodigo({
+          idOperacion: nuevoIdOperacion(),
+          idOrden,
+          codigo: null,
+          idProducto: line.productId,
+          cantidad: line.qty,
+          fuente: "extra",
+        });
+      }
+      await refrescarOrdenes();
+      void stockBodegaQuery.refetch();
+    } catch (e: any) {
+      setErrorMsg(e?.message || "No se pudo registrar el draft en la orden.");
+    } finally {
+      setRegistrando(false);
+    }
+  };
+
   const seleccionarOrdenEmpaquetador = (order: DispatchOrder) => {
+    const volcarPendiente = !ordenId && draft.length > 0;
     setMesaId(null);
     setPickerMesa(null);
     setOrdenId(order.id);
@@ -761,6 +781,10 @@ export default function ExtraEmpaquetadorStationPage() {
       };
       return [stub, ...prev];
     });
+    // Solo al pasar de “sin orden” a una orden: registrar el draft local.
+    if (volcarPendiente) {
+      void volcarDraftAOrden(order.id, draft);
+    }
   };
 
   const limpiarDraft = () => {
@@ -769,7 +793,7 @@ export default function ExtraEmpaquetadorStationPage() {
   };
 
   const ajustarCantidadDraft = async (productId: string, delta: number) => {
-    if (!ordenActiva || registrando) return;
+    if (registrando) return;
     const line = draft.find((l) => l.productId === productId);
     if (!line) return;
 
@@ -789,6 +813,16 @@ export default function ExtraEmpaquetadorStationPage() {
 
     const quitar = Math.min(line.qty, Math.abs(delta));
     if (quitar <= 0) return;
+
+    // Sin orden: solo draft local. Con orden: también deshacer en backend.
+    if (!ordenActiva) {
+      setDraft((prev) =>
+        prev
+          .map((l) => (l.productId === productId ? { ...l, qty: l.qty - quitar } : l))
+          .filter((l) => l.qty > 0),
+      );
+      return;
+    }
 
     setRegistrando(true);
     setErrorMsg(null);
@@ -820,17 +854,42 @@ export default function ExtraEmpaquetadorStationPage() {
     void ajustarCantidadDraft(productId, -line.qty);
   };
 
+  const sumarProductoAlDraft = (producto: CatalogProduct) => {
+    setDraft((prev) => {
+      const idx = prev.findIndex((l) => l.productId === producto.productId);
+      if (idx < 0) {
+        return [
+          ...prev,
+          {
+            productId: producto.productId,
+            nombre: producto.nombre,
+            precio: producto.precio,
+            imageUrl: producto.imageUrl,
+            imageFit: producto.imageFit,
+            qty: 1,
+          },
+        ];
+      }
+      const next = [...prev];
+      next[idx] = { ...next[idx], qty: next[idx].qty + 1 };
+      return next;
+    });
+  };
+
   const registrarProductoInmediato = async (producto: CatalogProduct) => {
     // Integra=Sí + stock 0 → bloquear. Integra=No → no valida ni descuenta (backend).
     if (bloqueadoPorStock(producto.productId)) {
       setErrorMsg(`Sin stock en bodega: ${producto.nombre}`);
       return;
     }
+    if (registrando) return;
+
+    // Sin orden de Empaquetador: el catálogo trabaja solo con draft local.
     if (!ordenActiva) {
-      setErrorMsg("Selecciona una orden de Empaquetador para agregar productos.");
+      setErrorMsg(null);
+      sumarProductoAlDraft(producto);
       return;
     }
-    if (registrando) return;
 
     setRegistrando(true);
     setErrorMsg(null);
@@ -844,25 +903,7 @@ export default function ExtraEmpaquetadorStationPage() {
         fuente: "extra",
       });
 
-      setDraft((prev) => {
-        const idx = prev.findIndex((l) => l.productId === producto.productId);
-        if (idx < 0) {
-          return [
-            ...prev,
-            {
-              productId: producto.productId,
-              nombre: producto.nombre,
-              precio: producto.precio,
-              imageUrl: producto.imageUrl,
-              imageFit: producto.imageFit,
-              qty: 1,
-            },
-          ];
-        }
-        const next = [...prev];
-        next[idx] = { ...next[idx], qty: next[idx].qty + 1 };
-        return next;
-      });
+      sumarProductoAlDraft(producto);
 
       await refrescarOrdenes();
       void stockBodegaQuery.refetch();
@@ -1394,11 +1435,11 @@ export default function ExtraEmpaquetadorStationPage() {
             ))}
             {!draft.length ? (
               <div className="extra-empty-orders">
-                {ordenActiva
-                  ? registrando
-                    ? "Registrando y despachando…"
-                    : "Toca un producto para agregarlo despachado a la orden."
-                  : "Selecciona una mesa u orden abierta."}
+                {registrando
+                  ? "Registrando y despachando…"
+                  : ordenActiva
+                    ? "Toca un producto para agregarlo despachado a la orden."
+                    : "Toca un producto para armar el pedido."}
               </div>
             ) : null}
           </div>
