@@ -354,7 +354,7 @@ export default function ExtraStationPage() {
       link = document.createElement("link");
       link.id = cssId;
       link.rel = "stylesheet";
-      link.href = "/lector-codigos/extra-station.css?v=20261120-extra-admin-auth";
+      link.href = "/lector-codigos/extra-station.css?v=20261121-sin-auto-despacho";
       document.head.appendChild(link);
     }
     document.documentElement.classList.add(bodyClass);
@@ -1442,7 +1442,7 @@ export default function ExtraStationPage() {
             <strong>{dinero(totalDraft)}</strong>
           </div>
 
-          <div className="extra-actions">
+          <div className="extra-actions extra-actions--solo">
             <button
               type="button"
               className="extra-btn-clear"
@@ -1453,9 +1453,6 @@ export default function ExtraStationPage() {
                 <path d="M9 3h6l1 2h5v2H3V5h5l1-2Zm1 6h2v10h-2V9Zm4 0h2v10h-2V9ZM7 9h2v10H7V9Z" />
               </svg>
               Limpiar lista
-            </button>
-            <button type="button" className="extra-btn-register" disabled>
-              {registrando ? "Despachando…" : "Auto-despachado"}
             </button>
           </div>
         </section>
