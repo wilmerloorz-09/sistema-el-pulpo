@@ -465,6 +465,7 @@ export default function ExtraStationPage() {
     setDraft([]);
     setErrorMsg(null);
     setBusqueda("");
+    setTab("frecuentes");
   }, []);
 
   // Tras 15s sin tocar Extra, soltar la mesa seleccionada.
