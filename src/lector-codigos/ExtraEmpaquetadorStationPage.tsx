@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import {
@@ -273,6 +273,7 @@ function BagIcon() {
 }
 
 export default function ExtraEmpaquetadorStationPage() {
+  const navigate = useNavigate();
   const { user, signOut, loading: authLoading } = useAuth();
 
   const [sucursal, setSucursal] = useState<Sucursal | null>(null);
@@ -1461,8 +1462,19 @@ export default function ExtraEmpaquetadorStationPage() {
               </svg>
               Limpiar lista
             </button>
-            <button type="button" className="extra-btn-register" disabled>
-              {registrando ? "Despachando…" : "Auto-despachado"}
+            <button
+              type="button"
+              className="extra-btn-register"
+              disabled={registrando || !ordenActiva}
+              onClick={() => {
+                if (!ordenActiva) {
+                  setErrorMsg("Selecciona una orden de Empaquetador para cobrar.");
+                  return;
+                }
+                navigate(`/caja?order=${encodeURIComponent(ordenActiva.id)}`);
+              }}
+            >
+              {registrando ? "Procesando…" : "Cobrar"}
             </button>
           </div>
         </section>
