@@ -48,6 +48,8 @@ const MARCAS_IMAGEN = [...FILA_MARCAS_COCA, ...FILA_MARCAS_PEPSI, ...FILA_OTRAS]
 const MARCAS_COCA_PEPSI = [...FILA_MARCAS_COCA, ...FILA_MARCAS_PEPSI];
 /** 4 columnas × 4 filas en Extra (tablet). */
 const MAX_FRECUENTES_VISIBLE = 16;
+/** Sin interacción en Extra → deseleccionar mesa. */
+const INACTIVIDAD_MESA_MS = 15_000;
 type CategoriaTab = "frecuentes" | "bebidas" | "jugos" | "varios";
 
 type ImageFit = "cover" | "contain";
@@ -301,6 +303,8 @@ export default function ExtraStationPage() {
     productos: CatalogProduct[];
   } | null>(null);
   const [flashProductId, setFlashProductId] = useState<string | null>(null);
+  const stationRef = useRef<HTMLDivElement | null>(null);
+  const idleTimerRef = useRef<number | null>(null);
 
   const ordenActiva = useMemo(
     () => ordenes.find((o) => o.id === ordenId) ?? null,
@@ -440,6 +444,58 @@ export default function ExtraStationPage() {
     setDraft([]);
     setErrorMsg(null);
   }, [ordenId, mesaId]);
+
+  const deseleccionarMesaPorInactividad = useCallback(() => {
+    setMesaId(null);
+    setOrdenId(null);
+    setPickerMesa(null);
+    setMarcaPicker(null);
+    setDraft([]);
+    setErrorMsg(null);
+    setBusqueda("");
+  }, []);
+
+  // Tras 15s sin tocar Extra, soltar la mesa seleccionada.
+  useEffect(() => {
+    const haySeleccion = Boolean(mesaId || ordenId);
+    if (!haySeleccion) {
+      if (idleTimerRef.current != null) {
+        window.clearTimeout(idleTimerRef.current);
+        idleTimerRef.current = null;
+      }
+      return;
+    }
+
+    const reiniciar = () => {
+      if (registrando) return;
+      if (idleTimerRef.current != null) window.clearTimeout(idleTimerRef.current);
+      idleTimerRef.current = window.setTimeout(() => {
+        deseleccionarMesaPorInactividad();
+      }, INACTIVIDAD_MESA_MS);
+    };
+
+    reiniciar();
+    const root = stationRef.current;
+    const opts: AddEventListenerOptions = { capture: true, passive: true };
+    const eventos: Array<keyof HTMLElementEventMap> = [
+      "pointerdown",
+      "touchstart",
+      "keydown",
+      "scroll",
+    ];
+    for (const ev of eventos) root?.addEventListener(ev, reiniciar, opts);
+    // También actividad en diálogos/overlays del módulo.
+    for (const ev of eventos) document.addEventListener(ev, reiniciar, opts);
+
+    return () => {
+      if (idleTimerRef.current != null) {
+        window.clearTimeout(idleTimerRef.current);
+        idleTimerRef.current = null;
+      }
+      for (const ev of eventos) root?.removeEventListener(ev, reiniciar, opts);
+      for (const ev of eventos) document.removeEventListener(ev, reiniciar, opts);
+    };
+  }, [mesaId, ordenId, registrando, deseleccionarMesaPorInactividad]);
 
   useEffect(() => {
     const dialog = pickerRef.current;
@@ -1000,7 +1056,7 @@ export default function ExtraStationPage() {
   }
 
   return (
-    <div className="extra-station">
+    <div className="extra-station" ref={stationRef}>
       <header className="extra-topbar">
         <div className="extra-brand">
           <img src="/logo.png" alt="" />
