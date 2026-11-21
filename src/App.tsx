@@ -71,6 +71,7 @@ import LectorCodigosPage from "./lector-codigos/LectorCodigosPage";
 import ExtraEmpaquetadorPage from "./lector-codigos/ExtraEmpaquetadorPage";
 import ExtraAccesoPage from "./lector-codigos/ExtraAccesoPage";
 import ExtraStationEntryGate from "./lector-codigos/ExtraStationEntryGate";
+import ExtraPackerOrAdminGate from "./lector-codigos/ExtraPackerOrAdminGate";
 
 const queryClient = new QueryClient({
   mutationCache: new MutationCache({
@@ -534,7 +535,9 @@ const App = () => (
                 element={
                   <AuthGateLector>
                     <ExtraStationEntryGate>
-                      <LectorCodigosPage />
+                      <ExtraPackerOrAdminGate>
+                        <LectorCodigosPage />
+                      </ExtraPackerOrAdminGate>
                     </ExtraStationEntryGate>
                   </AuthGateLector>
                 }
@@ -544,9 +547,11 @@ const App = () => (
                 element={
                   <AuthGateLector>
                     <ExtraStationEntryGate>
-                      <BranchProvider>
-                        <ExtraEmpaquetadorPage />
-                      </BranchProvider>
+                      <ExtraPackerOrAdminGate>
+                        <BranchProvider>
+                          <ExtraEmpaquetadorPage />
+                        </BranchProvider>
+                      </ExtraPackerOrAdminGate>
                     </ExtraStationEntryGate>
                   </AuthGateLector>
                 }
