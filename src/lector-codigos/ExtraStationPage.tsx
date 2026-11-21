@@ -16,6 +16,7 @@ import {
   resolveMenuNodeProductId,
 } from "@/lib/inventarioMenuData";
 import { productoBloqueadoPorStockInventario } from "@/lib/inventarioProductos";
+import ExtraAdminAuthDialog from "./componentes/ExtraAdminAuthDialog";
 import ExtraFrecuentesManager from "./componentes/ExtraFrecuentesManager";
 import {
   agregarPorCodigo,
@@ -298,6 +299,7 @@ export default function ExtraStationPage() {
   const [now, setNow] = useState(() => new Date());
   const [menuOpen, setMenuOpen] = useState(false);
   const [gestionarFrecuentes, setGestionarFrecuentes] = useState(false);
+  const [authFrecuentesOpen, setAuthFrecuentesOpen] = useState(false);
   const [marcaPicker, setMarcaPicker] = useState<{
     title: string;
     productos: CatalogProduct[];
@@ -352,7 +354,7 @@ export default function ExtraStationPage() {
       link = document.createElement("link");
       link.id = cssId;
       link.rel = "stylesheet";
-      link.href = "/lector-codigos/extra-station.css?v=20261120-extra-catalog-lock";
+      link.href = "/lector-codigos/extra-station.css?v=20261120-extra-admin-auth";
       document.head.appendChild(link);
     }
     document.documentElement.classList.add(bodyClass);
@@ -1133,7 +1135,7 @@ export default function ExtraStationPage() {
                   }}
                   onClick={() => {
                     setMenuOpen(false);
-                    setGestionarFrecuentes(true);
+                    setAuthFrecuentesOpen(true);
                   }}
                 >
                   Gestionar Frecuentes
@@ -1592,12 +1594,20 @@ export default function ExtraStationPage() {
       ) : null}
 
       {sucursal ? (
-        <ExtraFrecuentesManager
-          open={gestionarFrecuentes}
-          branchId={sucursal.id}
-          catalog={catalogAll}
-          onClose={() => setGestionarFrecuentes(false)}
-        />
+        <>
+          <ExtraAdminAuthDialog
+            open={authFrecuentesOpen}
+            branchId={sucursal.id}
+            onClose={() => setAuthFrecuentesOpen(false)}
+            onAuthorized={() => setGestionarFrecuentes(true)}
+          />
+          <ExtraFrecuentesManager
+            open={gestionarFrecuentes}
+            branchId={sucursal.id}
+            catalog={catalogAll}
+            onClose={() => setGestionarFrecuentes(false)}
+          />
+        </>
       ) : null}
     </div>
   );

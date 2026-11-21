@@ -1065,6 +1065,92 @@ html.extra-station-active body {
   }
 }
 
+/* ===== Auth admin Extra ===== */
+.extra-admin-auth {
+  width: min(420px, 94vw);
+  background: #fff;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  padding: 20px 18px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 18px 40px rgba(12, 28, 20, 0.22);
+}
+
+.extra-admin-auth h2 {
+  margin: 0;
+  font-size: 18px;
+  color: var(--green-deep);
+}
+
+.extra-admin-auth > p {
+  margin: 0;
+  font-size: 13px;
+  color: #5f7367;
+  line-height: 1.4;
+}
+
+.extra-admin-auth label {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #33483c;
+}
+
+.extra-admin-auth input {
+  height: 42px;
+  border: 1px solid #c9d5cb;
+  border-radius: 10px;
+  padding: 0 12px;
+  font-size: 14px;
+  font: inherit;
+}
+
+.extra-admin-auth input:focus {
+  outline: 2px solid rgba(23, 99, 59, 0.35);
+  border-color: var(--green);
+}
+
+.extra-admin-auth-error {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #fff1e9;
+  border: 1px solid #efd7c8;
+  color: #ad6846;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.extra-admin-auth-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.extra-admin-auth-actions button {
+  height: 42px;
+  border-radius: 10px;
+  border: 1px solid #c9d5cb;
+  background: #fff;
+  font-weight: 700;
+  cursor: pointer;
+  color: #1f3a2e;
+}
+
+.extra-admin-auth-actions button[type="submit"] {
+  border: 0;
+  background: var(--green);
+  color: #fff;
+}
+
+.extra-admin-auth-actions button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 /* ===== Gestionar frecuentes Extra ===== */
 .extra-freq-overlay {
   position: fixed;
