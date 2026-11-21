@@ -7,10 +7,10 @@ export type InventarioProductoInfo = {
   cantidadDisponible: number;
   tipoProducto: TipoProducto;
   activoCatalogo: boolean;
-  /** Por sucursal; false si no hay fila en inventario_productos. */
+  /** Por sucursal; flag de bodega sucursal (integra_con_ventas). */
   integraConVentas: boolean;
   inventarioId: string | null;
-  /** Umbral visual (legacy nevera); stock menor a este valor se muestra en rojo. */
+  /** Umbral visual en bodega sucursal; stock menor a este valor se muestra en rojo. */
   limiteStock: number;
 };
 
@@ -168,6 +168,7 @@ export async function fetchInventarioBodegaSucursalMap(
       producto_global_id,
       cantidad_disponible,
       integra_con_ventas,
+      limite_stock,
       productos_globales (
         id,
         tipo_producto,
@@ -192,7 +193,7 @@ export async function fetchInventarioBodegaSucursalMap(
       tipoProducto: product?.tipo_producto === "PREPARADO" ? "PREPARADO" : "COMPRADO",
       activoCatalogo: product?.activo ?? true,
       integraConVentas: Boolean(row.integra_con_ventas),
-      limiteStock: 0,
+      limiteStock: Number(row.limite_stock ?? 0),
     });
   }
 

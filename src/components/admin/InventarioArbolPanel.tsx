@@ -23,7 +23,7 @@ type InventarioArbolPanelProps = {
 
 const InventarioArbolPanel = ({
   branchId,
-  stockSource = "nevera",
+  stockSource = "bodega_sucursal",
   renderNodeAction,
 }: InventarioArbolPanelProps) => {
   const inventarioQuery = useQuery({

@@ -12,7 +12,7 @@ interface MenuNavigatorProps {
   includeInactive?: boolean;
   menuScope?: MenuScope;
   renderNodeAction?: (node: MenuNode) => ReactNode;
-  /** Stock de nevera cuando el producto integra ventas; null = no mostrar. */
+  /** Stock de bodega sucursal cuando el producto integra ventas; null = no mostrar. */
   getProductStock?: (node: MenuNode) => number | null;
   /** Límite de la sucursal; stock menor al límite se muestra en rojo. */
   getProductStockLimit?: (node: MenuNode) => number;
