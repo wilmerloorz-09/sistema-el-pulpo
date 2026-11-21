@@ -1246,6 +1246,10 @@ const OrdenesContent = () => {
         table_order_position: Number(order.table_order_position ?? 0) || null,
         created_at: order.created_at ?? null,
         item_count: orderItems.length,
+        total:
+          order.is_special && order.special_total_manual != null
+            ? Number(order.special_total_manual)
+            : (order.items ?? []).reduce((sum, item) => sum + Number(item.total ?? 0), 0),
         item_preview_lines: buildItemPreviewLinesForTableCard(order.items ?? []),
         is_special: Boolean(order.is_special),
       }
@@ -1385,6 +1389,10 @@ const OrdenesContent = () => {
       table_order_position: Number(order.table_order_position ?? 0) || null,
       created_at: order.created_at ?? null,
       item_count: orderItems.length,
+      total:
+        order.is_special && order.special_total_manual != null
+          ? Number(order.special_total_manual)
+          : (order.items ?? []).reduce((sum, item) => sum + Number(item.total ?? 0), 0),
       item_preview_lines: buildItemPreviewLinesForTableCard(order.items ?? []),
       is_special: Boolean(order.is_special),
     };
@@ -5228,6 +5236,31 @@ const OrdenesContent = () => {
                           {isDraftOrder ? "Borrador" : "Sin líneas"}
                         </p>
                       )}
+                    </div>
+                    <div
+                      className={cn(
+                        "mt-auto flex shrink-0 items-center justify-between gap-2 border-t px-3 py-2.5 sm:px-3.5 sm:py-3",
+                        cardDraft
+                          ? "border-sky-200/90 bg-sky-50/90 dark:border-sky-800/70 dark:bg-sky-950/40"
+                          : "border-orange-200/90 bg-[#fffaf5] dark:border-orange-900/50 dark:bg-orange-950/30",
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "text-[11px] font-bold sm:text-xs",
+                          cardDraft ? "text-sky-700 dark:text-sky-300" : "text-[#8a6a52] dark:text-orange-200/80",
+                        )}
+                      >
+                        Total
+                      </span>
+                      <strong
+                        className={cn(
+                          "text-sm font-extrabold tabular-nums sm:text-base",
+                          cardDraft ? "text-sky-950 dark:text-sky-50" : "text-[#3b2414] dark:text-orange-50",
+                        )}
+                      >
+                        ${Number(tableOrder.total ?? 0).toFixed(2)}
+                      </strong>
                     </div>
                   </button>
                 );

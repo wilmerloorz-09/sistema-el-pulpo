@@ -493,7 +493,7 @@ export async function fetchSiblingOrders(
   } as any);
 
   const siblingSelect =
-    "id, order_number, order_code, split_id, table_order_position, status, created_at, sent_to_kitchen_at, cash_shift_id, notes, is_special, table_id, special_origin_table_id, order_items(id, description_snapshot, quantity, status)";
+    "id, order_number, order_code, split_id, table_order_position, status, created_at, sent_to_kitchen_at, cash_shift_id, notes, is_special, special_total_manual, table_id, special_origin_table_id, order_items(id, description_snapshot, quantity, status, total)";
 
   const [{ data: tableBoundOrders, error: tableBoundError }, { data: specialOriginOrders, error: specialOriginError }] =
     await Promise.all([
@@ -551,6 +551,9 @@ export async function fetchSiblingOrders(
     .map((sibling) => {
       const rawItems = Array.isArray(sibling.order_items) ? sibling.order_items : [];
       const isSpecial = Boolean(sibling.is_special);
+      const itemsTotal = rawItems.reduce((sum: number, item: any) => sum + Number(item.total ?? 0), 0);
+      const specialManual =
+        sibling.special_total_manual == null ? null : Number(sibling.special_total_manual);
       return {
         id: sibling.id,
         order_number: sibling.order_number,
@@ -562,6 +565,10 @@ export async function fetchSiblingOrders(
         table_order_position: Number(sibling.table_order_position ?? 0) || null,
         created_at: sibling.created_at ?? null,
         item_count: rawItems.length,
+        total:
+          isSpecial && specialManual != null && Number.isFinite(specialManual)
+            ? specialManual
+            : itemsTotal,
         item_preview_lines: buildItemPreviewLinesForTableCard(rawItems as any[]),
         is_special: isSpecial,
       };
