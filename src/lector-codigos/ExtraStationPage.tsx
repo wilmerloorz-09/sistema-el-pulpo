@@ -50,6 +50,7 @@ import type {
 type OrdenPickerCard = OrdenEnMesa & {
   items: Array<{ cantidad: number; descripcion: string }>;
   estadoLabel: string;
+  itemsListos?: boolean;
 };
 
 const PARA_LLEVAR_ID = "__para-llevar__";
@@ -946,7 +947,18 @@ export default function ExtraStationPage() {
 
   const abrirPickerOrdenes = async (mesa: MesaSucursal, candidatas: OrdenEnMesa[]) => {
     setErrorMsg(null);
-    setPickerMesa({ mesa, ordenes: [], cargando: true });
+    // Abrir ya con tarjetas (código + total); los ítems se rellenan en segundo plano.
+    const iniciales: OrdenPickerCard[] = candidatas.map((o) => {
+      const abierta = ordenes.find((x) => x.id === o.id) ?? null;
+      return {
+        ...o,
+        items: [],
+        estadoLabel: etiquetaEstadoPicker(mesa, abierta),
+        itemsListos: false,
+      };
+    });
+    setPickerMesa({ mesa, ordenes: iniciales, cargando: false });
+
     try {
       const cards = await Promise.all(
         candidatas.map(async (o) => {
@@ -964,12 +976,22 @@ export default function ExtraStationPage() {
               descripcion: it.descripcion,
             })),
             estadoLabel: etiquetaEstadoPicker(mesa, abierta),
+            itemsListos: true,
           } satisfies OrdenPickerCard;
         }),
       );
-      setPickerMesa({ mesa, ordenes: cards, cargando: false });
+      setPickerMesa((prev) =>
+        prev && prev.mesa.id === mesa.id ? { mesa, ordenes: cards, cargando: false } : prev,
+      );
     } catch (e: any) {
-      setPickerMesa(null);
+      setPickerMesa((prev) => {
+        if (!prev || prev.mesa.id !== mesa.id) return prev;
+        return {
+          ...prev,
+          ordenes: prev.ordenes.map((o) => ({ ...o, itemsListos: true })),
+          cargando: false,
+        };
+      });
       setErrorMsg(e?.message || "No se pudieron cargar las órdenes de la mesa.");
     }
   };
@@ -1520,47 +1542,45 @@ export default function ExtraStationPage() {
               </p>
             </div>
 
-            {pickerMesa.cargando ? (
-              <div className="extra-order-picker-loading">Cargando órdenes…</div>
-            ) : (
-              <div className="extra-order-picker-grid">
-                {pickerMesa.ordenes.map((o, idx) => {
-                  const titulo = o.especial
-                    ? "Orden especial"
-                    : o.codigo
-                      ? `Orden #${String(o.codigo).replace(/^#/, "")}`
-                      : `Orden #${idx + 1}`;
-                  return (
-                    <button
-                      key={o.id}
-                      type="button"
-                      className="extra-order-card"
-                      onClick={() => aplicarOrdenMesa(pickerMesa.mesa, o.id)}
-                    >
-                      <div className="extra-order-card-head">
-                        <strong>{titulo}</strong>
-                        <span>{o.estadoLabel}</span>
-                      </div>
-                      <ul className="extra-order-card-items">
-                        {o.items.length ? (
-                          o.items.map((it, i) => (
-                            <li key={`${o.id}-${i}`}>
-                              <b>{it.cantidad}</b> {it.descripcion}
-                            </li>
-                          ))
-                        ) : (
-                          <li className="is-empty">Sin ítems visibles</li>
-                        )}
-                      </ul>
-                      <div className="extra-order-card-total">
-                        <span>Total</span>
-                        <strong>{dinero(o.total)}</strong>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
+            <div className="extra-order-picker-grid">
+              {pickerMesa.ordenes.map((o, idx) => {
+                const titulo = o.especial
+                  ? "Orden especial"
+                  : o.codigo
+                    ? `Orden #${String(o.codigo).replace(/^#/, "")}`
+                    : `Orden #${idx + 1}`;
+                return (
+                  <button
+                    key={o.id}
+                    type="button"
+                    className="extra-order-card"
+                    onClick={() => aplicarOrdenMesa(pickerMesa.mesa, o.id)}
+                  >
+                    <div className="extra-order-card-head">
+                      <strong>{titulo}</strong>
+                      <span>{o.estadoLabel}</span>
+                    </div>
+                    <ul className="extra-order-card-items">
+                      {o.items.length ? (
+                        o.items.map((it, i) => (
+                          <li key={`${o.id}-${i}`}>
+                            <b>{it.cantidad}</b> {it.descripcion}
+                          </li>
+                        ))
+                      ) : (
+                        <li className="is-empty">
+                          {o.itemsListos === false ? "…" : "Sin ítems visibles"}
+                        </li>
+                      )}
+                    </ul>
+                    <div className="extra-order-card-total">
+                      <span>Total</span>
+                      <strong>{dinero(o.total)}</strong>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
 
             <button
               type="button"
