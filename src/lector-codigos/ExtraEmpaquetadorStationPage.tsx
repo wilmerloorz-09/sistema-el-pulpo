@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 import {
   fetchFrequentProducts,
   getFrequentProductsQueryKey,
@@ -793,6 +794,44 @@ export default function ExtraEmpaquetadorStationPage() {
     setErrorMsg(null);
   };
 
+  const cobrarDraftExtraEmpaquetador = async () => {
+    if (!sucursal || registrando) return;
+    if (!draft.length) {
+      setErrorMsg("Agrega al menos un producto antes de cobrar.");
+      return;
+    }
+
+    setRegistrando(true);
+    setErrorMsg(null);
+    try {
+      const { data, error } = await supabase.rpc(
+        "create_extra_empaquetador_charge_order" as any,
+        {
+          p_branch_id: sucursal.id,
+          p_items: draft.map((line) => ({
+            product_id: line.productId,
+            quantity: line.qty,
+          })),
+        } as any,
+      );
+      if (error) throw error;
+
+      const orderId = String((data as any)?.order_id ?? "");
+      if (!orderId) {
+        throw new Error("No se pudo crear la orden para cobrar.");
+      }
+
+      setDraft([]);
+      setOrdenId(null);
+      setMesaId(null);
+      navigate(`/caja?order=${encodeURIComponent(orderId)}`);
+    } catch (e: any) {
+      setErrorMsg(e?.message || "No se pudo crear la orden para cobrar.");
+    } finally {
+      setRegistrando(false);
+    }
+  };
+
   const ajustarCantidadDraft = async (productId: string, delta: number) => {
     if (registrando) return;
     const line = draft.find((l) => l.productId === productId);
@@ -1465,16 +1504,10 @@ export default function ExtraEmpaquetadorStationPage() {
             <button
               type="button"
               className="extra-btn-register"
-              disabled={registrando || !ordenActiva}
-              onClick={() => {
-                if (!ordenActiva) {
-                  setErrorMsg("Selecciona una orden de Empaquetador para cobrar.");
-                  return;
-                }
-                navigate(`/caja?order=${encodeURIComponent(ordenActiva.id)}`);
-              }}
+              disabled={registrando || !draft.length}
+              onClick={() => void cobrarDraftExtraEmpaquetador()}
             >
-              {registrando ? "Procesando…" : "Cobrar"}
+              {registrando ? "Creando orden…" : "Cobrar"}
             </button>
           </div>
         </section>

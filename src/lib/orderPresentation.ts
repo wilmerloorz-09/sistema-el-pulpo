@@ -116,11 +116,11 @@ export function cleanOrderCode(code: string | null | undefined): string | null {
   return code.replace(/-V[a-f0-9]{4}$/i, "");
 }
 
-/** Sufijo visible nuevo: M001 / L001 / E001 (por tipo, sucursal y día). */
+/** Sufijo visible nuevo: M001 / L001 / E001 / P001 (por tipo, sucursal y día). */
 export function getOrderSeriesRef(orderCode: string | null | undefined): string | null {
   const clean = cleanOrderCode(orderCode);
   const suffix = clean?.split("-").pop()?.trim();
-  if (!suffix || !/^[MLE]\d+$/i.test(suffix)) return null;
+  if (!suffix || !/^[MLEP]\d+$/i.test(suffix)) return null;
   const letter = suffix[0]!.toUpperCase();
   const digits = suffix.slice(1);
   return `${letter}${digits.padStart(3, "0")}`;
