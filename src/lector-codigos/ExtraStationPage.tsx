@@ -348,7 +348,7 @@ export default function ExtraStationPage() {
       link = document.createElement("link");
       link.id = cssId;
       link.rel = "stylesheet";
-      link.href = "/lector-codigos/extra-station.css?v=20261120-extra-trash-red";
+      link.href = "/lector-codigos/extra-station.css?v=20261120-extra-catalog-lock";
       document.head.appendChild(link);
     }
     document.documentElement.classList.add(bodyClass);
@@ -677,6 +677,8 @@ export default function ExtraStationPage() {
   const totalEncabezado = totalMesaSeleccionada;
 
   const mesaLibreSeleccionada = Boolean(mesaActiva && mesaActiva.estado === "libre");
+  /** Segunda columna (catálogo): solo activa con mesa/orden lista para agregar. */
+  const catalogoHabilitado = Boolean(mesaActiva && ordenActiva);
 
   const limpiarDraft = () => {
     setDraft([]);
@@ -796,6 +798,7 @@ export default function ExtraStationPage() {
     producto: CatalogProduct,
     opts?: { cerrarPicker?: boolean },
   ) => {
+    if (!catalogoHabilitado) return;
     const id = producto.productId;
     // Quitar y volver a poner la clase para que la animación se repita en clics seguidos.
     setFlashProductId(null);
@@ -810,7 +813,7 @@ export default function ExtraStationPage() {
   };
 
   const abrirMarcaBebida = (marca: MarcaAtajo, productos: CatalogProduct[]) => {
-    if (!productos.length) return;
+    if (!catalogoHabilitado || !productos.length) return;
     // Siempre abrir el menú de presentaciones (también si solo hay una).
     setMarcaPicker({ title: marca.label, productos });
   };
@@ -1164,7 +1167,16 @@ export default function ExtraStationPage() {
           </div>
         </section>
 
-        <section className="extra-panel extra-catalog" aria-label="Catálogo">
+        <section
+          className={`extra-panel extra-catalog${catalogoHabilitado ? "" : " is-locked"}`}
+          aria-label="Catálogo"
+          aria-disabled={!catalogoHabilitado}
+        >
+          {!catalogoHabilitado ? (
+            <div className="extra-catalog-lock" role="status">
+              Selecciona una mesa para agregar productos
+            </div>
+          ) : null}
           <div className="extra-tabs">
             {(
               [
@@ -1178,6 +1190,7 @@ export default function ExtraStationPage() {
                 key={key}
                 type="button"
                 className={tab === key ? "active" : ""}
+                disabled={!catalogoHabilitado}
                 onClick={() => setTab(key)}
               >
                 {label}
@@ -1195,6 +1208,7 @@ export default function ExtraStationPage() {
               onChange={(e) => setBusqueda(e.target.value)}
               placeholder="Buscar producto..."
               inputMode="search"
+              disabled={!catalogoHabilitado}
             />
           </div>
 
