@@ -140,7 +140,7 @@ html.extra-station-active body {
 
 /* Extra Empaquetador: primera columna más ancha para la cola Empaquetador */
 .extra-station:has(.extra-packing-panel) .extra-body {
-  grid-template-columns: 32% 42% 26%;
+  grid-template-columns: 40% 36% 24%;
 }
 
 /* ===== Empaquetador (columna izquierda Extra Empaquetador) ===== */
@@ -1110,7 +1110,7 @@ html.extra-station-active body {
   }
 
   .extra-station:has(.extra-packing-panel) .extra-body {
-    grid-template-columns: 34% 40% 26%;
+    grid-template-columns: 42% 34% 24%;
   }
 
   .extra-station {
