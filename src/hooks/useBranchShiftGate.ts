@@ -144,7 +144,9 @@ function mapGateRow(
     canEditOrders: Boolean(row?.can_edit_orders),
     canDispatchOrders: Boolean(row?.can_dispatch_orders),
     canManageProducts: Boolean(row?.can_manage_products ?? row?.can_dispatch_orders),
-    canUseCaja: Boolean(row?.can_use_caja),
+    canUseCaja:
+      Boolean(row?.can_use_caja)
+      || String(row?.caja_status ?? "").toUpperCase() === "OPEN",
     primaryCashierId: row?.primary_cashier_id ?? null,
     isSecondaryCashier: Boolean(row?.is_secondary_cashier),
     secondaryCajaTakeoutEnabled: Boolean(row?.secondary_caja_takeout_enabled),
@@ -274,10 +276,13 @@ export function useBranchShiftGate() {
 
           const primaryCashierId = (meta?.primary_cashier_id as string | null) ?? null;
           const directEnabled = Boolean(userRow?.is_enabled);
+          const userCajaStatus = String(row?.caja_status ?? "UNOPENED").toUpperCase();
           const canUseCaja =
             Boolean(userRow?.can_use_caja)
             || Boolean(row?.can_use_caja)
-            || (Boolean(primaryCashierId) && primaryCashierId === user.id && directEnabled);
+            || (Boolean(primaryCashierId) && primaryCashierId === user.id && directEnabled)
+            // Apertura abierta: no bloquear /caja aunque el flag del turno se haya apagado.
+            || userCajaStatus === "OPEN";
           const isSecondary =
             canUseCaja && Boolean(primaryCashierId) && primaryCashierId !== user.id;
 
