@@ -477,19 +477,11 @@ export default function CajaChica() {
 
       if (form.tipo === "REPOSICION") {
         const saldoObjetivo = parseMonto(form.monto);
-        if (!Number.isFinite(saldoObjetivo) || saldoObjetivo <= 0) {
-          throw new Error("Ingresa el saldo que quedará");
+        if (!Number.isFinite(saldoObjetivo) || saldoObjetivo < 0) {
+          throw new Error("Ingresa el saldo que quedará (0 o más)");
         }
-        // El valor digitado es el saldo final; al backend va solo el incremento.
-        const saldoBase = form.movimientoId
-          ? Number(form.originalSaldoAntes ?? 0)
-          : saldoActual;
-        const monto = roundMoney(saldoObjetivo - saldoBase);
-        if (monto <= 0) {
-          throw new Error(
-            `El saldo a dejar debe ser mayor al saldo actual (${money(saldoBase)})`,
-          );
-        }
+        // El valor digitado reemplaza el saldo actual (saldo final absoluto).
+        const monto = roundMoney(saldoObjetivo);
         if (!form.movimientoId) {
           return registrarMovimientoCajaChica({
             sucursalId: activeBranchId,
@@ -938,11 +930,21 @@ export default function CajaChica() {
                               <span
                                 className={cn(
                                   "whitespace-nowrap text-[13px] font-semibold tabular-nums",
-                                  m.tipo === "EGRESO" ? "text-rose-700" : "text-emerald-700",
+                                  m.tipo === "EGRESO"
+                                    || (m.tipo === "REPOSICION"
+                                      && Number(m.saldo_despues) < Number(m.saldo_antes))
+                                    ? "text-rose-700"
+                                    : "text-emerald-700",
                                 )}
                               >
-                                {m.tipo === "EGRESO" ? "−" : "+"}
-                                {money(m.monto)}
+                                {m.tipo === "EGRESO"
+                                  ? `−${money(m.monto)}`
+                                  : (() => {
+                                      const delta =
+                                        Number(m.saldo_despues) - Number(m.saldo_antes);
+                                      if (delta === 0) return money(0);
+                                      return `${delta > 0 ? "+" : "−"}${money(Math.abs(delta))}`;
+                                    })()}
                               </span>
                             </div>
                           </td>
@@ -1160,7 +1162,7 @@ export default function CajaChica() {
                 <Input value={CAJA_CHICA_CONCEPTO_REPOSICION} disabled className="rounded-xl bg-slate-50" />
                 <p className="text-xs text-muted-foreground">
                   Saldo actual: {money(form.movimientoId ? Number(form.originalSaldoAntes ?? 0) : saldoActual)}.
-                  El valor ingresado es el saldo final (no se suma al existente).
+                  El valor ingresado reemplaza el saldo actual (puede ser mayor o menor).
                 </p>
               </div>
             )}
