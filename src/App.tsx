@@ -159,10 +159,11 @@ const CajaAutoOpener = () => {
   const openingRef = useRef(false);
 
   useEffect(() => {
+    // Solo cajeros asignados: admins sin can_use_caja real consultan, no auto-abren $0.
     if (
       shiftGate?.shiftOpen &&
       shiftGate?.userEnabled &&
-      shiftGate?.canUseCaja &&
+      shiftGate?.assignedCanUseCaja &&
       auxiliaryAssignmentQuery.isFetched &&
       !auxiliaryAssignment?.isAssigned &&
       shiftGate?.cajaStatus === "UNOPENED" &&
@@ -185,7 +186,7 @@ const CajaAutoOpener = () => {
   }, [
     shiftGate?.shiftOpen,
     shiftGate?.userEnabled,
-    shiftGate?.canUseCaja,
+    shiftGate?.assignedCanUseCaja,
     auxiliaryAssignmentQuery.isFetched,
     auxiliaryAssignment?.isAssigned,
     shiftGate?.cajaStatus,

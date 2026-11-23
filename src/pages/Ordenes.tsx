@@ -1874,9 +1874,12 @@ const OrdenesContent = () => {
   }, []);
 
   const isTakeout = order?.order_type === "TAKEOUT";
-  const canUseCaja = 
+  // Cobrar desde Órdenes solo con caja asignada y abierta (admin consulta no cobra).
+  const canUseCaja =
     auxiliaryAssignmentQuery.isFetched
     && !auxiliaryAssignmentQuery.data?.isAssigned
+    && Boolean(shiftGateQuery.data?.assignedCanUseCaja)
+    && shiftGateQuery.data?.cajaStatus === "OPEN"
     && (
       isGlobalAdmin
       || canManageOrders

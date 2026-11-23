@@ -133,17 +133,21 @@ const Caja = () => {
     setSearchParams(nextParams, { replace: true });
   }, [searchParams, setSearchParams]);
 
-  const canOperateCaja =
-    canOperate(permissions, "caja")
-    || isGlobalAdmin
-    || canManage(permissions, "admin_sucursal")
-    || canManage(permissions, "admin_global")
-    || Boolean(shiftGateQuery.data?.canUseCaja)
-    || Boolean(shiftGateQuery.data?.isSupervisor);
-  const canAnnulOpening =
-    isGlobalAdmin
+  const isBranchAdmin =
+    Boolean(isGlobalAdmin)
     || canManage(permissions, "admin_sucursal")
     || canManage(permissions, "admin_global");
+  const canOperateCaja =
+    canOperate(permissions, "caja")
+    || isBranchAdmin
+    || Boolean(shiftGateQuery.data?.canUseCaja)
+    || Boolean(shiftGateQuery.data?.isSupervisor);
+  const canAnnulOpening = isBranchAdmin;
+  /** Admin/supervisor sin caja asignada ni apertura propia: ve Recaudar, no cobra. */
+  const isAdminCajaConsult =
+    (isBranchAdmin || Boolean(shiftGateQuery.data?.isSupervisor))
+    && !Boolean(shiftGateQuery.data?.assignedCanUseCaja)
+    && (shiftGateQuery.data?.cajaStatus ?? "UNOPENED") !== "OPEN";
 
   const {
     denominations,
@@ -362,8 +366,8 @@ const Caja = () => {
     setPreparingPhoto(false);
   }, [activeCaptureRequestId, pendingCaptureRequests, photoPreviewUrl]);
 
-  const cajaPanelReadOnly = !canOperateCaja || !userCajaIsOpen;
-  const canChargeFromCompleted = canOperateCaja && userCajaIsOpen;
+  const cajaPanelReadOnly = !canOperateCaja || !userCajaIsOpen || isAdminCajaConsult;
+  const canChargeFromCompleted = canOperateCaja && userCajaIsOpen && !isAdminCajaConsult;
   const summaryIsOwnCaja = Boolean(user?.id) && summaryCashierId === user.id;
   const summaryReadOnly = cajaPanelReadOnly || !summaryIsOwnCaja;
   const canAnnulSelectedOpening = canAnnulOpening && summaryCashierId !== ALL_CASHIERS;
@@ -977,7 +981,8 @@ const Caja = () => {
     }
   };
 
-  if (!userCajaIsOpen && activeTab !== "completed") {
+  // Cajero asignado sin apertura: pedir arqueo. Admin en consulta: sigue a la cola.
+  if (!userCajaIsOpen && activeTab !== "completed" && !isAdminCajaConsult) {
     return (
       <div className="bg-slate-50 px-4 py-2 sm:px-6 lg:px-10">
         <div className="w-full space-y-6">
@@ -1263,14 +1268,23 @@ const Caja = () => {
                   <div className="flex items-center gap-1.5 sm:gap-2">
                     <span className="inline-block h-2 w-2 shrink-0 rounded-full bg-[#0f766e]" />
                     <span className="truncate text-xs text-slate-700 sm:text-sm">
-                      {userCajaIsOpen ? "Mi caja abierta" : "Turno abierto"}
+                      {userCajaIsOpen
+                        ? "Mi caja abierta"
+                        : isAdminCajaConsult
+                          ? "Consulta de recaudar"
+                          : "Turno abierto"}
                     </span>
-                    {(!canOperateCaja || !userCajaIsOpen) && (
-                      <span className="shrink-0 rounded-full border border-slate-200 px-2 py-0.5 text-[10px] text-slate-500 sm:text-xs">
+                    {(isAdminCajaConsult || !canOperateCaja || !userCajaIsOpen) && (
+                      <span className="shrink-0 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] text-amber-900 sm:text-xs">
                         Solo consulta
                       </span>
                     )}
                   </div>
+                  {isAdminCajaConsult ? (
+                    <p className="text-[11px] text-amber-800 sm:text-xs">
+                      Puedes ver las órdenes por cobrar. El cobro lo hacen los cajeros asignados del turno.
+                    </p>
+                  ) : null}
                 </div>
 
                 <div className="shrink-0">

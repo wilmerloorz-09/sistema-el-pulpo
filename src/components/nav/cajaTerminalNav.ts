@@ -7,6 +7,7 @@ export function isCajaFinanceNavPath(to: string): boolean {
 }
 
 export function canSeeCajaFinanceNav(sg: BranchShiftGate | undefined): boolean {
+  // canUseCaja incluye bypass de admin (consulta Recaudar).
   return Boolean(sg?.canUseCaja);
 }
 
@@ -20,8 +21,11 @@ export function computeCajaAbrirTerminalState(sg: BranchShiftGate | undefined) {
   let abrirDisabledReason: string | undefined;
   if (!sg?.shiftOpen) abrirDisabledReason = "No hay turno abierto.";
   else if (!sg?.userEnabled) abrirDisabledReason = "No estas habilitado en el turno.";
-  else if (!sg?.canUseCaja) abrirDisabledReason = "Sin permiso de Caja.";
-  else if (sg?.cajaStatus === "OPEN") abrirDisabledReason = "Tu caja ya esta abierta en este turno.";
+  else if (!sg?.assignedCanUseCaja) {
+    abrirDisabledReason = sg?.canUseCaja
+      ? "Solo consulta: no eres cajero asignado en este turno."
+      : "Sin permiso de Caja.";
+  } else if (sg?.cajaStatus === "OPEN") abrirDisabledReason = "Tu caja ya esta abierta en este turno.";
 
   const canOpenAbrirCaja = !abrirDisabledReason;
 

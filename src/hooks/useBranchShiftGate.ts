@@ -57,6 +57,12 @@ export interface BranchShiftGate {
   canDispatchOrders: boolean;
   canManageProducts: boolean;
   canUseCaja: boolean;
+  /**
+   * Permiso real de cajero en el turno (flag / principal / apertura OPEN).
+   * Un admin puede tener canUseCaja=true por bypass y assignedCanUseCaja=false
+   * → entra a Recaudar en solo consulta, sin auto-abrir ni cobrar.
+   */
+  assignedCanUseCaja: boolean;
   /** Cajero principal del turno (caja principal). */
   primaryCashierId: string | null;
   /** Usuario actual es cajero secundario (tiene caja y no es el principal). */
@@ -147,6 +153,9 @@ function mapGateRow(
     canUseCaja:
       Boolean(row?.can_use_caja)
       || String(row?.caja_status ?? "").toUpperCase() === "OPEN",
+    assignedCanUseCaja:
+      Boolean(row?.can_use_caja)
+      || String(row?.caja_status ?? "").toUpperCase() === "OPEN",
     primaryCashierId: row?.primary_cashier_id ?? null,
     isSecondaryCashier: Boolean(row?.is_secondary_cashier),
     secondaryCajaTakeoutEnabled: Boolean(row?.secondary_caja_takeout_enabled),
@@ -171,7 +180,9 @@ function mapGateRow(
       canEditOrders: true,
       canDispatchOrders: true,
       canManageProducts: true,
+      // Acceso a /caja y nav Recaudar. Cobrar/auto-abrir usan assignedCanUseCaja.
       canUseCaja: true,
+      assignedCanUseCaja: base.assignedCanUseCaja,
       canServePlates: true,
       canPackOrders: true,
       canAuthorizeOrderCancel: true,
