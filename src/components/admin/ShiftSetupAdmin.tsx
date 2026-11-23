@@ -65,6 +65,7 @@ import {
   buildCajaSetupIssues,
   cajaSetupSignature,
   countConfiguredShiftCashiers,
+  findReplaceRequiredRemovals,
   formatCajaSetupSummary as formatCajaSetupSummaryText,
   mapPersistedCajaSetup,
   removeCashierFromSetup,
@@ -1410,6 +1411,24 @@ const ShiftSetupAdmin = () => {
 
     issues.push(...buildCajaSetupIssues(shiftCajaSetup, enabledUserIds));
 
+    if (isOpen) {
+      const blockedRemovals = findReplaceRequiredRemovals(
+        persistedCajaSetup,
+        shiftCajaSetup,
+        replaceEligibleUserIds,
+      );
+      for (const userId of blockedRemovals) {
+        const row = shiftUsersState.find((entry) => entry.user_id === userId);
+        const label =
+          (row ? getUserAlias(row) : null) ||
+          row?.full_name ||
+          "ese cajero";
+        issues.push(
+          `No puedes quitar a ${label} de caja: ya cobró. Usa «Reemplazar» o cierra su caja primero.`,
+        );
+      }
+    }
+
     if ((workingDispatchConfig?.dispatch_mode ?? "SINGLE") === "SPLIT") {
       if (enabledDispatchUserIds.length === 0) {
         issues.push(
@@ -1435,6 +1454,9 @@ const ShiftSetupAdmin = () => {
     shiftCajaSetup,
     missingDispatchViews,
     isCashThenDispatch,
+    isOpen,
+    persistedCajaSetup,
+    replaceEligibleUserIds,
   ]);
 
   const hasSetupIssues = setupIssues.length > 0;
@@ -3196,12 +3218,8 @@ const ShiftSetupAdmin = () => {
             replaceCashierMutation.isPending
           }
           templateLockedUserIds={templateLockedUserIds}
-          replaceEligibleUserIds={
-            hasCajaConfigChange ? undefined : replaceEligibleUserIds
-          }
-          onReplaceCashier={
-            hasCajaConfigChange ? undefined : handleOpenCashierReplace
-          }
+          replaceEligibleUserIds={replaceEligibleUserIds}
+          onReplaceCashier={handleOpenCashierReplace}
         />
 
         {isOpen && (cashierReplaceAuditQuery.data?.length ?? 0) > 0 ? (

@@ -128,7 +128,7 @@ export default function ShiftCajaSetupSection({
         <div>
           <h4 className="text-sm font-black text-foreground sm:text-base">Cajeros del turno</h4>
           <p className="text-xs text-muted-foreground">
-            Agrega cada cajero con su plantilla. Marca uno como principal (opcional). Tras el primer cobro la plantilla queda fija.
+            Agrega cada cajero con su plantilla. Marca uno como principal (opcional). Si ya cobró, usa Reemplazar (no lo cambies ni lo borres a mano).
           </p>
         </div>
       </div>
@@ -152,17 +152,24 @@ export default function ShiftCajaSetupSection({
             const userSelectValue = resolveSelectUserId(row.user_id, userOptions);
             const templateLocked =
               Boolean(row.user_id) && Boolean(templateLockedUserIds?.has(row.user_id));
+            const mustReplace =
+              Boolean(row.user_id) && Boolean(replaceEligibleUserIds?.has(row.user_id));
 
             return (
               <div
                 key={row.id}
                 className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-emerald-100 bg-white p-2.5"
               >
-                <div className="min-w-[200px] flex-1">
+                <div className="min-w-[200px] flex-1 space-y-1">
                   <Select
                     value={userSelectValue}
                     onValueChange={(id) => updateCashier(row.id, { user_id: id })}
-                    disabled={disabled || enabledUsers.length === 0 || templateLocked}
+                    disabled={
+                      disabled ||
+                      enabledUsers.length === 0 ||
+                      templateLocked ||
+                      mustReplace
+                    }
                   >
                     <SelectTrigger className="h-10 w-full rounded-xl">
                       <SelectValue placeholder="Cajero..." />
@@ -175,6 +182,11 @@ export default function ShiftCajaSetupSection({
                       ))}
                     </SelectContent>
                   </Select>
+                  {mustReplace ? (
+                    <p className="text-[11px] leading-tight text-amber-800">
+                      Ya cobró: usa Reemplazar para traspasar la caja.
+                    </p>
+                  ) : null}
                 </div>
 
                 <div className="min-w-[180px] flex-1 space-y-1">
@@ -212,9 +224,7 @@ export default function ShiftCajaSetupSection({
                   Principal
                 </label>
 
-                {row.user_id &&
-                replaceEligibleUserIds?.has(row.user_id) &&
-                onReplaceCashier ? (
+                {mustReplace && onReplaceCashier ? (
                   <Button
                     type="button"
                     variant="outline"
@@ -232,7 +242,12 @@ export default function ShiftCajaSetupSection({
                   type="button"
                   variant="ghost"
                   size="icon"
-                  disabled={disabled}
+                  disabled={disabled || mustReplace}
+                  title={
+                    mustReplace
+                      ? "Este cajero ya cobró. Usa Reemplazar o cierra su caja."
+                      : "Quitar cajero"
+                  }
                   className="h-10 w-10 shrink-0 text-destructive"
                   onClick={() => removeCashier(row.id)}
                 >

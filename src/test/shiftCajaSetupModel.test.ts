@@ -3,6 +3,7 @@ import {
   buildAuxiliaryCajaRpcPayload,
   buildCajaRpcPayload,
   buildCajaSetupIssues,
+  findReplaceRequiredRemovals,
   getPrimaryCashierIdFromSetup,
 } from "@/lib/shiftCajaSetupModel";
 
@@ -89,5 +90,29 @@ describe("shiftCajaSetupModel", () => {
     );
 
     expect(issues).toEqual([]);
+  });
+
+  it("detecta cajeros con cobros que se intentan sacar sin reemplazo", () => {
+    const previous = {
+      cashiers: [
+        { id: "1", user_id: "old", template_id: "t1", is_primary: true },
+        { id: "2", user_id: "keep", template_id: "t2", is_primary: false },
+      ],
+      auxiliary: null,
+    };
+    const next = {
+      cashiers: [
+        { id: "3", user_id: "new", template_id: "t1", is_primary: true },
+        { id: "2", user_id: "keep", template_id: "t2", is_primary: false },
+      ],
+      auxiliary: null,
+    };
+
+    expect(
+      findReplaceRequiredRemovals(previous, next, new Set(["old"])),
+    ).toEqual(["old"]);
+    expect(
+      findReplaceRequiredRemovals(previous, next, new Set(["keep"])),
+    ).toEqual([]);
   });
 });

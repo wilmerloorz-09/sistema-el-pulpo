@@ -199,3 +199,16 @@ export function replaceCashierInSetup(
     auxiliary: state.auxiliary,
   };
 }
+
+/** Cajeros con cobros que se intentan sacar de la config: deben usarse via Reemplazar. */
+export function findReplaceRequiredRemovals(
+  previous: ShiftCajaSetupState,
+  next: ShiftCajaSetupState,
+  replaceEligibleUserIds: ReadonlySet<string>,
+): string[] {
+  if (replaceEligibleUserIds.size === 0) return [];
+  const nextIds = new Set(getConfiguredCashierUserIds(next));
+  return getConfiguredCashierUserIds(previous).filter(
+    (userId) => replaceEligibleUserIds.has(userId) && !nextIds.has(userId),
+  );
+}
