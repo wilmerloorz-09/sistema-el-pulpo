@@ -859,6 +859,63 @@ const ShiftSetupAdmin = () => {
     refetchInterval: shiftQuery.data?.id ? 30_000 : false,
   });
 
+  type ShiftCajaHealth = {
+    ok: boolean;
+    shift_open: boolean;
+    open_openings_count: number;
+    assigned_cashiers_count: number;
+    primary_open_count: number;
+    counts_mismatch: boolean;
+    orphan_openings: Array<{
+      opening_id: string;
+      cashier_id: string;
+      cashier_name: string;
+      register_role: string;
+    }>;
+    cashiers_without_opening: Array<{
+      user_id: string;
+      cashier_name: string;
+    }>;
+  };
+
+  const cajaHealthQuery = useQuery({
+    queryKey: [
+      "shift-caja-health",
+      activeBranchId,
+      shiftQuery.data?.id ?? "closed",
+    ],
+    queryFn: async (): Promise<ShiftCajaHealth | null> => {
+      if (!activeBranchId || !shiftQuery.data?.id) return null;
+
+      const { data, error } = await supabase.rpc(
+        "get_shift_caja_health" as any,
+        {
+          p_shift_id: shiftQuery.data.id,
+          p_branch_id: activeBranchId,
+        } as any,
+      );
+
+      if (isMissingFunctionOrSchemaError(error, "get_shift_caja_health")) {
+        return null;
+      }
+      if (error) throw error;
+
+      const payload = (data ?? null) as ShiftCajaHealth | null;
+      if (!payload) return null;
+      return {
+        ...payload,
+        orphan_openings: Array.isArray(payload.orphan_openings)
+          ? payload.orphan_openings
+          : [],
+        cashiers_without_opening: Array.isArray(payload.cashiers_without_opening)
+          ? payload.cashiers_without_opening
+          : [],
+      };
+    },
+    enabled: Boolean(activeBranchId && shiftQuery.data?.id),
+    refetchInterval: shiftQuery.data?.id ? 30_000 : false,
+  });
+
   const cashierReplaceAuditQuery = useQuery({
     queryKey: [
       "shift-cashier-replacement-audit",
@@ -1915,6 +1972,9 @@ const ShiftSetupAdmin = () => {
       }),
       qc.invalidateQueries({
         queryKey: ["shift-cashier-replacement-audit", activeBranchId],
+      }),
+      qc.invalidateQueries({
+        queryKey: ["shift-caja-health", activeBranchId],
       }),
     ]);
 
@@ -3205,6 +3265,70 @@ const ShiftSetupAdmin = () => {
             )}
           </div>
         </section>
+
+        {isOpen && cajaHealthQuery.data?.shift_open ? (
+          <section
+            className={`rounded-[22px] border p-4 shadow-sm sm:rounded-[26px] sm:p-5 ${
+              cajaHealthQuery.data.ok && !cajaHealthQuery.data.counts_mismatch
+                ? "border-emerald-200 bg-emerald-50/60"
+                : "border-amber-300 bg-amber-50/80"
+            }`}
+          >
+            <div className="flex items-start gap-3">
+              <div
+                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border ${
+                  cajaHealthQuery.data.ok && !cajaHealthQuery.data.counts_mismatch
+                    ? "border-emerald-200 bg-white text-emerald-700"
+                    : "border-amber-300 bg-white text-amber-800"
+                }`}
+              >
+                <AlertTriangle className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 space-y-1.5">
+                <h4 className="text-sm font-black text-foreground sm:text-base">
+                  Estado de cajas del turno
+                </h4>
+                <p className="text-sm text-foreground/90">
+                  Hay {cajaHealthQuery.data.open_openings_count} apertura
+                  {cajaHealthQuery.data.open_openings_count === 1 ? "" : "s"} abierta
+                  {cajaHealthQuery.data.open_openings_count === 1 ? "" : "s"} y{" "}
+                  {cajaHealthQuery.data.assigned_cashiers_count} cajero
+                  {cajaHealthQuery.data.assigned_cashiers_count === 1 ? "" : "s"}{" "}
+                  habilitado
+                  {cajaHealthQuery.data.assigned_cashiers_count === 1 ? "" : "s"}.
+                </p>
+                {cajaHealthQuery.data.primary_open_count > 1 ? (
+                  <p className="text-sm font-medium text-amber-950">
+                    Hay {cajaHealthQuery.data.primary_open_count} cajas marcadas como
+                    principal. Debe quedar solo una.
+                  </p>
+                ) : null}
+                {cajaHealthQuery.data.orphan_openings.length > 0 ? (
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium text-amber-950">
+                      Aperturas sin cajero habilitado (hay que reemplazar o cerrar):
+                    </p>
+                    <ul className="list-disc space-y-0.5 pl-5 text-sm text-amber-950">
+                      {cajaHealthQuery.data.orphan_openings.map((row) => (
+                        <li key={row.opening_id}>{row.cashier_name}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+                {cajaHealthQuery.data.ok
+                  && cajaHealthQuery.data.cashiers_without_opening.length > 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    Aún sin abrir su caja:{" "}
+                    {cajaHealthQuery.data.cashiers_without_opening
+                      .map((row) => row.cashier_name)
+                      .join(", ")}
+                    .
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          </section>
+        ) : null}
 
         <ShiftCajaSetupSection
           enabledUsers={cajaSetupUserOptions}
